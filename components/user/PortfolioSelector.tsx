@@ -129,25 +129,25 @@ export const PortfolioSelector: React.FC<PortfolioSelectorProps> = ({ selectedPo
     return (
         <div className="flex items-center space-x-2">
             <Select value={selectedPortfolioId || "none"} onValueChange={onSelect}>
-                <SelectTrigger className="w-[250px] bg-white text-black font-medium border-none focus:ring-2 focus:ring-blue-500">
+                <SelectTrigger className="w-[280px] bg-background text-foreground border-input focus:ring-2 focus:ring-ring">
                     <SelectValue placeholder="Seleziona Portafoglio" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-popover text-popover-foreground border-border">
                     {portfolios.length === 0 ? (
                         <SelectItem value="none" disabled>Nessun portafoglio</SelectItem>
                     ) : (
                         portfolios.map(p => (
-                            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                            <SelectItem key={p.id} value={p.id} className="focus:bg-accent focus:text-accent-foreground">{p.name}</SelectItem>
                         ))
                     )}
                 </SelectContent>
             </Select>
             <Button
-                variant="secondary"
+                variant="outline"
                 size="icon"
                 onClick={() => setIsCreateOpen(true)}
                 title="Nuovo Portafoglio"
-                className="bg-white text-black hover:bg-gray-200 border-none"
+                className="hover:bg-accent hover:text-accent-foreground border-input"
             >
                 <PlusCircle className="h-5 w-5" />
             </Button>
@@ -158,33 +158,33 @@ export const PortfolioSelector: React.FC<PortfolioSelectorProps> = ({ selectedPo
                     size="icon"
                     onClick={handleDeletePortfolio}
                     title="Elimina Portafoglio"
-                    className="bg-red-500 hover:bg-red-600 text-white border-none"
+                    className="hover:bg-destructive/90"
                 >
                     <Trash2 className="h-5 w-5" />
                 </Button>
             )}
 
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-                <DialogContent className="bg-white text-black">
+                <DialogContent className="bg-background text-foreground border-border sm:max-w-[425px]">
                     <DialogHeader>
                         <DialogTitle>Crea Nuovo Portafoglio</DialogTitle>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
                         <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="name" className="text-right">
+                            <Label htmlFor="name" className="text-right text-foreground">
                                 Nome
                             </Label>
                             <Input
                                 id="name"
                                 value={newPortfolioName}
                                 onChange={(e) => setNewPortfolioName(e.target.value)}
-                                className="col-span-3 border-gray-300"
+                                className="col-span-3 bg-secondary/20 border-input text-foreground"
                                 placeholder="Es. Portafoglio Personale"
                             />
                         </div>
                     </div>
                     <DialogFooter>
-                        <Button type="submit" onClick={handleCreatePortfolio} disabled={creating} className="bg-black text-white hover:bg-gray-800">
+                        <Button type="submit" onClick={handleCreatePortfolio} disabled={creating} className="bg-primary text-primary-foreground hover:bg-primary/90">
                             {creating ? "Creazione..." : "Crea"}
                         </Button>
                     </DialogFooter>

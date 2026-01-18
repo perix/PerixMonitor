@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 import os
 load_dotenv('.env.local')
 
+from datetime import datetime
+
 import pandas as pd
 import numpy as np
 from ingest import parse_portfolio_excel, calculate_delta
@@ -12,6 +14,7 @@ from finance import xirr
 from logger import logger
 import io
 import traceback
+import openai
 
 app = Flask(__name__)
 import sys
@@ -41,75 +44,126 @@ def sync_transactions():
         if not portfolio_id:
             return jsonify(error="Missing portfolio_id"), 400
         
-        if not changes:
-            return jsonify(message="No changes to sync"), 200
+        if not changes and not data.get('prices') and not data.get('snapshot'):
+            return jsonify(message="No data to sync"), 200
 
         supabase = get_supabase_client()
         
-        # 1. Collect all unique ISINs to process
-        target_isins = {item.get('isin') for item in changes if item.get('quantity_change') and item.get('isin')}
-        if not target_isins:
-             return jsonify(message="No valid ISINs found in changes"), 200
+        # --- 1. Handle Prices (If present) ---
+        prices = data.get('prices', [])
+        if prices:
+            from price_manager import save_price_snapshot
+            count_prices = 0
+            for p in prices:
+                save_price_snapshot(p['isin'], p['price'], p.get('date'), p.get('source', 'Manual Upload'))
+                count_prices += 1
+            logger.info(f"SYNC: Saved {count_prices} price snapshots.")
 
-        # 2. Batch Fetch existing assets
-        # Note: Supabase .in_() expects a list
-        res_assets = supabase.table('assets').select("id, isin").in_('isin', list(target_isins)).execute()
-        asset_map = {row['isin']: row['id'] for row in res_assets.data}
-        
-        # 3. Identify and Create missing assets
-        missing_isins = target_isins - set(asset_map.keys())
-        
-        if missing_isins:
-            new_assets_payload = [{"isin": isin, "name": isin} for isin in missing_isins]
-            res_new = supabase.table('assets').insert(new_assets_payload).execute()
-            if res_new.data:
-                for row in res_new.data:
-                    asset_map[row['isin']] = row['id']
-        
+        # --- 2. Handle Snapshot Record (If present) ---
+        snapshot = data.get('snapshot')
+        if snapshot:
+            try:
+                # Update upload_date to NOW just to be precise on confirm
+                snapshot['upload_date'] = datetime.now().isoformat()
+                supabase.table('snapshots').insert(snapshot).execute()
+                logger.info(f"SYNC: Snapshot records saved.")
+            except Exception as e:
+                 logger.error(f"SYNC: Snapshot save failed: {e}")
+
+        # --- 2b. Handle Dividends (If present) ---
+        dividends = data.get('dividends', [])
+        if dividends:
+            try:
+                # We need to resolve ISIN -> asset_id for dividends too.
+                # Assuming dividends list has ISINs.
+                div_isins = {d['isin'] for d in dividends}
+                if div_isins:
+                     # Reuse or fetch asset map
+                     res_assets = supabase.table('assets').select("id, isin").in_('isin', list(div_isins)).execute()
+                     asset_map_div = {row['isin']: row['id'] for row in res_assets.data}
+                     
+                     valid_dividends = []
+                     for d in dividends:
+                        a_id = asset_map_div.get(d['isin'])
+                        if a_id:
+                            valid_dividends.append({
+                                "portfolio_id": portfolio_id,
+                                "asset_id": a_id,
+                                "amount_eur": d['amount'],
+                                "date": d['date'] # Original date from file
+                            })
+                     
+                     if valid_dividends:
+                         # Upsert based on unique constraint (portfolio, asset, date)
+                         supabase.table('dividends').upsert(valid_dividends, on_conflict='portfolio_id, asset_id, date').execute()
+                         logger.info(f"SYNC: Saved {len(valid_dividends)} dividends.")
+            except Exception as e:
+                 logger.error(f"SYNC: Dividend save failed: {e}")
+
+
+        # --- 3. Handle Transactions (If present) ---
         valid_transactions = []
-        
-        for item in changes:
-            isin = item.get('isin')
-            qty_change = float(item.get('quantity_change', 0))
-            
-            if qty_change == 0 or not isin:
-                continue
+        if changes:
+             # 3a. Collect all unique ISINs to process
+            target_isins = {item.get('isin') for item in changes if item.get('quantity_change') and item.get('isin')}
+            if target_isins:
+                # 3b. Batch Fetch existing assets
+                res_assets = supabase.table('assets').select("id, isin").in_('isin', list(target_isins)).execute()
+                asset_map = {row['isin']: row['id'] for row in res_assets.data}
                 
-            # Determine Transaction Type
-            trans_type = 'BUY' if qty_change > 0 else 'SELL'
-            abs_qty = abs(qty_change)
-            
-            # Determine Price and Date
-            price = item.get('price') # User input
-            if price is None:
-                price = item.get('excel_price') # Excel data
-            
-            date_val = item.get('date') # User input
-            if date_val is None:
-                 date_val = item.get('excel_date') # Excel data
-            
-            if price is None or date_val is None:
-                logger.warning(f"Skipping {isin}: Missing Price or Date ({price}, {date_val})")
-                continue
+                # 3c. Identify and Create missing assets
+                missing_isins = target_isins - set(asset_map.keys())
+                
+                if missing_isins:
+                    new_assets_payload = [{"isin": isin, "name": isin} for isin in missing_isins]
+                    res_new = supabase.table('assets').insert(new_assets_payload).execute()
+                    if res_new.data:
+                        for row in res_new.data:
+                            asset_map[row['isin']] = row['id']
+                
+                
+                for item in changes:
+                    isin = item.get('isin')
+                    qty_change = float(item.get('quantity_change', 0))
+                    
+                    if qty_change == 0 or not isin:
+                        continue
+                        
+                    # Determine Transaction Type
+                    trans_type = 'BUY' if qty_change > 0 else 'SELL'
+                    abs_qty = abs(qty_change)
+                    
+                    # Determine Price and Date
+                    price = item.get('price') # User input
+                    if price is None:
+                        price = item.get('excel_price') # Excel data
+                    
+                    date_val = item.get('date') # User input
+                    if date_val is None:
+                        date_val = item.get('excel_date') # Excel data
+                    
+                    if price is None or date_val is None:
+                        logger.warning(f"Skipping {isin}: Missing Price or Date ({price}, {date_val})")
+                        continue
 
-            asset_id = asset_map.get(isin)
-            
-            if asset_id:
-                valid_transactions.append({
-                    "portfolio_id": portfolio_id,
-                    "asset_id": asset_id,
-                    "type": trans_type,
-                    "quantity": abs_qty,
-                    "price_eur": float(price),
-                    "date": date_val
-                })
+                    asset_id = asset_map.get(isin)
+                    
+                    if asset_id:
+                        valid_transactions.append({
+                            "portfolio_id": portfolio_id,
+                            "asset_id": asset_id,
+                            "type": trans_type,
+                            "quantity": abs_qty,
+                            "price_eur": float(price),
+                            "date": date_val
+                        })
         
         if valid_transactions:
             res = supabase.table('transactions').insert(valid_transactions).execute()
             logger.info(f"SYNC SUCCESS: Inserted {len(valid_transactions)} transactions for portfolio {portfolio_id}.")
-            return jsonify(message=f"Successfully synced {len(valid_transactions)} transactions"), 200
+            return jsonify(message=f"Successfully synced. Prices: {len(prices)}. Trans: {len(valid_transactions)}"), 200
         else:
-            return jsonify(message="No valid transactions to insert"), 200
+            return jsonify(message=f"Synced. Prices: {len(prices)}. No transactions."), 200
 
     except Exception as e:
         logger.error(f"SYNC FAIL: {e}")
@@ -132,8 +186,12 @@ def reset_db_route():
         
         # Delete transactions for this portfolio
         supabase.table('transactions').delete().eq('portfolio_id', portfolio_id).execute()
-        logger.info(f"DB Reset: Cleared transactions for portfolio {portfolio_id}")
-        return jsonify(status="ok", message="Transactions cleared"), 200
+        
+        # Delete snapshots (history) for this portfolio
+        supabase.table('snapshots').delete().eq('portfolio_id', portfolio_id).execute()
+        
+        logger.info(f"DB Reset: Cleared transactions and snapshots for portfolio {portfolio_id}")
+        return jsonify(status="ok", message="Portfolio data (transactions & history) cleared"), 200
             
     except Exception as e:
         logger.error(f"RESET FAIL: {e}")
@@ -164,6 +222,15 @@ def ingest_excel():
             logger.error(f"INGEST FAIL: Parse Error - {parse_result['error']}")
             return jsonify(error=parse_result["error"]), 400
         
+        # --- NEW: DIVIDEND FLOW ---
+        if parse_result.get('type') == 'KPI_DIVIDENDS':
+            return jsonify(
+                type='DIVIDENDS',
+                parsed_data=parse_result['data'],
+                message=parse_result.get('message')
+            )
+        
+        # --- STANDARD PORTFOLIO FLOW ---
         portfolio_id = request.form.get('portfolio_id')
         
         # Fetch DB Holdings
@@ -194,25 +261,57 @@ def ingest_excel():
         # Calculate Delta
         delta = calculate_delta(parse_result['data'], db_holdings)
         
-        # Save Price Snapshots (New Strategy)
-        from price_manager import save_price_snapshot
-        count_saved = 0
-        for row in parse_result['data']:
-            if row.get('current_price'):
-                 # Use row date if available (transaction date), otherwise today
-                 # But usually current_price refers to NOW. 
-                 # If row['date'] is old (e.g. buy date), we shouldn't map current price to it.
-                 # User said "associare alla data dell'input del file". 
-                 # Let's use Today as the default for "Current Price snapshot"
-                 save_price_snapshot(row['isin'], row['current_price'])
-                 count_saved += 1
+        # Prepare Price Snapshots (Don't save yet)
+        prices_to_save = []
         
-        if count_saved > 0:
-            logger.info(f"Saved {count_saved} price snapshots.")
+        # Metrics Calculation for Snapshot
+        total_value_eur = 0
+        total_invested_eur = 0
+
+        for row in parse_result['data']:
+            qty = row.get('quantity', 0)
+            
+            # Market Value calculation
+            # Market Value calculation
+            curr_price = row.get('current_price')
+            
+            # [MODIFIED] Always save price if present, regardless of quantity
+            if curr_price:
+                 # Collect individual price for later saving
+                 prices_to_save.append({
+                     "isin": row['isin'],
+                     "price": curr_price,
+                     "date": row.get('date'), # Might be None, handled by backend
+                     "source": "Manual Upload" 
+                 })
+
+            if curr_price and qty:
+                 total_value_eur += (qty * curr_price)
+            
+            # Invested Capital calculation
+            avg_cost = row.get('avg_price_eur')
+            if avg_cost and qty:
+                 total_invested_eur += (qty * avg_cost)
+        
+        # Prepare Snapshot Record (Don't save yet)
+        snapshot_proposal = None
+        if portfolio_id:
+             snapshot_proposal = {
+                "portfolio_id": portfolio_id,
+                "file_name": file.filename,
+                "upload_date": datetime.now().isoformat(), # Proposed date
+                "status": "PROCESSED",
+                "total_eur": total_value_eur,
+                "total_invested": total_invested_eur,
+                "log_summary": f"Imported {len(parse_result['data'])} rows. Value: {total_value_eur:.2f}€"
+            }
 
         return jsonify(
+            type='PORTFOLIO',
             parsed_data=parse_result['data'],
-            delta=delta
+            delta=delta,
+            prices=prices_to_save,
+            snapshot_proposal=snapshot_proposal
         )
 
     except Exception as e:
@@ -303,6 +402,51 @@ def delete_portfolio(portfolio_id):
 
     except Exception as e:
         logger.error(f"PORTFOLIO DELETE FAIL: {e}")
+        return jsonify(error=str(e)), 500
+
+@app.route('/api/validate-model', methods=['POST'])
+def validate_model_route():
+    try:
+        data = request.json
+        # Only use env var for security, ignore client-provided key if any (or treat as temp override if needed, but user asked for secure)
+        # User said "Voglio anche quelli. Non voglio che l'API Key sia presente in chiaro, la voglio mettere nel codice."
+        # So we prioritize env var and strictly use it.
+        api_key = os.getenv('OPENAI_API_KEY')
+        model_type = data.get('modelType')
+        
+        logger.info(f"VALIDATE AI REQUEST: Checking model '{model_type}'")
+        
+        if not api_key:
+            logger.error("VALIDATE AI FAIL: No OPENAI_API_KEY set in environment")
+            return jsonify(error="API Key is missing in server configuration"), 400
+            
+        if not model_type:
+             logger.error("VALIDATE AI FAIL: No modelType provided")
+             return jsonify(error="Model Type is required"), 400
+
+        client = openai.OpenAI(api_key=api_key)
+        
+        # Verify model access
+        try:
+            model = client.models.retrieve(model_type)
+            logger.info(f"VALIDATE AI SUCCESS: Model '{model_type}' is accessible. ID: {model.id}")
+            return jsonify(
+                success=True,
+                id=model.id,
+                owned_by=model.owned_by
+            ), 200
+        except openai.AuthenticationError:
+             logger.error("VALIDATE AI FAIL: AuthenticationError (Invalid Key)")
+             return jsonify(success=False, error="Invalid API Key"), 200
+        except openai.NotFoundError:
+             logger.error(f"VALIDATE AI FAIL: Model '{model_type}' not found")
+             return jsonify(success=False, error=f"Model '{model_type}' not found or no access"), 200
+        except Exception as e:
+             logger.error(f"VALIDATE AI FAIL: OpenAI Error: {e}")
+             return jsonify(success=False, error=str(e)), 200
+
+    except Exception as e:
+        logger.error(f"VALIDATE AI CRITICAL ERROR: {e}")
         return jsonify(error=str(e)), 500
 
 if __name__ == '__main__':

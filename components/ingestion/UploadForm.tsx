@@ -16,6 +16,7 @@ export const UploadForm = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [delta, setDelta] = useState<any[] | null>(null);
+    const [pricesAndSnapshot, setPricesAndSnapshot] = useState<{ prices: any[], snapshot: any } | null>(null);
     const [showModal, setShowModal] = useState(false);
 
     // Global Context State
@@ -66,13 +67,38 @@ export const UploadForm = () => {
 
         try {
             const response = await axios.post('/api/ingest', formData);
+            const data = response.data;
 
-            const { delta } = response.data;
-            setDelta(delta);
-            if (delta && delta.length > 0) {
-                setShowModal(true);
+            if (data.type === 'DIVIDENDS') {
+                // Special handling for dividends
+                if (confirm(`${data.message}\n\nStai per importare dei flussi di cassa (Cedole/Dividendi). Confermi l'importazione?`)) {
+                    // Auto-confirm for now, or use a nicer modal.
+                    // The user asked for "Feedback in UI". A native confirm is "meh". 
+                    // Let's use the modal but maybe adapt it? 
+                    // Or just direct confirm via sync since there is no "Delta" to resolve usually in dividends (just overwrite).
+                    // Let's try to just call handleReconciliationConfirm with empty delta but filled dividends.
+
+                    // Actually let's use a simple confirm for now to speed up, or set a "dividendMode" state.
+                    // The user requested: "fornisci un feedback all'utente nella UI perchè sia cosciente del fatto che sta gestendo cedole".
+
+                    await axios.post('/api/sync', {
+                        changes: [],
+                        dividends: data.parsed_data,
+                        portfolio_id: selectedPortfolioId
+                    });
+                    alert("Cedole importate con successo!");
+                }
             } else {
-                alert("Nessuna modifica rilevata!");
+                // Standard Portfolio
+                const { delta, prices, snapshot_proposal } = data;
+                setDelta(delta);
+                setPricesAndSnapshot({ prices, snapshot: snapshot_proposal });
+
+                if ((delta && delta.length > 0) || (prices && prices.length > 0)) {
+                    setShowModal(true);
+                } else {
+                    alert("Nessuna modifica rilevata (né transazioni né prezzi nuovi)!");
+                }
             }
 
         } catch (err: any) {
@@ -93,7 +119,9 @@ export const UploadForm = () => {
         try {
             await axios.post('/api/sync', {
                 changes: resolutions,
-                portfolio_id: selectedPortfolioId
+                portfolio_id: selectedPortfolioId,
+                prices: pricesAndSnapshot?.prices || [],
+                snapshot: pricesAndSnapshot?.snapshot
             });
             alert("Sincronizzazione completata con successo!");
             setShowModal(false);
@@ -106,9 +134,9 @@ export const UploadForm = () => {
 
     return (
         <div className="p-4 max-w-xl mx-auto space-y-6">
-            <Card className="bg-white/10 border-white/20 text-white backdrop-blur-sm">
+            <Card className="bg-card/50 border-white/10 text-foreground backdrop-blur-md">
                 <CardHeader>
-                    <CardTitle>Configurazione</CardTitle>
+                    <CardTitle>Portafoglio</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <PortfolioSelector
@@ -118,7 +146,7 @@ export const UploadForm = () => {
                 </CardContent>
             </Card>
 
-            <Card className="bg-white/10 border-white/20 text-white backdrop-blur-sm">
+            <Card className="bg-card/50 border-white/10 text-foreground backdrop-blur-md">
                 <CardHeader>
                     <CardTitle>Seleziona File Excel</CardTitle>
                 </CardHeader>
@@ -128,7 +156,7 @@ export const UploadForm = () => {
                         accept=".xlsx"
                         onChange={handleFileChange}
                         disabled={!selectedPortfolioId}
-                        className="file:text-white text-white border-white/20 bg-white/5"
+                        className="file:text-foreground text-foreground border-white/20 bg-secondary/20"
                     />
 
                     {error && (
@@ -154,6 +182,7 @@ export const UploadForm = () => {
                     isOpen={showModal}
                     onClose={() => setShowModal(false)}
                     delta={delta}
+                    prices={pricesAndSnapshot?.prices || []}
                     onConfirm={handleReconciliationConfirm}
                 />
             )}

@@ -1,41 +1,11 @@
 'use client';
+
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
-
-function ResetButton() {
-  const [loading, setLoading] = useState(false);
-  const handleReset = async () => {
-    if (!confirm("⚠️ ATTENZIONE: Questa azione cancellerà l'intero database! Sei sicuro?")) return;
-
-    setLoading(true);
-    try {
-      await axios.post('/api/reset');
-      alert("Database resettato con successo!");
-    } catch (e) {
-      alert("Errore durante il reset.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div onClick={handleReset} className="cursor-pointer">
-      <h2 className={`mb-3 text-2xl font-semibold text-red-500`}>
-        Reset DB{' '}
-        <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-          -&gt;
-        </span>
-      </h2>
-      <p className={`m-0 max-w-[30ch] text-sm opacity-50 font-medium`}>
-        {loading ? "Cancellazione in corso..." : "Cancella tutti i dati."}
-      </p>
-    </div>
-  )
-}
-
+import { useRouter } from 'next/navigation';
+import { ArrowRight, LayoutDashboard, ShieldCheck } from 'lucide-react';
 import { PortfolioSelector } from '@/components/user/PortfolioSelector';
 import { usePortfolio } from '@/context/PortfolioContext';
 
@@ -43,6 +13,7 @@ export default function Home() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
+  const router = useRouter();
   const { selectedPortfolioId, setSelectedPortfolioId } = usePortfolio();
 
   useEffect(() => {
@@ -50,121 +21,76 @@ export default function Home() {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
       setLoading(false);
+      if (user) {
+        // Optional: Auto-redirect can be enabled here.
+        // router.push('/dashboard'); 
+      }
     };
     checkUser();
-  }, []);
-
-  const handlePortfolioSelect = (id: string) => {
-    setSelectedPortfolioId(id);
-  };
+  }, [router]);
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gradient-to-br from-slate-900 to-slate-800 text-white">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="text-black text-xl font-bold font-serif tracking-wide fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          PerixMonitor - Wealth Tracker
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          {loading ? (
-            <div className="p-8">...</div>
-          ) : user ? (
-            <div className="flex items-center gap-4 p-8 lg:p-0">
-              <span className="text-xs text-white/80 font-mono tracking-wider">{user.email}</span>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="bg-white text-black hover:bg-gray-200 font-bold border border-gray-300"
-                onClick={() => supabase.auth.signOut().then(() => setUser(null))}
-              >
-                Logout
-              </Button>
-            </div>
-          ) : (
-            <Link href="/login" className="flex place-items-center gap-2 p-8 lg:p-0 hover:underline">
-              Login / Registrati
-            </Link>
-          )}
-        </div>
-      </div>
-
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-to-br before:from-transparent before:to-blue-700 before:opacity-10 before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-[240px] after:translate-x-1/3 after:bg-gradient-to-t after:from-sky-900 after:via-sky-900 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <h1 className="text-6xl font-bold tracking-tight">
-          Il tuo Patrimonio, <span className="text-blue-400">Ottimizzato.</span>
+    <main className="flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center p-8 text-foreground">
+      <div className="relative flex place-items-center mb-16">
+        <div className="absolute -z-10 h-[300px] w-[500px] rounded-full bg-primary/20 blur-[100px] opacity-50" />
+        <h1 className="text-6xl font-bold tracking-tighter text-center">
+          PerixMonitor
+          <span className="block text-2xl font-normal text-muted-foreground mt-4 tracking-wide font-serif">
+            Wealth Tracking, <span className="text-primary font-semibold">Elevated.</span>
+          </span>
         </h1>
       </div>
 
-      {user && (
-        <div className="mt-8">
-          <div className="bg-white/10 p-6 rounded-xl border border-white/20 backdrop-blur-sm">
-            <h3 className="text-lg font-semibold mb-4 text-center">Seleziona Portafoglio</h3>
-            <PortfolioSelector
-              selectedPortfolioId={selectedPortfolioId}
-              onSelect={handlePortfolioSelect}
-            />
-            {!selectedPortfolioId && (
-              <p className="text-sm text-yellow-400 mt-2 text-center">
-                Necessario selezionare un portafoglio per procedere.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
+      <div className="grid gap-8 text-center max-w-lg w-full">
+        {loading ? (
+          <p className="text-muted-foreground animate-pulse">Caricamento...</p>
+        ) : user ? (
+          <div className="flex flex-col gap-4 animate-in fade-in zoom-in duration-500">
+            <div className="bg-card/40 border border-white/5 p-6 rounded-2xl backdrop-blur-md shadow-2xl">
+              <div className="flex items-center justify-center gap-2 mb-4 text-green-400">
+                <ShieldCheck className="w-5 h-5" />
+                <span className="text-sm font-medium">Autenticato come {user.email}</span>
+              </div>
 
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-3 lg:text-left gap-8 mt-16">
-        {/* Upload Data Button */}
-        {user ? (
-          <Link href="/upload" className={`group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:text-slate-900 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30 ${!selectedPortfolioId ? 'opacity-50 pointer-events-none' : ''}`}>
-            <h2 className={`mb-3 text-2xl font-semibold`}>
-              Carica Dati{' '}
-              <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-                -&gt;
-              </span>
-            </h2>
-            <p className={`m-0 max-w-[30ch] text-sm opacity-50 font-medium`}>
-              Importa il tuo ultimo file excel di portafoglio.
-            </p>
-          </Link>
-        ) : (
-          <div className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:text-slate-900 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30 cursor-not-allowed opacity-60" title="Effettua il login per accedere">
-            <h2 className={`mb-3 text-2xl font-semibold text-gray-400`}>
-              Carica Dati{' '}
-              <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-                -&gt;
-              </span>
-            </h2>
-            <p className={`m-0 max-w-[30ch] text-sm opacity-50 font-medium`}>
-              Effettua il Login per caricare dati.
-            </p>
-          </div>
-        )}
+              {!selectedPortfolioId && (
+                <div className="mb-6">
+                  <p className="text-sm text-muted-foreground mb-2">Seleziona un portafoglio per iniziare</p>
+                  <PortfolioSelector
+                    selectedPortfolioId={selectedPortfolioId}
+                    onSelect={setSelectedPortfolioId}
+                  />
+                </div>
+              )}
 
-        {/* Dashboard Button */}
-        {(!user || !selectedPortfolioId) ? (
-          <div className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:text-slate-900 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30 cursor-not-allowed opacity-60 pointer-events-none">
-            <h2 className={`mb-3 text-2xl font-semibold`}>
-              Dashboard{' '}
-              <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-                -&gt;
-              </span>
-            </h2>
-            <p className={`m-0 max-w-[30ch] text-sm opacity-50 font-medium`}>
-              Seleziona un portafoglio per accedere.
-            </p>
+              <div className="grid gap-3">
+                <Button asChild size="lg" className="w-full text-lg h-12 shadow-primary/20 shadow-lg">
+                  <Link href="/dashboard">
+                    Vai alla Dashboard <ArrowRight className="ml-2 w-4 h-4" />
+                  </Link>
+                </Button>
+                <Button asChild variant="ghost" className="w-full text-muted-foreground hover:text-foreground">
+                  <Link href="/upload">Gestisci Dati</Link>
+                </Button>
+              </div>
+            </div>
           </div>
         ) : (
-          <Link href="/dashboard" className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:text-slate-900 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30 cursor-pointer">
-            <h2 className={`mb-3 text-2xl font-semibold`}>
-              Dashboard{' '}
-              <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-                -&gt;
-              </span>
-            </h2>
-            <p className={`m-0 max-w-[30ch] text-sm opacity-50 font-medium`}>
-              Visualizza performance MWR/XIRR.
+          <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <p className="text-lg text-muted-foreground mb-4">
+              Monitora il tuo patrimonio con precisione istituzionale.
+              <br />XIRR, MWR e Analisi avanzata.
             </p>
-          </Link>
+            <div className="flex gap-4 justify-center">
+              <Button asChild size="lg" className="rounded-full px-8 shadow-xl hover:shadow-primary/25 transition-all">
+                <Link href="/login">Accedi / Registrati</Link>
+              </Button>
+              <Button asChild variant="outline" size="lg" className="rounded-full px-8 bg-transparent border-primary/20 hover:bg-primary/10">
+                <Link href="#features">Scopri di più</Link>
+              </Button>
+            </div>
+          </div>
         )}
       </div>
-    </main >
+    </main>
   );
 }

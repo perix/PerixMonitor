@@ -4,16 +4,56 @@ from datetime import datetime
 from logger import log_ingestion_start, log_ingestion_item, log_ingestion_summary, log_final_state, logger
 
 def parse_portfolio_excel(file_stream):
-    # ... (header comments) ...
+    # Expected columns for Portfolio: A-I (9 columns)
+    # Expected for Dividends: A-C (3 columns): ISIN, Amount, Date
+    
     try:
         log_ingestion_start("Uploaded File Stream")
         df = pd.read_excel(file_stream)
         
-        # ... validation ...
+        # --- DIVIDEND/COUPON DETECTION MODE ---
+        # Heuristic: 3 columns, or headers resemble ISIN/Cedola/Data
+        is_dividend_file = False
+        if df.shape[1] == 3:
+            # We assume it's dividends if explicitly 3 cols.
+            # Ideally verify headers, but user said "file with 3 columns like this".
+            is_dividend_file = True
+            logger.info("Detected patterns for Dividend File (3 columns)")
+
+        if is_dividend_file:
+            dividends = []
+            for idx, row in df.iterrows():
+                # Expected: Col 0 = ISIN, Col 1 = Amount, Col 2 = Date
+                if pd.isna(row.iloc[0]): continue
+                
+                isin = str(row.iloc[0]).strip()
+                amount = float(row.iloc[1]) if not pd.isna(row.iloc[1]) else 0.0
+                date_val = row.iloc[2]
+                
+                # Date parsing
+                if pd.isna(date_val): 
+                    date_val = None
+                else:
+                    try:
+                        date_val = str(date_val)
+                    except:
+                        date_val = None
+                
+                if isin and amount > 0 and date_val:
+                    dividends.append({
+                        "isin": isin,
+                        "amount": amount,
+                        "date": date_val
+                    })
+            
+            return {"type": "KPI_DIVIDENDS", "data": dividends, "message": f"Rilevate {len(dividends)} cedole/dividendi."}
+
+
+        # --- STANDARD PORTFOLIO INGESTION MODE ---
         if df.shape[1] < 8:
             columns_found = df.columns.tolist()
             logger.error(f"PARSE FAIL: Insufficient columns. Found {len(columns_found)}: {columns_found}")
-            return {"error": f"Insufficient columns. Expected at least 8, found {len(columns_found)}"}
+            return {"error": f"Insufficient columns. Expected at least 8 (Portfolio) or 3 (Dividends), found {len(columns_found)}"}
 
         data = []
         for idx, row in df.iterrows():
@@ -50,7 +90,7 @@ def parse_portfolio_excel(file_stream):
             }
             data.append(entry)
             
-        return {"data": data}
+        return {"type": "PORTFOLIO_SYNC", "data": data}
             
     except Exception as e:
         logger.error(f"PARSE EXCEPTION: {str(e)}")

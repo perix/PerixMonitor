@@ -24,10 +24,11 @@ interface ReconciliationModalProps {
   isOpen: boolean;
   onClose: () => void;
   delta: DeltaItem[];
+  prices: any[];
   onConfirm: (resolutions: any[]) => void;
 }
 
-export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen, onClose, delta, onConfirm }) => {
+export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen, onClose, delta, prices, onConfirm }) => {
   const [resolutions, setResolutions] = useState<Record<string, { date: string, price: number }>>({});
 
   const handleResolutionChange = (isin: string, field: 'date' | 'price', value: string | number) => {
@@ -59,6 +60,9 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
   const inconsistentItems = delta.filter(d => d.type === 'INCONSISTENT_NEW_ISIN');
   const validItems = delta.filter(d => d.type !== 'MISSING_FROM_UPLOAD' && d.type !== 'INCONSISTENT_NEW_ISIN');
 
+  const hasPrices = prices && prices.length > 0;
+  const canSubmit = validItems.length > 0 || missingItems.length > 0 || hasPrices;
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-[95vw] h-[90vh] overflow-y-auto">
@@ -69,9 +73,36 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
           </DialogDescription>
         </DialogHeader>
 
+        {/* PRICE UPDATES */}
+        {hasPrices && (
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold mb-2">Aggiornamenti Prezzi ({prices.length})</h3>
+            <div className="max-h-[200px] overflow-y-auto border rounded-md">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ISIN</TableHead>
+                    <TableHead>Nuovo Prezzo (EUR)</TableHead>
+                    <TableHead>Data Rilevata</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {prices.map((p, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell>{p.isin}</TableCell>
+                      <TableCell>{p.price}</TableCell>
+                      <TableCell>{p.date || 'Oggi'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        )}
+
         {/* VALID UPDATES (Buy/Sell from Excel) */}
         <div className="mb-6">
-          <h3 className="text-lg font-semibold mb-2">Aggiornamenti Validi</h3>
+          <h3 className="text-lg font-semibold mb-2">Aggiornamenti Portafoglio</h3>
           <Table>
             <TableHeader>
               <TableRow>
@@ -96,7 +127,7 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
               ))}
               {validItems.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-gray-500">Nessun aggiornamento automatico rilevato.</TableCell>
+                  <TableCell colSpan={5} className="text-center text-gray-500">Nessun aggiornamento di quantità rilevato.</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -174,7 +205,7 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Annulla</Button>
-          <Button onClick={handleSubmit} disabled={validItems.length === 0 && missingItems.length === 0}>
+          <Button onClick={handleSubmit} disabled={!canSubmit}>
             Conferma e Sincronizza
           </Button>
         </DialogFooter>
