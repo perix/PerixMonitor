@@ -2,6 +2,6 @@ flask
 pandas
 numpy
 scipy
-yfinance
 requests
-# openbb  # Commented out initially to save space, will enable if needed and size permits
+supabase
+openpyxl

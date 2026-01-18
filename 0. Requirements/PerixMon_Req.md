@@ -12,7 +12,13 @@ I want to build a personal web application to track financial investments for an
 - G) “Operazione” – a string value that can be only “Acquito” (purchase) or “Vendita” (Sell)
 - H) “Prezzo Operazione (EUR)” – a floating number representing the Price of the G operation in EURO.
 
-The application must register all the transaction for each ISIN, initializing an internal database for new ISIN (the one never imported before) and shall calculate precise performance metrics like MWR (Money Weighted Return) and other typical KPI you can find in financial literature.
+The application must register all the- **Ingestione Dati**: Upload di file Excel, parsing intelligente, riconciliazione automatica.
+- **Supporto Multi-Utente**:
+    - Ogni utente può gestire uno o più portafogli distinti.
+    - I dati (Transazioni, Asset, Performance) sono segregati per Portafoglio.
+- **Riconciliazione**: Rilevamento automatico di Acquisti/Vendite in base alle differenze di quantità.
+- **Logica Fiscale/Finanziaria**: Calcolo MWR (Money Weighted Return) e XIRR.
+- **Dashboard**: Visualizzazione chiara di Allocazione e Performance.ial literature.
 
 ## TECHNICAL STACK (Vercel and Supabase Non-negotiable):
 

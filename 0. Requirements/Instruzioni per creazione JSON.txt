@@ -1,0 +1,16 @@
+LU0766124126
+
+
+Recupera informazioni per l'asset:
+- LU0766124126 
+- Data inizio: 01/01/2024
+- Data fine:   oggi
+
+e inseriscile in un formato JSON ben strutturato che fornisca. - Anagrafica - Rating - Categoria - Ultimo prezzo di chiusura - struttura dei dividenti o cedole eventuali
+
+Recupera informazioni per l'asset:
+- LU0766124126 
+- Data inizio: 01/01/2024
+- Data fine:   oggi
+
+e inseriscile in un formato JSON ben strutturato che fornisca. - Anagrafica - Rating - Categoria - Ultimo prezzo di chiusura - elenco eventuali cedole staccate ufficialmente fino ad oggi - storico dei prezzi con 10 datapoint nell'arco temporale tra data inizio e data fine 

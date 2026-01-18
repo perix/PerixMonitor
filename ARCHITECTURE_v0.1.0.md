@@ -19,7 +19,6 @@ L'obiettivo principale è l'ingestione "intelligente" di file Excel di portafogl
 - **Librerie Core**:
     - `pandas`: Parsing ed elaborazione dati Excel.
     - `scipy`: Calcoli finanziari (XIRR ottimizzato).
-    - `yfinance` / `openbb`: Recupero dati di mercato (prezzi, settori).
 - **Logging**: Sistema di logging su file (`perix_monitor.log`) con rotazione e stack trace completi.
 
 ### Database
@@ -29,6 +28,7 @@ L'obiettivo principale è l'ingestione "intelligente" di file Excel di portafogl
     - `transactions`: Storico operazioni (Acquisto, Vendita, Dividendo).
     - `portfolios`: Contenitore logico per utente.
     - `snapshots`: Storico degli upload Excel.
+    - `asset_prices`: Storico prezzi manuale (ISIN, Prezzo, Data, Fonte).
 
 ## 3. Flusso di Ingestione (Smart Ingestion)
 
@@ -59,4 +59,4 @@ Il cuore dell'applicazione è la logica di riconciliazione automatica (`api/inge
 ### Prossimi Passi (Roadmap)
 - [ ] **Persistenza**: Collegare l'endpoint `/api/sync` a Supabase per salvare effettivamente le transazioni.
 - [ ] **Dashboard**: Creare grafici a torta (Allocazione) e a linea (Andamento Valore).
-- [ ] **Market Data**: Arricchire i dati degli asset (Nomi, Settori) usando API esterne.
+- [ ] **Market Data**: Arricchire i dati degli asset (Nomi, Settori) usando database interno popolato da Excel.

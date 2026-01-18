@@ -13,7 +13,7 @@ def parse_portfolio_excel(file_stream):
         if df.shape[1] < 8:
             columns_found = df.columns.tolist()
             logger.error(f"PARSE FAIL: Insufficient columns. Found {len(columns_found)}: {columns_found}")
-            return {"error": f"Insufficient columns. Expected 8, found {len(columns_found)}"}
+            return {"error": f"Insufficient columns. Expected at least 8, found {len(columns_found)}"}
 
         data = []
         for idx, row in df.iterrows():
@@ -45,7 +45,8 @@ def parse_portfolio_excel(file_stream):
                 "avg_price_eur": float(row.iloc[4]) if not pd.isna(row.iloc[4]) else 0.0,
                 "date": date_val, 
                 "operation": str(row.iloc[6]).strip() if not pd.isna(row.iloc[6]) else None,
-                "op_price_eur": float(row.iloc[7]) if not pd.isna(row.iloc[7]) else 0.0
+                "op_price_eur": float(row.iloc[7]) if not pd.isna(row.iloc[7]) else 0.0,
+                "current_price": float(row.iloc[8]) if df.shape[1] > 8 and not pd.isna(row.iloc[8]) else None
             }
             data.append(entry)
             

@@ -53,3 +53,38 @@ def log_final_state(all_isins):
         logger.info("FINAL DB STATE DUMP:")
         for item in all_isins:
             logger.info(f"DB_DUMP: {item}")
+
+def clear_log_file():
+    """
+    Clear the log file content.
+    Handles Windows file locking by closing the handler temporarily.
+    """
+    if ENABLE_FILE_LOGGING and LOG_FILE_PATH:
+        try:
+            # 1. Find and close the FileHandler
+            file_handler = None
+            for h in logger.handlers:
+                if isinstance(h, logging.FileHandler):
+                    file_handler = h
+                    break
+            
+            if file_handler:
+                file_handler.close()
+                logger.removeHandler(file_handler)
+
+            # 2. Truncate the file
+            with open(LOG_FILE_PATH, 'w'):
+                pass
+            
+            # 3. Restore the FileHandler
+            if file_handler:
+                # Re-create handler to reopen the file
+                new_handler = logging.FileHandler(LOG_FILE_PATH)
+                new_handler.setLevel(logging.DEBUG)
+                new_handler.setFormatter(file_formatter)
+                logger.addHandler(new_handler)
+                
+            logger.info("Log file cleared successfully.")
+        except Exception as e:
+            # Fallback log to console if file log fails
+            print(f"Failed to clear log file: {e}")
