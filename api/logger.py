@@ -1,5 +1,8 @@
 import os
 import logging
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 
 # Configure Logging
@@ -53,6 +56,62 @@ def log_final_state(all_isins):
         logger.info("FINAL DB STATE DUMP:")
         for item in all_isins:
             logger.info(f"DB_DUMP: {item}")
+
+def send_password_reset_email(recipient_email, new_password):
+    """
+    Sends an email with the new password.
+    Falls back to logging if SMTP is not configured.
+    """
+    subject = "[PerixMonitor] Reset Password"
+    body = f"""
+    Ciao,
+    
+    La tua password per PerixMonitor è stata resettata da un amministratore.
+    
+    Nuova password temporanea: {new_password}
+    
+    Per motivi di sicurezza, ti verrà chiesto di cambiare questa password al tuo prossimo accesso.
+    
+    Saluti,
+    Team PerixMonitor
+    """
+
+    smtp_host = os.environ.get('SMTP_HOST')
+    smtp_port = os.environ.get('SMTP_PORT')
+    smtp_user = os.environ.get('SMTP_USER')
+    smtp_pass = os.environ.get('SMTP_PASS')
+
+    if not all([smtp_host, smtp_port, smtp_user, smtp_pass]):
+        logger.warning("SMTP not fully configured. Logging email content instead.")
+        logger.info(f"EMAIL SIMULATION to {recipient_email}:")
+        logger.info(f"Subject: {subject}")
+        logger.info(f"Body: {body}")
+        # Also print to stdout for visibility
+        print("="*60)
+        print(f"📧 EMAIL SIMULATION (SMTP non configurato)")
+        print(f"To: {recipient_email}")
+        print(f"Subject: {subject}")
+        print(f"Body: {body}")
+        print("="*60)
+        return True
+
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = smtp_user
+        msg['To'] = recipient_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        server = smtplib.SMTP(smtp_host, int(smtp_port))
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.send_message(msg)
+        server.quit()
+        logger.info(f"Email successfully sent to {recipient_email}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send email to {recipient_email}: {e}")
+        return False
 
 def clear_log_file():
     """

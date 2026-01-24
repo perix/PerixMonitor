@@ -449,6 +449,119 @@ def validate_model_route():
         logger.error(f"VALIDATE AI CRITICAL ERROR: {e}")
         return jsonify(error=str(e)), 500
 
+        return jsonify(error=str(e)), 500
+
+# --- ADMIN USER MANAGEMENT ---
+
+@app.route('/api/admin/users', methods=['GET'])
+def list_users_route():
+    try:
+        supabase = get_supabase_client()
+        # list_users() returns UserResponse object which has 'users' property (list of User objects)
+        response = supabase.auth.admin.list_users() 
+        
+        # We need to serialize User objects to dicts
+        users_list = []
+        for u in response:
+            users_list.append({
+                "id": u.id,
+                "email": u.email,
+                "created_at": u.created_at,
+                "last_sign_in_at": u.last_sign_in_at
+            })
+            
+        return jsonify(users=users_list), 200
+    except Exception as e:
+        logger.error(f"ADMIN LIST USERS FAIL: {e}")
+        return jsonify(error=str(e)), 500
+
+@app.route('/api/admin/users/<user_id>', methods=['DELETE'])
+def delete_user_route(user_id):
+    try:
+        supabase = get_supabase_client()
+        supabase.auth.admin.delete_user(user_id)
+        logger.info(f"ADMIN: Deleted user {user_id}")
+        return jsonify(message="User deleted"), 200
+    except Exception as e:
+        logger.error(f"ADMIN DELETE USER FAIL: {e}")
+        return jsonify(error=str(e)), 500
+
+@app.route('/api/admin/users/<user_id>/reset_password', methods=['POST'])
+def reset_password_route(user_id):
+    """
+    Triggers Supabase's password reset email flow.
+    SECURITY: First invalidates the old password, then sends reset link.
+    """
+    try:
+        import secrets
+        
+        supabase = get_supabase_client()
+        
+        # 1. Get user email
+        user_res = supabase.auth.admin.get_user_by_id(user_id)
+        if not user_res.user or not user_res.user.email:
+            return jsonify(error="User not found or has no email"), 404
+        
+        user_email = user_res.user.email
+        
+        # 2. SECURITY: Immediately invalidate old password by setting a random one
+        # This ensures the old password cannot be used while waiting for reset
+        random_password = secrets.token_urlsafe(32)
+        supabase.auth.admin.update_user_by_id(
+            user_id,
+            {"password": random_password}
+        )
+        logger.info(f"ADMIN: Old password invalidated for user {user_id}")
+        
+        # 3. Send password reset email using Supabase's built-in method
+        # This actually sends the email (unlike generate_link which only generates)
+        supabase.auth.reset_password_for_email(user_email)
+        
+        logger.info(f"ADMIN: Password reset email sent to {user_email} for user {user_id}")
+        
+        return jsonify(
+            message=f"Password invalidata. Email di reset inviata a {user_email}",
+            email=user_email
+        ), 200
+        
+    except Exception as e:
+        logger.error(f"ADMIN PASSWORD RESET FAIL: {e}")
+        return jsonify(error=str(e)), 500
+
+@app.route('/api/user/change_password', methods=['POST'])
+def user_change_password_route():
+    """Endpoint for authenticated users to change their own password.
+    This also clears the needs_password_change flag from app_metadata.
+    """
+    try:
+        data = request.json
+        new_password = data.get('password')
+        user_id = data.get('user_id')
+        
+        if not new_password or len(new_password) < 6:
+            return jsonify(error="Password must be at least 6 characters"), 400
+        
+        if not user_id:
+            return jsonify(error="Missing user_id"), 400
+
+        supabase = get_supabase_client()
+        
+        # Update password AND clear the app_metadata flag
+        supabase.auth.admin.update_user_by_id(
+            user_id, 
+            {
+                "password": new_password,
+                "app_metadata": {"needs_password_change": False}
+            }
+        )
+        logger.info(f"USER: Password changed for user {user_id}, cleared needs_password_change flag")
+        
+        return jsonify(message="Password updated successfully"), 200
+    except Exception as e:
+        logger.error(f"USER PASSWORD CHANGE FAIL: {e}")
+        return jsonify(error=str(e)), 500
+
+
 if __name__ == '__main__':
     from dashboard import register_dashboard_routes
     from assets import register_assets_routes

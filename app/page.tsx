@@ -68,9 +68,7 @@ export default function Home() {
                     Vai alla Dashboard <ArrowRight className="ml-2 w-4 h-4" />
                   </Link>
                 </Button>
-                <Button asChild variant="ghost" className="w-full text-muted-foreground hover:text-foreground">
-                  <Link href="/upload">Gestisci Dati</Link>
-                </Button>
+
               </div>
             </div>
           </div>
