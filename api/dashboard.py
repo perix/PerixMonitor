@@ -21,7 +21,7 @@ def register_dashboard_routes(app):
             supabase = get_supabase_client()
             
             # 1. Fetch Transactions
-            res_trans = supabase.table('transactions').select("*, assets(isin, name)").eq('portfolio_id', portfolio_id).execute()
+            res_trans = supabase.table('transactions').select("*, assets(id, isin, name)").eq('portfolio_id', portfolio_id).execute()
             transactions = res_trans.data
             
             if not transactions:
@@ -131,7 +131,35 @@ def register_dashboard_routes(app):
             if computed_xirr is None:
                 computed_xirr = 0
 
-            # 5. Summary Metrics
+            # 5. Fetch Colors
+            # Optimization: Fetch all colors for this portfolio in one go
+            res_colors = supabase.table('portfolio_asset_settings').select('asset_id, color').eq('portfolio_id', portfolio_id).execute()
+            color_map = {row['asset_id']: row['color'] for row in res_colors.data}
+
+            # Attach colors to allocation data
+            for item in allocation_data:
+                # Find asset id from isin (we only have ISIN in active_holdings keys, but we can look up if needed)
+                # But wait, allocation_data has ISIN. portfolio_asset_settings uses asset_id.
+                # We need to map ISIN -> Asset ID.
+                # We have 'holdings' but we didn't store asset_id there efficiently.
+                # Let's rebuild a small map from transactions first or just fetch asset IDs.
+                pass 
+                
+            # Better approach: We specifically need Asset IDs.
+            # Let's get them from transactions (optimization: we requested assets(isin, ..) in step 1)
+            # We can build a map isin -> asset_id from transactions
+            isin_to_id = {}
+            for t in transactions:
+                 isin_to_id[t['assets']['isin']] = t['assets']['id']
+
+            for item in allocation_data:
+                aid = isin_to_id.get(item['isin'])
+                if aid and aid in color_map:
+                    item['color'] = color_map[aid]
+                else:
+                    item['color'] = '#888888' # Fallback for unassigned
+
+            # 6. Summary Metrics (Restored)
             pl_value = current_total_value - total_invested
             pl_percent = (pl_value / total_invested * 100) if total_invested > 0 else 0
 
@@ -147,6 +175,10 @@ def register_dashboard_routes(app):
         except Exception as e:
             logger.error(f"DASHBOARD ERROR: {str(e)}")
             logger.error(traceback.format_exc())
+            with open("debug_error.log", "a") as f:
+                f.write(f"SUMMARY ERROR: {datetime.now()}\n")
+                f.write(traceback.format_exc())
+                f.write("\n")
             return jsonify(error=str(e)), 500
 
     @app.route('/api/dashboard/history', methods=['GET'])
@@ -158,8 +190,8 @@ def register_dashboard_routes(app):
 
             supabase = get_supabase_client()
             
-            # 1. Fetch all transactions
-            res_trans = supabase.table('transactions').select("*, assets(isin, name)").eq('portfolio_id', portfolio_id).order('date').execute()
+            # 1. Fetch all transactions with metadata
+            res_trans = supabase.table('transactions').select("*, assets(id, isin, name, metadata)").eq('portfolio_id', portfolio_id).order('date').execute()
             if not res_trans.data:
                 return jsonify(history=[], assets=[])
                 
@@ -171,30 +203,72 @@ def register_dashboard_routes(app):
             start_date = datetime.fromisoformat(start_date_str).replace(tzinfo=None)
             end_date = datetime.now()
             
-            # Generate monthly check-points
+            # Helper to extract name - prioritize DB name (from Excel), then LLM metadata
+            def get_asset_name(t_item):
+                # Priority 1: DB name column (from Excel "Descrizione Titolo")
+                db_name = t_item['assets'].get('name')
+                isin = t_item['assets'].get('isin')
+                if db_name and db_name != isin:
+                    return db_name
+                
+                # Priority 2: LLM metadata
+                meta = t_item['assets'].get('metadata')
+                if meta and isinstance(meta, dict):
+                    # Check profile.name
+                    if 'profile' in meta and isinstance(meta['profile'], dict):
+                        candidate = meta['profile'].get('name')
+                        if candidate: return candidate
+
+                    # Check general.name
+                    if 'general' in meta and isinstance(meta['general'], dict):
+                        candidate = meta['general'].get('name')
+                        if candidate: return candidate
+                        
+                    # Check Yahoo/Other schemas (top level)
+                    candidate = meta.get('longName') or meta.get('shortName') or meta.get('symbol') or meta.get('name')
+                    if candidate: return candidate
+                    
+                return isin  # Fallback to ISIN
+
+            # Generate check-points (Dynamic Granularity)
+            days_diff = (end_date - start_date).days
+            
             check_points = []
-            curr = start_date.replace(day=1) + timedelta(days=32)
-            curr = curr.replace(day=1) # Start of next month
+            current_cp = start_date
             
-            while curr < end_date:
-                check_points.append(curr)
-                curr = (curr.replace(day=1) + timedelta(days=32)).replace(day=1)
+            if days_diff < 90:
+                # Daily for short periods
+                step = timedelta(days=1)
+            elif days_diff < 365:
+                 # Weekly for medium periods
+                 step = timedelta(weeks=1)
+            else:
+                 # Monthly for long periods
+                 # Approximate month step
+                 step = timedelta(days=30) 
+
+            # Start from the next interval to avoid double counting start date if we want
+            # But ensuring we cover the range. 
+            current_cp += step
             
+            while current_cp < end_date:
+                check_points.append(current_cp)
+                current_cp += step
+
             # Always include today
             check_points.append(end_date)
-            
+
             # 3. Calculate MWR History per Asset
             assets_history = []
             
             for isin in all_isins:
-                asset_name = next((t['assets']['name'] for t in transactions if t['assets']['isin'] == isin), isin)
+                # Find a transaction for this ISIN to get asset details
+                sample_t = next((t for t in transactions if t['assets']['isin'] == isin), None)
+                asset_name = get_asset_name(sample_t) if sample_t else isin
                 
-                # Fetch price history for this asset
+                # ... (price history fetch remains) ...
+                
                 price_hist = get_price_history(isin) 
-                # price_hist is [{'date': 'YYYY-MM-DD', 'price': 123.4}, ...] sorted asc
-                
-                # Convert to lookup dict for speed (date -> price)
-                # We will need closest price search
                 price_map = {p['date']: p['price'] for p in price_hist}
                 sorted_price_dates = sorted(price_map.keys())
                 
@@ -208,6 +282,7 @@ def register_dashboard_routes(app):
                     # 1. Cashflows up to cp
                     cash_flows = []
                     current_qty = 0
+                    net_invested_at_cp = 0.0 # Track net invested for P&L
                     
                     for t in asset_trans:
                         t_date = datetime.fromisoformat(t['date']).replace(tzinfo=None)
@@ -216,22 +291,21 @@ def register_dashboard_routes(app):
                             
                         qty = t['quantity']
                         price = t['price_eur']
+                        val = qty * price
                         is_buy = t['type'] == 'BUY'
                         
                         if is_buy:
                             current_qty += qty
-                            cash_flows.append({"date": t_date, "amount": -(qty * price)})
+                            cash_flows.append({"date": t_date, "amount": -val})
+                            net_invested_at_cp += val
                         else:
                             current_qty -= qty
-                            cash_flows.append({"date": t_date, "amount": (qty * price)})
+                            cash_flows.append({"date": t_date, "amount": val})
+                            net_invested_at_cp -= val
                             
                     if current_qty > 0.0001:
-                        # Find price at cp
-                        # Simple exact match or nearest previous
+                        # ... (Price finding logic remains) ...
                         price_at_cp = 0
-                        
-                        # Find nearest date <= cp_str in sorted_price_dates
-                        # (Linear scan is fine for small history, binary search better but ok here)
                         best_date = None
                         for d in sorted_price_dates:
                             if d <= cp_str:
@@ -242,28 +316,47 @@ def register_dashboard_routes(app):
                         if best_date:
                             price_at_cp = price_map[best_date]
                         else:
-                            # If no price history before CP, use last transaction price??
-                            # Or skip
                             continue
 
                         # Add current value as inflow
                         current_val = current_qty * price_at_cp
                         cash_flows.append({"date": cp, "amount": current_val})
                         
+                        # Calculate Metrics
+                        pnl_at_cp = current_val - net_invested_at_cp
+                        
                         try:
                             val = xirr(cash_flows)
                             if val is not None:
                                 mwr_series.append({
                                     "date": cp_str,
-                                    "value": round(val * 100, 2)
+                                    "value": round(val * 100, 2),
+                                    "pnl": round(pnl_at_cp, 2)
                                 })
                         except:
                             pass
+
+
                             
                 if mwr_series:
+                    # Get Asset ID for color looking
+                    # we can find it from transactions
+                    sample_t = next((t for t in transactions if t['assets']['isin'] == isin), None)
+                    asset_id = sample_t['assets']['id'] if sample_t else None
+                    
+                    # Fetch color (could be optimized with bulk fetch outside loop, but this is fine for N < 50)
+                    color = "#888888"
+                    if asset_id:
+                         try:
+                             res_c = supabase.table('portfolio_asset_settings').select('color').eq('portfolio_id', portfolio_id).eq('asset_id', asset_id).execute()
+                             if res_c.data:
+                                 color = res_c.data[0]['color']
+                         except: pass
+
                     assets_history.append({
                         "isin": isin,
                         "name": asset_name,
+                        "color": color, 
                         "data": mwr_series
                     })
 
@@ -405,4 +498,8 @@ def register_dashboard_routes(app):
         except Exception as e:
             logger.error(f"DASHBOARD HISTORY ERROR: {str(e)}")
             logger.error(traceback.format_exc())
+            with open("debug_error.log", "a") as f:
+                f.write(f"HISTORY ERROR: {datetime.now()}\n")
+                f.write(traceback.format_exc())
+                f.write("\n")
             return jsonify(error=str(e)), 500

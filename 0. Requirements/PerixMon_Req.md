@@ -11,6 +11,7 @@ I want to build a personal web application to track financial investments for an
 - F) “Data (acquisto/vendita)” – the purchase date (present only if some quantity has been purchased since last import of data)
 - G) “Operazione” – a string value that can be only “Acquito” (purchase) or “Vendita” (Sell)
 - H) “Prezzo Operazione (EUR)” – a floating number representing the Price of the G operation in EURO.
+- I) “Prezzo Corrente (EUR)” – current market price of the asset (used for historical price tracking even without transactions).
 
 The application must register all the- **Ingestione Dati**: Upload di file Excel, parsing intelligente, riconciliazione automatica.
 - **Supporto Multi-Utente**:
@@ -40,7 +41,15 @@ Hosting: Vercel (Front-end + Backend).
 
 - Log-in: for the operations you cannot perform autonomously (e.g., SUPABASE and VERCEL configuration), guide the user step by step. If it can be helpful during the development/testing phase, ask the user to log in to Vercel and Supabase from the IDE terminal.
 
-- Smart Ingestion: The app must parse the excel file described before. If the field “Operazione” is not specified the corresponding row must be skipped because it means thatfor the corresponding ISIN there have been no changing in quantity. It must validate data consistency (e.g., you cannot sell what you don't own). For every ISIN the previously DB stored quantity must be compared with the quantity present in the imported excel table: if the quantity in the excel table is bigger the row must state a “Acquisto” in column “Operazione”, if the quantity in the excel table is lower the row must state a “Vendita” in column “Operazione”
+- Smart Ingestion & Reconciliation: The app parses the portfolio Excel (9 columns). 
+  - It detects specific operations ("Acquisto"/"Vendita") or infers them from quantity differences vs DB.
+  - **Price-Only Updates**: If an asset has no quantity change (or Qty=0 in input) but includes a "Prezzo Corrente" (Col I), the app saves this price point for historical charting without creating a transaction.
+  - **Safe Protocol**: No data is written immediately. The app returns a "Delta" preview for user confirmation.
+
+- Dividend & Expense Ingestion: The app supports a separate file structure (or flexible columns) for cash flows.
+  - **Detection**: identified by 3 columns [ISIN, Amount, Date] or specifically by the header "Data Flusso" in the 3rd column.
+  - **Expenses**: Negative amounts in the "Amount" column are treated as expenses/cash outflows.
+  - **Dividends**: Positive amounts are treated as dividends/coupons.
 
 - ISIN Resolution: It must resolve ISIN codes to Tickers (e.g., IT000... -> TICKER.MI) using a fallback strategy (OpenFIGI -> Heuristic Mapping -> Manual User Override with corresponding Explanatory GUI showed to the user).
 

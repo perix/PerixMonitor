@@ -10,7 +10,8 @@ import {
     ShieldAlert,
     Users,
     Key,
-    UserX
+    UserX,
+    FileText
 } from 'lucide-react';
 import {
     AlertDialog,
@@ -42,6 +43,8 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
 
 
 interface User {
@@ -62,9 +65,29 @@ export default function SystemMaintenancePanel() {
     const [resettingPwdUser, setResettingPwdUser] = useState<User | null>(null);
     const [pwdLoading, setPwdLoading] = useState<boolean>(false);
 
+    // Log Config States
+    const [logEnabled, setLogEnabled] = useState<boolean>(false);
+    const [loadingLogConfig, setLoadingLogConfig] = useState<boolean>(false);
+    const [savingLogConfig, setSavingLogConfig] = useState<boolean>(false);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
     useEffect(() => {
+        fetchCurrentUser();
         fetchUsers();
     }, []);
+
+    useEffect(() => {
+        if (currentUserId) {
+            fetchLogConfig();
+        }
+    }, [currentUserId]);
+
+    const fetchCurrentUser = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+            setCurrentUserId(user.id);
+        }
+    };
 
     const fetchUsers = async () => {
         setLoadingUsers(true);
@@ -75,6 +98,34 @@ export default function SystemMaintenancePanel() {
             console.error("Failed to fetch users", error);
         } finally {
             setLoadingUsers(false);
+        }
+    };
+
+    const fetchLogConfig = async () => {
+        if (!currentUserId) return;
+        setLoadingLogConfig(true);
+        try {
+            const res = await axios.get(`/api/settings/log-config?user_id=${currentUserId}`);
+            setLogEnabled(res.data.enabled || false);
+        } catch (error) {
+            console.error("Failed to fetch log config", error);
+        } finally {
+            setLoadingLogConfig(false);
+        }
+    };
+
+    const handleLogToggle = async (enabled: boolean) => {
+        if (!currentUserId) return;
+        setSavingLogConfig(true);
+        try {
+            await axios.post('/api/settings/log-config', { enabled, user_id: currentUserId });
+            setLogEnabled(enabled);
+            // Dispatch event to notify Settings page
+            window.dispatchEvent(new CustomEvent('log-config-changed'));
+        } catch (error) {
+            console.error("Failed to save log config", error);
+        } finally {
+            setSavingLogConfig(false);
         }
     };
 
@@ -137,8 +188,43 @@ export default function SystemMaintenancePanel() {
 
             <div className="grid grid-cols-1 gap-8">
 
+                {/* LOG CONFIGURATION */}
+                <Card className="bg-card/50 backdrop-blur-md border-white/40">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-foreground">
+                            <span className="p-2 bg-amber-500/10 rounded-lg text-amber-500">
+                                <FileText className="w-4 h-4" />
+                            </span>
+                            Configurazione Log
+                        </CardTitle>
+                        <CardDescription>Abilita o disabilita il logging su file</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="flex items-center justify-between p-4 rounded-lg border border-white/10 bg-secondary/20">
+                            <div className="space-y-1">
+                                <Label htmlFor="log-toggle" className="text-sm font-medium text-slate-200">File Logging</Label>
+                                <p className="text-xs text-slate-400">
+                                    Quando abilitato, i log vengono salvati su file per debug avanzato.
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {(loadingLogConfig || savingLogConfig) && (
+                                    <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                                )}
+                                <Switch
+                                    id="log-toggle"
+                                    checked={logEnabled}
+                                    onCheckedChange={handleLogToggle}
+                                    disabled={loadingLogConfig || savingLogConfig}
+                                    className="data-[state=checked]:bg-amber-500"
+                                />
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
                 {/* USER MANAGEMENT */}
-                <Card className="bg-card/50 backdrop-blur-md border-white/10">
+                <Card className="bg-card/50 backdrop-blur-md border-white/40">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-foreground">
                             <span className="p-2 bg-indigo-500/10 rounded-lg text-indigo-500">

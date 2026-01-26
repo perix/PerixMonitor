@@ -26,6 +26,7 @@ interface AppConfigState {
     cost_in: number;
     cost_out: number;
     history_length: number;
+    reasoning_effort?: string;
 }
 
 export default function AiConfigPanel() {
@@ -36,7 +37,8 @@ export default function AiConfigPanel() {
         max_tokens: 1000,
         cost_in: 0.15,
         cost_out: 0.6,
-        history_length: 8
+        history_length: 8,
+        reasoning_effort: 'medium'
     });
     const [loading, setLoading] = useState<boolean>(false);
     const [testStatus, setTestStatus] = useState<'success' | 'error' | null>(null);
@@ -118,6 +120,8 @@ export default function AiConfigPanel() {
             model: modelId,
             cost_in: modelData ? modelData.default_in : prev.cost_in,
             cost_out: modelData ? modelData.default_out : prev.cost_out,
+            // Reset reasoning effort if not gpt-5
+            reasoning_effort: modelId.startsWith('gpt-5') ? (prev.reasoning_effort || 'medium') : undefined
         }));
     };
 
@@ -151,6 +155,8 @@ export default function AiConfigPanel() {
         }
     };
 
+    const isReasoningModel = config.model.startsWith('gpt-5');
+
     return (
         <div className="space-y-8">
             <div className="flex items-center gap-4">
@@ -166,7 +172,7 @@ export default function AiConfigPanel() {
             <div className="grid grid-cols-1 gap-6">
 
                 {/* MODEL SELECTION */}
-                <Card className="bg-card/50 backdrop-blur-md border-white/10">
+                <Card className="bg-card/50 backdrop-blur-md border-white/40">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-foreground">
                             <span className="p-2 bg-blue-500/10 rounded-lg text-blue-500">
@@ -211,7 +217,7 @@ export default function AiConfigPanel() {
 
                 {/* PARAMETERS */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <Card className="bg-card/50 backdrop-blur-md border-white/10">
+                    <Card className="bg-card/50 backdrop-blur-md border-white/40">
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-foreground">
                                 <span className="p-2 bg-violet-500/10 rounded-lg text-violet-500">
@@ -221,6 +227,31 @@ export default function AiConfigPanel() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-6">
+
+                            {/* Reasoning Effort (Only for GPT-5) */}
+                            {isReasoningModel && (
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-center">
+                                        <Label className="text-foreground">Reasoning Effort</Label>
+                                        <Badge variant="outline" className="text-amber-400 border-amber-500/20 bg-amber-500/5 uppercase">
+                                            {config.reasoning_effort || 'medium'}
+                                        </Badge>
+                                    </div>
+                                    <select
+                                        value={config.reasoning_effort || 'medium'}
+                                        onChange={(e) => setConfig({ ...config, reasoning_effort: e.target.value })}
+                                        className="w-full bg-secondary/20 border border-white/10 rounded-lg p-2 text-foreground focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                    >
+                                        <option value="none">None (Fastest)</option>
+                                        <option value="low">Low</option>
+                                        <option value="medium">Medium (Default)</option>
+                                        <option value="high">High (Maximum Reasoning)</option>
+                                    </select>
+                                    <p className="text-xs text-muted-foreground">Controlla la profondità di ragionamento del modello.</p>
+                                    <Separator className="bg-white/10 mt-3" />
+                                </div>
+                            )}
+
                             {/* Temperature */}
                             <div className="space-y-3">
                                 <div className="flex justify-between items-center">
@@ -281,7 +312,7 @@ export default function AiConfigPanel() {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-card/50 backdrop-blur-md border-white/10">
+                    <Card className="bg-card/50 backdrop-blur-md border-white/40">
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-foreground">
                                 <span className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500">

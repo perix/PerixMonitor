@@ -13,13 +13,97 @@ L'obiettivo principale è l'ingestione "intelligente" di file Excel di portafogl
 - **Design System**: Glassmorphism (Sfondi sfocati, gradienti scuri/blu), Font Serif per titoli istituzionali.
 - **Localizzazione**: Interfaccia completamente in Italiano.
 
-### Backend
-- **Runtime**: Python 3.9+ (Serverless Functions su Vercel).
-- **Framework API**: Flask (utilizzato come bridge per le API route).
+### Backend (Python API Server)
+
+> [!NOTE]
+> **Per i non addetti ai lavori**: L'applicazione è composta da **due server separati** che lavorano insieme. Il primo (Next.js) gestisce l'interfaccia grafica; il secondo (Python/Flask) esegue i calcoli complessi e comunica con il database.
+
+#### Architettura a Due Server
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        UTENTE (Browser)                         │
+│                     http://localhost:3000                       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    SERVER 1: FRONTEND                           │
+│                    Next.js (porta 3000)                         │
+│                                                                 │
+│  • Mostra l'interfaccia grafica (pagine, bottoni, grafici)     │
+│  • Riceve input dall'utente (click, upload file)               │
+│  • NON esegue calcoli complessi                                │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                    Richieste HTTP (es. /api/dashboard/summary)
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    SERVER 2: BACKEND                            │
+│                    Python/Flask (porta 5328)                    │
+│                                                                 │
+│  • Elabora file Excel caricati                                 │
+│  • Calcola performance finanziarie (XIRR, MWR)                 │
+│  • Legge/scrive dati nel database Supabase                     │
+│  • Risponde con dati JSON al frontend                          │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    DATABASE                                     │
+│                    Supabase (PostgreSQL Cloud)                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Come Avviare l'Applicazione (Sviluppo Locale)
+
+Per far funzionare PerixMonitor in locale, **entrambi i server devono essere attivi**:
+
+| Comando | Server | Porta | Scopo |
+|---------|--------|-------|-------|
+| `npm run dev` | Frontend (Next.js) | 3000 | Interfaccia utente |
+| `python api/index.py` | Backend (Flask) | 5328 | Logica di business e database |
+
+> [!IMPORTANT]
+> Se avvii solo il frontend senza il backend Python, vedrai errori del tipo `ECONNREFUSED 127.0.0.1:5328` perché il frontend non riesce a contattare l'API.
+
+#### Struttura dei File Backend
+
+```
+api/
+├── index.py          # Entry point principale - avvia Flask e registra tutte le route
+├── dashboard.py      # API per la pagina Dashboard (grafici, KPI, storico)
+├── portfolio.py      # Gestione portafogli (crea, elimina, lista)
+├── assets.py         # Gestione anagrafica titoli
+├── ingest.py         # Parsing file Excel
+├── finance.py        # Calcoli finanziari (XIRR)
+├── price_manager.py  # Salvataggio storico prezzi
+├── llm_asset_info.py # Integrazione AI per info asset (OpenAI)
+├── supabase_client.py# Connessione al database
+└── logger.py         # Sistema di logging
+```
+
+#### Principali Endpoint API
+
+| Endpoint | Metodo | Funzione |
+|----------|--------|----------|
+| `/api/ingest` | POST | Riceve file Excel, lo analizza, restituisce anteprima |
+| `/api/sync` | POST | Conferma e salva transazioni/prezzi nel database |
+| `/api/dashboard/summary` | GET | Restituisce KPI aggregati del portafoglio |
+| `/api/dashboard/history` | GET | Restituisce storico performance per i grafici |
+| `/api/portfolios` | POST/DELETE | Crea o elimina un portafoglio |
+| `/api/admin/users` | GET | Lista utenti (solo admin) |
+
+#### Tecnologie Utilizzate
+
+- **Runtime**: Python 3.9+
+- **Framework API**: Flask (micro-framework web leggero)
 - **Librerie Core**:
-    - `pandas`: Parsing ed elaborazione dati Excel.
-    - `scipy`: Calcoli finanziari (XIRR ottimizzato).
-- **Logging**: Sistema di logging su file (`perix_monitor.log`) con rotazione e stack trace completi.
+    - `pandas`: Parsing ed elaborazione dati Excel
+    - `scipy`: Calcoli finanziari (XIRR ottimizzato)
+    - `openai`: Integrazione con modelli AI per arricchimento dati asset
+- **Logging**: Sistema di logging su file (`perix_monitor.log`) con rotazione e stack trace completi
 
 ### Database
 - **Provider**: Supabase (PostgreSQL).
@@ -59,10 +143,12 @@ Il sistema adotta un approccio "Read-Preview-Write" per evitare contaminazione d
 - Questi prezzi vengono salvati nella tabella `asset_prices` con `source='Manual Upload'`.
 - Questi prezzi alimentano sia il valore corrente del portafoglio sia lo storico per i grafici.
 
-### Gestione Cedole e Dividendi
-- File dedicato o rilevamento smart (3 colonne).
-- Memorizzati in tabella `dividends`.
-- Partecipano al calcolo del MWRR (XIRR) come flussi di cassa positivi.
+### Gestione Cedole, Dividendi e Spese
+- **Rilevamento File**: Identificazione automatica tramite intestazione colonna C ("Data Flusso") o struttura a 3 colonne.
+- **Formato Flessibile**: Supporta file con più di 3 colonne (le colonne extra vengono ignorate).
+- **Flussi Negativi**: Supporta importi negativi nella colonna B per registrare spese o uscite di cassa.
+- **Memorizzazione**: Dati salvati nella tabella `dividends` con riferimento all'asset e al portafoglio.
+- **Utilizzo**: Partecipano al calcolo del MWRR (XIRR) come flussi di cassa (positivi o negativi).
 
 ## 5. Stato Attuale (v0.2.0)
 
@@ -75,10 +161,12 @@ Il sistema adotta un approccio "Read-Preview-Write" per evitare contaminazione d
 ### Prossimi Passi (Roadmap)
 - [ ] **MWRR Engine**: Aggiornare il calcolo XIRR per includere i dividendi.
 - [ ] **Asset History Fill**: Popolare `asset_metrics_history` durante la sync per abilitare grafici per singolo asset.
-### Dashboard 2.0
+### Dashboard 2.0 & UI Enhancements
 - [x] **Asset Filtering**: Lista "Asset Attivi" con checkbox per filtrare il grafico MWR.
 - [x] **Time Window**: Range Slider bi-direzionale per zoomare su specifici periodi temporali.
-- [x] **Color Matching**: Sincronizzazione colori tra lista asset e linee del grafico.
+- [x] **Persistent Colors**: Assegnazione colori univoci e persistenti per Asset nel database (`portfolio_asset_settings`).
+- [x] **Resizable Layout**: Layout a pannelli ridimensionabile con persistenza della posizione (LocalStorage) e miglior gestione larghezze minime.
+- [x] **Y-Axis Controls**: Slider verticale per scalare l'asse Y e toggle per griglie (Major/Minor).
 
 ### Ingestion Logic Refinement
 - [x] **Price decoupling**: Salvataggio prezzi storici (Colonna I) anche per asset con quantità zero (Watchlist).

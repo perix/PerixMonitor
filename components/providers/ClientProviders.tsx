@@ -23,10 +23,8 @@ export function ClientProviders({ children }: { children: React.ReactNode }) {
         <PortfolioProvider>
             <SidebarProvider>
                 <AppSidebar />
-                <main className="w-full relative">
-                    <div className="p-6">
-                        {children}
-                    </div>
+                <main className="w-full relative h-screen flex flex-col overflow-hidden">
+                    {children}
                 </main>
             </SidebarProvider>
         </PortfolioProvider>

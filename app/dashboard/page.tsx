@@ -4,7 +4,7 @@ import { DashboardCharts } from "@/components/dashboard/DashboardCharts"; // Wil
 import { PanelHeader } from "@/components/layout/PanelHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { usePortfolio } from "@/context/PortfolioContext";
-import { ArrowUpRight, DollarSign, Wallet, Activity, Loader2 } from "lucide-react";
+import { ArrowUpRight, Euro, Wallet, Activity, Loader2 } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import axios from "axios";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,21 +20,49 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(true);
     const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
 
+    const [initialSettings, setInitialSettings] = useState<{ timeWindow?: number, yAxisScale?: number } | null>(null);
+
+    // Debounced update function
+    const updateSettings = async (newSettings: { timeWindow?: number, yAxisScale?: number }) => {
+        if (!selectedPortfolioId) return;
+        try {
+            await axios.patch(`/api/portfolio/${selectedPortfolioId}/settings`, newSettings);
+        } catch (e) {
+            console.error("Failed to update settings:", e);
+        }
+    };
+
     useEffect(() => {
         async function fetchData() {
-            if (!selectedPortfolioId) return;
+            if (!selectedPortfolioId) {
+                setLoading(false);
+                setSummary(null);
+                setHistory([]);
+                return;
+            }
 
             setLoading(true);
             try {
-                const [resSummary, resHistory] = await Promise.all([
+                // Fetch details to get settings (now included in /api/portfolio/:id)
+                // Note: The previous code didn't fetch details separately here, but we need settings.
+                // We can fetch details or just modify dashboard/summary to return settings?
+                // The implementation plan said modifying dashboard/summary OR fetch details.
+                // Let's make a separate call to details for clean separation or use the new patch route?
+                // Actually, let's fetch details briefly.
+
+                const [resSummary, resHistory, resDetails] = await Promise.all([
                     axios.get(`/api/dashboard/summary?portfolio_id=${selectedPortfolioId}`),
-                    axios.get(`/api/dashboard/history?portfolio_id=${selectedPortfolioId}`)
+                    axios.get(`/api/dashboard/history?portfolio_id=${selectedPortfolioId}`),
+                    axios.get(`/api/portfolio/${selectedPortfolioId}`)
                 ]);
 
                 setSummary(resSummary.data);
-                setHistory(resHistory.data); // Now contains { series: [], portfolio: [] }
+                setHistory(resHistory.data);
 
-                // Initialize selection with ALL assets
+                // Set initial settings if present
+                const settings = resDetails.data.settings || {};
+                setInitialSettings(settings);
+
                 if (resHistory.data?.series) {
                     const allIsins = new Set<string>(resHistory.data.series.map((s: any) => s.isin));
                     setSelectedAssets(allIsins);
@@ -73,15 +101,15 @@ export default function DashboardPage() {
 
     return (
 
-        <div className="flex flex-1 flex-col h-full bg-background/50 p-6">
+        <div className="flex flex-1 flex-col h-full bg-background/50 p-6 overflow-y-auto">
             <PanelHeader title="Dashboard" />
 
-            <div className="flex flex-col gap-6">
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                    <Card className="bg-card/80 backdrop-blur-xl border-white/20 shadow-lg hover:bg-card/90 transition-colors">
+            <div className="flex flex-col gap-3">
+                <div className="grid gap-3" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr)" }}>
+                    <Card className="bg-card/80 backdrop-blur-xl border-white/40 shadow-lg hover:bg-card/90 transition-colors">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Patrimonio Totale</CardTitle>
-                            <DollarSign className="h-4 w-4 text-muted-foreground" />
+                            <Euro className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
                             <div className="text-2xl font-bold">€{summary.total_value?.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -90,7 +118,7 @@ export default function DashboardPage() {
                             </p>
                         </CardContent>
                     </Card>
-                    <Card className="bg-card/80 backdrop-blur-xl border-white/20 shadow-lg hover:bg-card/90 transition-colors">
+                    <Card className="bg-card/80 backdrop-blur-xl border-white/40 shadow-lg hover:bg-card/90 transition-colors">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">MWR (Money Weighted Return)</CardTitle>
                             <Activity className="h-4 w-4 text-muted-foreground" />
@@ -104,7 +132,7 @@ export default function DashboardPage() {
                             </p>
                         </CardContent>
                     </Card>
-                    <Card className="bg-card/80 backdrop-blur-xl border-white/20 shadow-lg hover:bg-card/90 transition-colors">
+                    <Card className="bg-card/80 backdrop-blur-xl border-white/40 shadow-lg hover:bg-card/90 transition-colors">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Profitto / Perdita</CardTitle>
                             <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
@@ -118,18 +146,50 @@ export default function DashboardPage() {
                             </p>
                         </CardContent>
                     </Card>
-                    <Card className="bg-card/80 backdrop-blur-xl border-white/20 shadow-lg hover:bg-card/90 transition-colors">
+                    <Card className="bg-card/80 backdrop-blur-xl border-white/40 shadow-lg hover:bg-card/90 transition-colors gap-0">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Asset Attivi</CardTitle>
                             <Wallet className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
-                        <CardContent>
-                            <div className="text-2xl font-bold mb-1">{summary.allocation?.length || 0}</div>
-                            <p className="text-xs text-muted-foreground mb-4">
-                                Strumenti in portafoglio
-                            </p>
+                        <CardContent className="pt-0">
+                            <div className="flex items-center justify-between mb-1">
+                                <div className="flex items-baseline gap-2">
+                                    <div className="text-2xl font-bold">{summary.allocation?.length || 0}</div>
+                                    <p className="text-xs text-muted-foreground">
+                                        Strumenti in portafoglio
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <label
+                                        htmlFor="filter-all-header"
+                                        className="text-[10px] font-medium leading-none cursor-pointer text-muted-foreground text-right"
+                                    >
+                                        {history.series && selectedAssets.size === history.series.length
+                                            ? "Tutti selezionati"
+                                            : selectedAssets.size > 0
+                                                ? "Alcuni selezionati"
+                                                : "Nessuno selezionato"
+                                        }
+                                    </label>
+                                    <Checkbox
+                                        id="filter-all-header"
+                                        checked={selectedAssets.size > 0}
+                                        onCheckedChange={(checked) => {
+                                            if (history.series) {
+                                                if (selectedAssets.size > 0) {
+                                                    setSelectedAssets(new Set());
+                                                } else {
+                                                    const allIsins = new Set<string>(history.series.map((s: any) => s.isin));
+                                                    setSelectedAssets(allIsins);
+                                                }
+                                            }
+                                        }}
+                                        className="border-white/50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground h-4 w-4"
+                                    />
+                                </div>
+                            </div>
 
-                            <ScrollArea className="h-[120px] w-full rounded border border-white/10 bg-black/20 p-2">
+                            <ScrollArea className="h-[160px] w-full rounded border border-white/10 bg-white/5 p-2 mt-3">
                                 <div className="flex flex-col gap-2">
                                     {history.series?.map((s: any, idx: number) => (
                                         <div key={s.isin} className="flex items-center space-x-2">
@@ -146,15 +206,20 @@ export default function DashboardPage() {
                                                     setSelectedAssets(next);
                                                 }}
                                                 className="border-white/50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                                                style={{ borderColor: COLORS[idx % COLORS.length] }}
+                                                style={{
+                                                    borderColor: s.color || COLORS[idx % COLORS.length],
+                                                    backgroundColor: selectedAssets.has(s.isin) ? (s.color || COLORS[idx % COLORS.length]) : 'transparent'
+                                                }}
                                             />
                                             <label
                                                 htmlFor={`filter-${s.isin}`}
-                                                className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer truncate max-w-[150px]"
-                                                title={s.name}
-                                                style={{ color: COLORS[idx % COLORS.length] }}
+                                                className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer w-full text-left"
+                                                title={`${s.name} (${s.isin})`}
+                                                style={{ color: s.color || COLORS[idx % COLORS.length] }}
                                             >
-                                                {s.isin}
+                                                <div className="truncate" style={{ width: 'calc(100% - 20px)' }}>
+                                                    {s.name} <span className="text-[10px] opacity-70">({s.isin})</span>
+                                                </div>
                                             </label>
                                         </div>
                                     ))}
@@ -164,14 +229,20 @@ export default function DashboardPage() {
                     </Card>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-1">
+                <div className="grid gap-3 md:grid-cols-1">
                     {/* 
                          MODIFIED: Full width graph as requested.
                          Removed the side allocation panel.
                          The NetWorthChart will be replaced/updated to show MWR of assets.
                      */}
                     <div className="col-span-1">
-                        <DashboardCharts allocationData={summary.allocation} history={filteredHistory} />
+                        <DashboardCharts
+                            allocationData={summary.allocation}
+                            history={filteredHistory}
+                            initialTimeWindow={initialSettings?.timeWindow}
+                            initialYAxisScale={initialSettings?.yAxisScale}
+                            onSettingsChange={updateSettings}
+                        />
                     </div>
                 </div>
             </div>

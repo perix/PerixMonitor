@@ -6,7 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { ReconciliationModal } from './ReconciliationModal';
+import { Sparkles } from 'lucide-react';
 
 import { PortfolioSelector } from '../user/PortfolioSelector';
 import { usePortfolio } from '@/context/PortfolioContext';
@@ -18,6 +21,8 @@ export const UploadForm = () => {
     const [delta, setDelta] = useState<any[] | null>(null);
     const [pricesAndSnapshot, setPricesAndSnapshot] = useState<{ prices: any[], snapshot: any } | null>(null);
     const [showModal, setShowModal] = useState(false);
+    const [enableAiLookup, setEnableAiLookup] = useState(true);
+    const [ignoreMissing, setIgnoreMissing] = useState(false);
 
     // Global Context State
     const { selectedPortfolioId, setSelectedPortfolioId } = usePortfolio();
@@ -63,6 +68,7 @@ export const UploadForm = () => {
         // Actually, let's keep it simple: Pass 'portfolio_id' to ingest as well, 
         // and update ingest.py to fetch holdings if present.
         formData.append('portfolio_id', selectedPortfolioId);
+        formData.append('ignore_missing', ignoreMissing ? 'true' : 'false');
 
 
         try {
@@ -84,7 +90,8 @@ export const UploadForm = () => {
                     await axios.post('/api/sync', {
                         changes: [],
                         dividends: data.parsed_data,
-                        portfolio_id: selectedPortfolioId
+                        portfolio_id: selectedPortfolioId,
+                        enable_ai_lookup: enableAiLookup
                     });
                     alert("Cedole importate con successo!");
                 }
@@ -121,7 +128,8 @@ export const UploadForm = () => {
                 changes: resolutions,
                 portfolio_id: selectedPortfolioId,
                 prices: pricesAndSnapshot?.prices || [],
-                snapshot: pricesAndSnapshot?.snapshot
+                snapshot: pricesAndSnapshot?.snapshot,
+                enable_ai_lookup: enableAiLookup
             });
             alert("Sincronizzazione completata con successo!");
             setShowModal(false);
@@ -134,7 +142,7 @@ export const UploadForm = () => {
 
     return (
         <div className="p-4 max-w-xl mx-auto space-y-6">
-            <Card className="bg-card/50 border-white/10 text-foreground backdrop-blur-md">
+            <Card className="bg-card/50 border-white/40 text-foreground backdrop-blur-md">
                 <CardHeader>
                     <CardTitle>Portafoglio</CardTitle>
                 </CardHeader>
@@ -146,7 +154,7 @@ export const UploadForm = () => {
                 </CardContent>
             </Card>
 
-            <Card className="bg-card/50 border-white/10 text-foreground backdrop-blur-md">
+            <Card className="bg-card/50 border-white/40 text-foreground backdrop-blur-md">
                 <CardHeader>
                     <CardTitle>Seleziona File Excel</CardTitle>
                 </CardHeader>
@@ -158,6 +166,49 @@ export const UploadForm = () => {
                         disabled={!selectedPortfolioId}
                         className="file:text-foreground text-foreground border-white/20 bg-secondary/20"
                     />
+
+                    {/* AI Lookup Toggle */}
+                    <div className="flex items-center justify-between p-3 rounded-lg border border-white/10 bg-secondary/20 mb-2">
+                        <div className="flex items-center gap-3">
+                            <Sparkles className="w-5 h-5 text-violet-400" />
+                            <div>
+                                <Label htmlFor="ai-lookup" className="text-sm font-medium text-foreground cursor-pointer">
+                                    Ricerca AI Asset
+                                </Label>
+                                <p className="text-xs text-muted-foreground">
+                                    Recupera automaticamente info asset via LLM per nuovi ISIN
+                                </p>
+                            </div>
+                        </div>
+                        <Switch
+                            id="ai-lookup"
+                            checked={enableAiLookup}
+                            onCheckedChange={setEnableAiLookup}
+                        />
+                    </div>
+
+                    {/* Ignore Missing Assets Toggle */}
+                    <div className="flex items-center justify-between p-3 rounded-lg border border-white/10 bg-secondary/20">
+                        <div className="flex items-center gap-3">
+                            <div className="w-5 h-5 flex items-center justify-center text-orange-400">
+                                {/* Simple icon or just verify alignment */}
+                                <span className="font-bold text-lg">!</span>
+                            </div>
+                            <div>
+                                <Label htmlFor="ignore-missing" className="text-sm font-medium text-foreground cursor-pointer">
+                                    Ignora Asset Mancanti
+                                </Label>
+                                <p className="text-xs text-muted-foreground">
+                                    Non segnalare come "Venduti" gli asset in DB assenti nel file
+                                </p>
+                            </div>
+                        </div>
+                        <Switch
+                            id="ignore-missing"
+                            checked={ignoreMissing}
+                            onCheckedChange={setIgnoreMissing}
+                        />
+                    </div>
 
                     {error && (
                         <Alert variant="destructive">

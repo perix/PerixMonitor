@@ -63,9 +63,23 @@ export const PortfolioSelector: React.FC<PortfolioSelectorProps> = ({ selectedPo
             console.error("Error fetching portfolios:", error);
         } else {
             setPortfolios(data || []);
-            // Auto-select first if none selected
-            if (data && data.length > 0 && !selectedPortfolioId) {
-                onSelect(data[0].id);
+
+            // Validation Logic: Ensure selectedPortfolioId exists in the new list
+            if (data && data.length > 0) {
+                const isValid = selectedPortfolioId && data.some(p => p.id === selectedPortfolioId);
+
+                if (!isValid) {
+                    // Current selection is invalid (e.g. deleted DB), switch to first available
+                    onSelect(data[0].id);
+                } else if (!selectedPortfolioId) {
+                    // No selection, default to first
+                    onSelect(data[0].id);
+                }
+            } else {
+                // No portfolios available, clear selection
+                if (selectedPortfolioId) {
+                    onSelect("");
+                }
             }
         }
         setLoading(false);
@@ -129,10 +143,10 @@ export const PortfolioSelector: React.FC<PortfolioSelectorProps> = ({ selectedPo
     return (
         <div className="flex items-center space-x-2">
             <Select value={selectedPortfolioId || "none"} onValueChange={onSelect}>
-                <SelectTrigger className="w-[280px] bg-background text-foreground border-input focus:ring-2 focus:ring-ring">
+                <SelectTrigger className="w-[280px] bg-background text-foreground border-white/20 focus:ring-2 focus:ring-ring">
                     <SelectValue placeholder="Seleziona Portafoglio" />
                 </SelectTrigger>
-                <SelectContent className="bg-popover text-popover-foreground border-border">
+                <SelectContent className="bg-popover text-popover-foreground border-white/20">
                     {portfolios.length === 0 ? (
                         <SelectItem value="none" disabled>Nessun portafoglio</SelectItem>
                     ) : (

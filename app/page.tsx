@@ -52,15 +52,15 @@ export default function Home() {
                 <span className="text-sm font-medium">Autenticato come {user.email}</span>
               </div>
 
-              {!selectedPortfolioId && (
-                <div className="mb-6">
-                  <p className="text-sm text-muted-foreground mb-2">Seleziona un portafoglio per iniziare</p>
-                  <PortfolioSelector
-                    selectedPortfolioId={selectedPortfolioId}
-                    onSelect={setSelectedPortfolioId}
-                  />
-                </div>
-              )}
+              <div className="mb-6">
+                <p className="text-sm text-muted-foreground mb-2">
+                  {selectedPortfolioId ? "Portafoglio Selezionato" : "Seleziona un portafoglio per iniziare"}
+                </p>
+                <PortfolioSelector
+                  selectedPortfolioId={selectedPortfolioId}
+                  onSelect={setSelectedPortfolioId}
+                />
+              </div>
 
               <div className="grid gap-3">
                 <Button asChild size="lg" className="w-full text-lg h-12 shadow-primary/20 shadow-lg">

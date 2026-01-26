@@ -12,13 +12,15 @@ def parse_portfolio_excel(file_stream):
         df = pd.read_excel(file_stream)
         
         # --- DIVIDEND/COUPON DETECTION MODE ---
-        # Heuristic: 3 columns, or headers resemble ISIN/Cedola/Data
+        # Heuristic: Check if column 3 (index 2) is specifically "Data Flusso"
+        # This allows for extra columns as long as we have the core structure.
         is_dividend_file = False
-        if df.shape[1] == 3:
-            # We assume it's dividends if explicitly 3 cols.
-            # Ideally verify headers, but user said "file with 3 columns like this".
-            is_dividend_file = True
-            logger.info("Detected patterns for Dividend File (3 columns)")
+        if df.shape[1] >= 3:
+             # Check header of 3rd column (index 2)
+            col3_header = str(df.columns[2]).strip().lower()
+            if col3_header == "data flusso":
+                is_dividend_file = True
+                logger.info("Detected patterns for Dividend/Flow File (Header 'Data Flusso')")
 
         if is_dividend_file:
             dividends = []
@@ -27,6 +29,7 @@ def parse_portfolio_excel(file_stream):
                 if pd.isna(row.iloc[0]): continue
                 
                 isin = str(row.iloc[0]).strip()
+                # [MODIFIED] Allow negative amounts (expenses)
                 amount = float(row.iloc[1]) if not pd.isna(row.iloc[1]) else 0.0
                 date_val = row.iloc[2]
                 
@@ -39,14 +42,15 @@ def parse_portfolio_excel(file_stream):
                     except:
                         date_val = None
                 
-                if isin and amount > 0 and date_val:
+                # [MODIFIED] Check amount is not 0 (allow negative)
+                if isin and abs(amount) > 0 and date_val:
                     dividends.append({
                         "isin": isin,
                         "amount": amount,
                         "date": date_val
                     })
             
-            return {"type": "KPI_DIVIDENDS", "data": dividends, "message": f"Rilevate {len(dividends)} cedole/dividendi."}
+            return {"type": "KPI_DIVIDENDS", "data": dividends, "message": f"Rilevate {len(dividends)} cedole/dividendi/spese."}
 
 
         # --- STANDARD PORTFOLIO INGESTION MODE ---
@@ -98,7 +102,7 @@ def parse_portfolio_excel(file_stream):
         logger.error(traceback.format_exc())
         return {"error": f"Parse Error: {str(e)}"}
 
-def calculate_delta(excel_data, db_holdings):
+def calculate_delta(excel_data, db_holdings, ignore_missing=False):
     # ...
     delta_actions = []
     processed_isins = set()
@@ -114,6 +118,18 @@ def calculate_delta(excel_data, db_holdings):
         if abs(diff) < 1e-6:
             log_ingestion_item(isin, "SKIP", "No qty change")
             continue 
+
+        # [MODIFIED] Check for "Price Only" update strategy
+        # If Excel Qty is 0 (implied empty) and DB Qty > 0, traditionally this means SELL EVERYTHING.
+        # But user wants to support "Price Update" only rows.
+        # So we ONLY sell if "Vendita" (case insensitive) is explicitly declared.
+        op_declared = row.get('operation')
+        is_explicit_sell = op_declared and str(op_declared).strip().lower() == 'vendita'
+
+        if excel_qty == 0 and db_qty > 0 and not is_explicit_sell:
+             log_ingestion_item(isin, "SKIP", f"Qty=0 but not explicit 'Vendita'. Treating as Price Update only.")
+             continue
+
             
         # strict check for NEW ISINS (not in DB)
         # User Rule: "Se un ISIN non è presente in DB ma è presente nell'excel 
@@ -153,6 +169,7 @@ def calculate_delta(excel_data, db_holdings):
             "excel_operation_declared": op_declared,
             "excel_price": op_price,
             "excel_date": op_date,
+            "excel_description": row.get('description'),  # Asset name from Excel column A
             "current_db_qty": db_qty,
             "new_total_qty": excel_qty
         }
@@ -160,6 +177,10 @@ def calculate_delta(excel_data, db_holdings):
         
     for isin, qty in db_holdings.items():
         if isin not in processed_isins and qty > 0:
+            if ignore_missing:
+                log_ingestion_item(isin, "SKIP_MISSING", "Ignored missing asset due to user flag.")
+                continue
+
             log_ingestion_item(isin, "MISSING", f"In DB ({qty}) but not in Excel")
             delta_actions.append({
                 "isin": isin,

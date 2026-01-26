@@ -11,6 +11,7 @@ import numpy as np
 from ingest import parse_portfolio_excel, calculate_delta
 # from isin_resolver import resolve_isin (Removed)
 from finance import xirr
+from color_manager import assign_colors
 from logger import logger
 import io
 import traceback
@@ -40,6 +41,7 @@ def sync_transactions():
         data = request.json
         changes = data.get('changes', [])
         portfolio_id = data.get('portfolio_id')
+        enable_ai_lookup = data.get('enable_ai_lookup', True)  # Default to True for backward compatibility
 
         if not portfolio_id:
             return jsonify(error="Missing portfolio_id"), 400
@@ -111,15 +113,65 @@ def sync_transactions():
                 res_assets = supabase.table('assets').select("id, isin").in_('isin', list(target_isins)).execute()
                 asset_map = {row['isin']: row['id'] for row in res_assets.data}
                 
+                # Ensure existing assets have colors too (backfill)
+                exist_ids = list(asset_map.values())
+                if exist_ids:
+                     assign_colors(portfolio_id, exist_ids)
+                
                 # 3c. Identify and Create missing assets
                 missing_isins = target_isins - set(asset_map.keys())
                 
                 if missing_isins:
-                    new_assets_payload = [{"isin": isin, "name": isin} for isin in missing_isins]
+                    # Build a map of ISIN -> description from changes
+                    isin_to_description = {}
+                    for item in changes:
+                        if item.get('isin') and item.get('excel_description'):
+                            isin_to_description[item['isin']] = str(item['excel_description']).strip()
+                    
+                    # Create assets with proper names from Excel
+                    new_assets_payload = [
+                        {
+                            "isin": isin, 
+                            "name": isin_to_description.get(isin, isin)  # Use Excel description or fallback to ISIN
+                        } 
+                        for isin in missing_isins
+                    ]
                     res_new = supabase.table('assets').insert(new_assets_payload).execute()
                     if res_new.data:
                         for row in res_new.data:
                             asset_map[row['isin']] = row['id']
+                            logger.info(f"SYNC: Created asset {row['isin']} with name '{row['name']}'")
+                            
+                            # Assign color to new asset
+                            try:
+                                assign_colors(portfolio_id, [row['id']])
+                            except Exception as e:
+                                logger.error(f"SYNC: Color assignment failed for {row['isin']}: {e}")
+                            
+                            # Fetch LLM info for new asset and update metadata (if enabled)
+                            if enable_ai_lookup:
+                                from llm_asset_info import fetch_asset_info_from_llm
+                                llm_result = fetch_asset_info_from_llm(row['isin'])
+                                if llm_result:
+                                    try:
+                                        if llm_result.get('response_type') == 'json':
+                                            # Save structured JSON to metadata column
+                                            supabase.table('assets').update({
+                                                "metadata": llm_result['data'],
+                                                "metadata_text": None
+                                            }).eq('id', row['id']).execute()
+                                            logger.info(f"SYNC: Updated asset {row['isin']} with LLM JSON metadata")
+                                        elif llm_result.get('response_type') == 'text':
+                                            # Save text/markdown to metadata_text column
+                                            supabase.table('assets').update({
+                                                "metadata": None,
+                                                "metadata_text": llm_result['data']
+                                            }).eq('id', row['id']).execute()
+                                            logger.info(f"SYNC: Updated asset {row['isin']} with LLM text/markdown metadata")
+                                    except Exception as llm_err:
+                                        logger.error(f"SYNC: Failed to save LLM metadata for {row['isin']}: {llm_err}")
+                            else:
+                                logger.info(f"SYNC: AI lookup disabled, skipping LLM metadata for {row['isin']}")
                 
                 
                 for item in changes:
@@ -132,6 +184,13 @@ def sync_transactions():
                     # Determine Transaction Type
                     trans_type = 'BUY' if qty_change > 0 else 'SELL'
                     abs_qty = abs(qty_change)
+
+                    # [FIX] Respect explicit type from Ingestion (Vendita/MISSING_FROM_UPLOAD)
+                    # Ingestion sends positive quantity for display, but we must treat it as SELL.
+                    explicit_type = item.get('type', '').upper()
+                    if explicit_type in ['VENDITA', 'SELL', 'MISSING_FROM_UPLOAD']:
+                        trans_type = 'SELL'
+
                     
                     # Determine Price and Date
                     price = item.get('price') # User input
@@ -259,7 +318,8 @@ def ingest_excel():
                 pass
 
         # Calculate Delta
-        delta = calculate_delta(parse_result['data'], db_holdings)
+        ignore_missing = request.form.get('ignore_missing') == 'true'
+        delta = calculate_delta(parse_result['data'], db_holdings, ignore_missing=ignore_missing)
         
         # Prepare Price Snapshots (Don't save yet)
         prices_to_save = []
@@ -562,9 +622,211 @@ def user_change_password_route():
         return jsonify(error=str(e)), 500
 
 
+# --- DEV TEST ENDPOINTS ---
+
+# Default prompt template (same as in llm_asset_info.py)
+DEFAULT_LLM_PROMPT = """Recupera informazioni per l'asset:
+{isin}
+da siti di settore affidabili ed inseriscile nel formato JSON seguente senza cambiare la struttura:
+{template}
+[REGOLE]
+1) se l'informazione non è presente inserisci un valore null, se invece il campo non è applicabile (es. assenza di cedole/dividendi, data di fine non definita) indicare "ND"
+2) non inserire valori di quotazione corrente
+3) confronta siti di settore diversi per validare le informazioni
+4) restituisci il JSON pronto per il parsing senza fornire null'altro"""
+
+
+# --- LOG CONFIGURATION ---
+
+@app.route('/api/settings/log-config', methods=['GET'])
+def get_log_config():
+    """Get current log configuration for a specific user."""
+    try:
+        user_id = request.args.get('user_id')
+        if not user_id:
+            return jsonify(error="Missing user_id"), 400
+            
+        supabase = get_supabase_client()
+        config_key = f'log_config_{user_id}'
+        res = supabase.table('app_config').select('value').eq('key', config_key).single().execute()
+        
+        if res.data and res.data.get('value'):
+            config = res.data['value']
+        else:
+            # Default: disabled
+            config = {'enabled': False}
+            
+        return jsonify(config), 200
+    except Exception as e:
+        logger.error(f"GET LOG CONFIG FAIL: {e}")
+        return jsonify(enabled=False), 200
+
+@app.route('/api/settings/log-config', methods=['POST'])
+def set_log_config():
+    """Set log configuration for a specific user."""
+    try:
+        data = request.json
+        enabled = data.get('enabled', False)
+        user_id = data.get('user_id')
+        
+        if not user_id:
+            return jsonify(error="Missing user_id"), 400
+        
+        supabase = get_supabase_client()
+        config_key = f'log_config_{user_id}'
+        supabase.table('app_config').upsert({
+            'key': config_key,
+            'value': {'enabled': enabled}
+        }).execute()
+        
+        logger.info(f"LOG CONFIG: File logging for user {user_id} set to {enabled}")
+        return jsonify(message="Log configuration saved", enabled=enabled), 200
+    except Exception as e:
+        logger.error(f"SET LOG CONFIG FAIL: {e}")
+        return jsonify(error=str(e)), 500
+
+@app.route('/api/dev/prompt', methods=['GET'])
+def get_dev_prompt():
+    """Get the current LLM prompt template (from DB or default)."""
+    try:
+        supabase = get_supabase_client()
+        res = supabase.table('app_config').select('value').eq('key', 'llm_asset_prompt').single().execute()
+        
+        if res.data and res.data.get('value'):
+            prompt = res.data['value'].get('prompt', DEFAULT_LLM_PROMPT)
+        else:
+            prompt = DEFAULT_LLM_PROMPT
+            
+        return jsonify(prompt=prompt, is_default=(prompt == DEFAULT_LLM_PROMPT)), 200
+    except Exception as e:
+        logger.error(f"DEV GET PROMPT FAIL: {e}")
+        # Return default on error
+        return jsonify(prompt=DEFAULT_LLM_PROMPT, is_default=True), 200
+
+@app.route('/api/dev/prompt', methods=['POST'])
+def save_dev_prompt():
+    """Save custom LLM prompt template to DB."""
+    try:
+        data = request.json
+        prompt = data.get('prompt')
+        
+        if not prompt:
+            return jsonify(error="Missing prompt"), 400
+        
+        supabase = get_supabase_client()
+        supabase.table('app_config').upsert({
+            'key': 'llm_asset_prompt',
+            'value': {'prompt': prompt}
+        }).execute()
+        
+        logger.info("DEV: LLM prompt template saved")
+        return jsonify(message="Prompt saved successfully"), 200
+    except Exception as e:
+        logger.error(f"DEV SAVE PROMPT FAIL: {e}")
+        return jsonify(error=str(e)), 500
+
+@app.route('/api/dev/test-llm', methods=['POST'])
+def test_llm_endpoint():
+    """Test LLM call with specific ISIN and optional custom prompt."""
+    try:
+        from llm_asset_info import load_descr_asset_template
+        import json as json_module
+        
+        data = request.json
+        isin = data.get('isin')
+        custom_prompt = data.get('prompt')  # Optional custom prompt
+        
+        if not isin:
+            return jsonify(error="Missing ISIN"), 400
+        
+        # Load template
+        template = load_descr_asset_template()
+        if not template:
+            return jsonify(error="Failed to load asset template"), 500
+        
+        # Use custom prompt or fetch from DB or use default
+        if custom_prompt:
+            prompt_template = custom_prompt
+        else:
+            supabase = get_supabase_client()
+            res = supabase.table('app_config').select('value').eq('key', 'llm_asset_prompt').single().execute()
+            if res.data and res.data.get('value'):
+                prompt_template = res.data['value'].get('prompt', DEFAULT_LLM_PROMPT)
+            else:
+                prompt_template = DEFAULT_LLM_PROMPT
+        
+        # Fetch asset name from DB if {nome_asset} placeholder is present
+        asset_name = isin  # Default to ISIN if not found
+        if '{nome_asset}' in prompt_template:
+            try:
+                supabase = get_supabase_client()
+                asset_res = supabase.table('assets').select('name').eq('isin', isin).single().execute()
+                if asset_res.data and asset_res.data.get('name'):
+                    asset_name = asset_res.data['name']
+                    logger.info(f"DEV TEST LLM: Resolved asset name for {isin}: {asset_name}")
+            except Exception as e:
+                logger.warning(f"DEV TEST LLM: Could not fetch asset name for {isin}: {e}")
+        
+        # Build final prompt with all placeholders
+        final_prompt = prompt_template.replace('{isin}', isin).replace('{template}', template).replace('{nome_asset}', asset_name)
+        
+        # Get API key
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            return jsonify(error="No OPENAI_API_KEY configured"), 500
+        
+        # Make LLM call
+        client = openai.OpenAI(api_key=api_key)
+        
+        logger.info(f"DEV TEST LLM: Request for ISIN: {isin}")
+        logger.info(f"DEV TEST LLM: === FULL PROMPT START ===")
+        logger.info(final_prompt)
+        logger.info(f"DEV TEST LLM: === FULL PROMPT END ===")
+        
+        response = client.chat.completions.create(
+            model='gpt-4o-mini',
+            messages=[{"role": "user", "content": final_prompt}],
+            temperature=0.3,
+            max_tokens=4000
+        )
+        
+        response_text = response.choices[0].message.content.strip()
+        
+        # Try to parse as JSON for validation
+        try:
+            if response_text.startswith('```'):
+                lines = response_text.split('\n')
+                start_idx = 1 if lines[0].startswith('```') else 0
+                end_idx = len(lines) - 1 if lines[-1].strip() == '```' else len(lines)
+                response_text = '\n'.join(lines[start_idx:end_idx])
+            
+            parsed = json_module.loads(response_text)
+            is_valid_json = True
+        except:
+            parsed = None
+            is_valid_json = False
+        
+        logger.info(f"DEV TEST LLM: Response received, valid JSON: {is_valid_json}")
+        
+        return jsonify(
+            response=response_text,
+            is_valid_json=is_valid_json,
+            prompt_used=final_prompt
+        ), 200
+        
+    except Exception as e:
+        logger.error(f"DEV TEST LLM FAIL: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify(error=str(e)), 500
+
+
 if __name__ == '__main__':
     from dashboard import register_dashboard_routes
     from assets import register_assets_routes
+    from portfolio import register_portfolio_routes
     register_dashboard_routes(app)
     register_assets_routes(app)
+    register_portfolio_routes(app)
     app.run(port=5328, debug=True)
+
