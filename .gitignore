@@ -49,7 +49,9 @@ perix_monitor.log
 
 .vercel
 perix_monitor.log
-perix_monitor.log
 
 env_*.txt
+
+# Secrets
+0. Requirements/API KEYS x Vercel.txt
 
