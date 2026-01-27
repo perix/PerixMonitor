@@ -139,7 +139,8 @@ def parse_portfolio_excel(file_stream):
         return {"error": f"Parse Error: {str(e)}"}
 
 def calculate_delta(excel_data, db_holdings, ignore_missing=False):
-    # ...
+    # db_holdings structure: {isin: {"qty": float, "metadata": dict}} OR {isin: float} (legacy fallback)
+    
     delta_actions = []
     processed_isins = set()
     
@@ -148,11 +149,44 @@ def calculate_delta(excel_data, db_holdings, ignore_missing=False):
         excel_qty = row['quantity']
         processed_isins.add(isin)
         
-        db_qty = db_holdings.get(isin, 0.0)
+        # Unpack DB info safely
+        db_entry = db_holdings.get(isin)
+        db_qty = 0.0
+        db_type = None
+        
+        if isinstance(db_entry, dict):
+            db_qty = db_entry.get("qty", 0.0)
+            meta = db_entry.get("metadata") or {}
+            db_type = meta.get("assetType")
+        elif isinstance(db_entry, (int, float)):
+             db_qty = float(db_entry)
+        
         diff = excel_qty - db_qty
         
+        # [NEW] Check for Metadata difference (Asset Type)
+        excel_type = row.get('asset_type')
+        type_changed = False
+        if excel_type and excel_type != db_type:
+            type_changed = True
+            log_ingestion_item(isin, "META_DIFF", f"Type change: DB='{db_type}' -> Excel='{excel_type}'")
+
         if abs(diff) < 1e-6:
-            log_ingestion_item(isin, "SKIP", "No qty change")
+            if type_changed:
+                 # Special Action: Quantity didn't change, but Type did.
+                 # We send a "metadata only" update.
+                 log_ingestion_item(isin, "DELTA_META", f"Updating Type to {excel_type}")
+                 delta_actions.append({
+                    "isin": isin,
+                    "type": "METADATA_UPDATE", # Frontend needs to handle this (or ignore it being red/green and just show it)
+                    "quantity_change": 0,
+                    "current_db_qty": db_qty,
+                    "new_total_qty": excel_qty,
+                    "asset_type_proposal": excel_type,
+                    "excel_description": row.get('description'),
+                    "details": "Aggiornamento Anagrafica (Tipologia)"
+                 })
+            else:
+                log_ingestion_item(isin, "SKIP", "No qty change")
             continue 
 
         # [MODIFIED] Check for "Price Only" update strategy
@@ -161,11 +195,13 @@ def calculate_delta(excel_data, db_holdings, ignore_missing=False):
         # So we ONLY sell if "Vendita" (case insensitive) is explicitly declared.
         op_declared = row.get('operation')
         is_explicit_sell = op_declared and str(op_declared).strip().lower() == 'vendita'
+        
+        # If explicit sell, we proceed to create negative delta even if diff matches 
+        # (Wait, if diff matches sell, we are good. logic below handles it.)
 
         if excel_qty == 0 and db_qty > 0 and not is_explicit_sell:
              log_ingestion_item(isin, "SKIP", f"Qty=0 but not explicit 'Vendita'. Treating as Price Update only.")
              continue
-
             
         # strict check for NEW ISINS (not in DB)
         # User Rule: "Se un ISIN non è presente in DB ma è presente nell'excel 
@@ -212,7 +248,14 @@ def calculate_delta(excel_data, db_holdings, ignore_missing=False):
         }
         delta_actions.append(action)
         
-    for isin, qty in db_holdings.items():
+    for isin, val in db_holdings.items():
+        # Handle unpacking again for the "MISSING" loop
+        qty = 0.0
+        if isinstance(val, dict):
+             qty = val.get("qty", 0.0)
+        elif isinstance(val, (int, float)):
+             qty = float(val)
+
         if isin not in processed_isins and qty > 0:
             if ignore_missing:
                 log_ingestion_item(isin, "SKIP_MISSING", "Ignored missing asset due to user flag.")
@@ -232,5 +275,4 @@ def calculate_delta(excel_data, db_holdings, ignore_missing=False):
     # Mock final state logging (in real app, this would query DB after sync)
     # Here we log what the DB *should* look like assuming these applied
     log_final_state([f"{row['isin']}: {row['quantity']}" for row in excel_data]) 
-
     return delta_actions

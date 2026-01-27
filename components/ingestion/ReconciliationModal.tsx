@@ -127,8 +127,12 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
               {validItems.map((item, idx) => (
                 <TableRow key={idx}>
                   <TableCell>{item.isin}</TableCell>
-                  <TableCell className={item.type === 'Acquisto' ? 'text-green-600' : 'text-red-600'}>
-                    {item.type}
+                  <TableCell className={
+                    item.type === 'Acquisto' ? 'text-green-600' :
+                      item.type === 'METADATA_UPDATE' ? 'text-blue-500' :
+                        'text-red-600'
+                  }>
+                    {item.type === 'METADATA_UPDATE' ? 'Aggiornamento Info' : item.type}
                   </TableCell>
                   <TableCell>{item.quantity_change}</TableCell>
                   <TableCell>{item.excel_price ? item.excel_price.toFixed(2) : '-'}</TableCell>
