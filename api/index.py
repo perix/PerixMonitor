@@ -1,5 +1,12 @@
 from flask import Flask, jsonify, request
 import os
+import sys
+
+# Ensure the 'api' directory is in the path for Vercel
+api_dir = os.path.dirname(os.path.abspath(__file__))
+if api_dir not in sys.path:
+    sys.path.append(api_dir)
+
 from dotenv import load_dotenv
 
 # Load env vars safely
