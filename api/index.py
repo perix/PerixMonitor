@@ -51,6 +51,26 @@ def hello():
 
 from supabase_client import get_supabase_client, get_or_create_default_portfolio
 
+def check_debug_mode(portfolio_id):
+    """Check if file logging is enabled for the portfolio owner."""
+    if not portfolio_id: return False
+    try:
+        supabase = get_supabase_client()
+        # Get User ID from Portfolio
+        res_p = supabase.table('portfolios').select('user_id').eq('id', portfolio_id).single().execute()
+        if not res_p.data: return False
+        user_id = res_p.data['user_id']
+        
+        # Get Config for User
+        config_key = f'log_config_{user_id}'
+        res_c = supabase.table('app_config').select('value').eq('key', config_key).single().execute()
+        if res_c.data and res_c.data.get('value'):
+             return res_c.data['value'].get('enabled', False)
+        return False
+    except Exception as e:
+        logger.error(f"DEBUG CHECK FAIL: {e}")
+        return False
+
 @app.route('/api/sync', methods=['POST'])
 def sync_transactions():
     try:
@@ -58,6 +78,9 @@ def sync_transactions():
         changes = data.get('changes', [])
         portfolio_id = data.get('portfolio_id')
         enable_ai_lookup = data.get('enable_ai_lookup', True)  # Default to True for backward compatibility
+        
+        # Check debug mode
+        debug_mode = check_debug_mode(portfolio_id)
 
         if not portfolio_id:
             return jsonify(error="Missing portfolio_id"), 400
@@ -75,7 +98,7 @@ def sync_transactions():
             for p in prices:
                 save_price_snapshot(p['isin'], p['price'], p.get('date'), p.get('source', 'Manual Upload'))
                 count_prices += 1
-            logger.info(f"SYNC: Saved {count_prices} price snapshots.")
+            if debug_mode: logger.info(f"SYNC: Saved {count_prices} price snapshots.")
 
         # --- 2. Handle Snapshot Record (If present) ---
         snapshot = data.get('snapshot')
@@ -84,7 +107,7 @@ def sync_transactions():
                 # Update upload_date to NOW just to be precise on confirm
                 snapshot['upload_date'] = datetime.now().isoformat()
                 supabase.table('snapshots').insert(snapshot).execute()
-                logger.info(f"SYNC: Snapshot records saved.")
+                if debug_mode: logger.info(f"SYNC: Snapshot records saved.")
             except Exception as e:
                  logger.error(f"SYNC: Snapshot save failed: {e}")
 
@@ -114,7 +137,7 @@ def sync_transactions():
                      if valid_dividends:
                          # Upsert based on unique constraint (portfolio, asset, date)
                          supabase.table('dividends').upsert(valid_dividends, on_conflict='portfolio_id, asset_id, date').execute()
-                         logger.info(f"SYNC: Saved {len(valid_dividends)} dividends.")
+                         if debug_mode: logger.info(f"SYNC: Saved {len(valid_dividends)} dividends.")
             except Exception as e:
                  logger.error(f"SYNC: Dividend save failed: {e}")
 
@@ -141,9 +164,10 @@ def sync_transactions():
                     if item.get('isin') and item.get('asset_type_proposal'):
                         isin_to_type[item['isin']] = str(item['asset_type_proposal']).strip()
                 
-                logger.info(f"SYNC DEBUG: Found {len(isin_to_type)} asset type proposals in payload.")
-                if len(isin_to_type) > 0:
-                     logger.info(f"SYNC DEBUG: Sample Proposals: {list(isin_to_type.items())[:3]}")
+                if debug_mode:
+                    logger.info(f"SYNC DEBUG: Found {len(isin_to_type)} asset type proposals in payload.")
+                    if len(isin_to_type) > 0:
+                        logger.info(f"SYNC DEBUG: Sample Proposals: {list(isin_to_type.items())[:3]}")
                 
                 if isin_to_type:
                     # We need to fetch current metadata for these assets to merge
@@ -159,7 +183,7 @@ def sync_transactions():
                                 
                                 # Check if update is needed
                                     current_meta['assetType'] = new_type
-                                    logger.info(f"SYNC: Backfilling Asset Type for {isin} -> {new_type}")
+                                    if debug_mode: logger.info(f"SYNC: Backfilling Asset Type for {isin} -> {new_type}")
                                     supabase.table('assets').update({"metadata": current_meta}).eq('id', row['id']).execute()
                         
                         # [NEW] Update Asset Names (Description) for EXISTING assets
@@ -181,7 +205,7 @@ def sync_transactions():
                                      
                                      # Update if different and new name is valid
                                      if new_name and new_name != current_name and len(new_name) > 2:
-                                         logger.info(f"SYNC: Updating Asset Name for {isin}: '{current_name}' -> '{new_name}'")
+                                         if debug_mode: logger.info(f"SYNC: Updating Asset Name for {isin}: '{current_name}' -> '{new_name}'")
                                          supabase.table('assets').update({"name": new_name}).eq('id', row['id']).execute()
                 
                 # 3c. Identify and Create missing assets
@@ -213,7 +237,7 @@ def sync_transactions():
                     if res_new.data:
                         for row in res_new.data:
                             asset_map[row['isin']] = row['id']
-                            logger.info(f"SYNC: Created asset {row['isin']} with name '{row['name']}'")
+                            if debug_mode: logger.info(f"SYNC: Created asset {row['isin']} with name '{row['name']}'")
                             
                             # Assign color to new asset
                             try:
@@ -241,18 +265,18 @@ def sync_transactions():
                                                 "metadata": new_meta,
                                                 "metadata_text": None
                                             }).eq('id', row['id']).execute()
-                                            logger.info(f"SYNC: Updated asset {row['isin']} with LLM JSON metadata")
+                                            if debug_mode: logger.info(f"SYNC: Updated asset {row['isin']} with LLM JSON metadata")
                                         elif llm_result.get('response_type') == 'text':
                                             # Save text/markdown to metadata_text column
                                             supabase.table('assets').update({
                                                 "metadata": None,
                                                 "metadata_text": llm_result['data']
                                             }).eq('id', row['id']).execute()
-                                            logger.info(f"SYNC: Updated asset {row['isin']} with LLM text/markdown metadata")
+                                            if debug_mode: logger.info(f"SYNC: Updated asset {row['isin']} with LLM text/markdown metadata")
                                     except Exception as llm_err:
                                         logger.error(f"SYNC: Failed to save LLM metadata for {row['isin']}: {llm_err}")
                             else:
-                                logger.info(f"SYNC: AI lookup disabled, skipping LLM metadata for {row['isin']}")
+                                if debug_mode: logger.info(f"SYNC: AI lookup disabled, skipping LLM metadata for {row['isin']}")
                 
                 
                 for item in changes:
@@ -300,7 +324,7 @@ def sync_transactions():
         
         if valid_transactions:
             res = supabase.table('transactions').insert(valid_transactions).execute()
-            logger.info(f"SYNC SUCCESS: Inserted {len(valid_transactions)} transactions for portfolio {portfolio_id}.")
+            if debug_mode: logger.info(f"SYNC SUCCESS: Inserted {len(valid_transactions)} transactions for portfolio {portfolio_id}.")
             return jsonify(message=f"Successfully synced. Prices: {len(prices)}. Trans: {len(valid_transactions)}"), 200
         else:
             return jsonify(message=f"Synced. Prices: {len(prices)}. No transactions."), 200
@@ -356,7 +380,11 @@ def ingest_excel():
             logger.error("INGEST FAIL: No selected file")
             return jsonify(error="No selected file"), 400
 
-        parse_result = parse_portfolio_excel(file.stream)
+        # Check debug mode
+        portfolio_id = request.form.get('portfolio_id')
+        debug_mode = check_debug_mode(portfolio_id)
+
+        parse_result = parse_portfolio_excel(file.stream, debug=debug_mode)
         
         if "error" in parse_result:
             logger.error(f"INGEST FAIL: Parse Error - {parse_result['error']}")
@@ -371,31 +399,39 @@ def ingest_excel():
             )
         
         # --- STANDARD PORTFOLIO FLOW ---
-        portfolio_id = request.form.get('portfolio_id')
+        # portfolio_id handled above for debug check
         
         # Fetch DB Holdings
         db_holdings = {}
         if portfolio_id:
             try:
                 supabase = get_supabase_client()
-                res = supabase.table('transactions').select("quantity, type, assets(isin)").eq('portfolio_id', portfolio_id).execute()
+                res = supabase.table('transactions').select("quantity, type, assets(isin, metadata)").eq('portfolio_id', portfolio_id).execute()
                 
                 if res.data:
                     for t in res.data:
-                        isin = t['assets']['isin']
+                        isin = t['assets']['isin'] # Adjusting for nested object
+                        meta = t['assets'].get('metadata')
+                        
                         qty = t['quantity']
                         if t['type'] == 'SELL':
                             qty = -qty
                         
-                        db_holdings[isin] = db_holdings.get(isin, 0.0) + qty
+                        # Store tuple: (qty, metadata)
+                        if isin not in db_holdings:
+                             db_holdings[isin] = {"qty": 0.0, "metadata": meta}
+                        
+                        db_holdings[isin]["qty"] += qty
+                        # Metadata should be same for same ISIN (global)
+                        if meta and not db_holdings[isin]["metadata"]:
+                             db_holdings[isin]["metadata"] = meta
                 
-                logger.info(f"Fetched holdings for {portfolio_id}: {len(db_holdings)} assets")
+                if debug_mode: logger.info(f"Fetched holdings for {portfolio_id}: {len(db_holdings)} assets")
                 
             except Exception as e:
                 logger.error(f"INGEST: Failed to fetch DB holdings: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-                # Proceed with empty holdings, but log warning
                 pass
 
         # Calculate Delta

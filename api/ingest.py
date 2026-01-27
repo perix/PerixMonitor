@@ -3,7 +3,7 @@ import numpy as np
 from datetime import datetime
 from logger import log_ingestion_start, log_ingestion_item, log_ingestion_summary, log_final_state, logger
 
-def parse_portfolio_excel(file_stream):
+def parse_portfolio_excel(file_stream, debug=False):
     # Expected columns for Portfolio: A-I (9 columns)
     # Expected for Dividends: A-C (3 columns): ISIN, Amount, Date
     
@@ -20,7 +20,7 @@ def parse_portfolio_excel(file_stream):
             col3_header = str(df.columns[2]).strip().lower()
             if col3_header == "data flusso":
                 is_dividend_file = True
-                logger.info("Detected patterns for Dividend/Flow File (Header 'Data Flusso')")
+                if debug: logger.info("Detected patterns for Dividend/Flow File (Header 'Data Flusso')")
 
         if is_dividend_file:
             dividends = []
@@ -56,7 +56,7 @@ def parse_portfolio_excel(file_stream):
         # --- STANDARD PORTFOLIO INGESTION MODE ---
         if df.shape[1] < 8:
             columns_found = df.columns.tolist()
-            logger.error(f"PARSE FAIL: Insufficient columns. Found {len(columns_found)}: {columns_found}")
+            if debug: logger.error(f"PARSE FAIL: Insufficient columns. Found {len(columns_found)}: {columns_found}")
             return {"error": f"Insufficient columns. Expected at least 8 (Portfolio) or 3 (Dividends), found {len(columns_found)}"}
 
         data = []
@@ -68,7 +68,7 @@ def parse_portfolio_excel(file_stream):
             # ... (parsing logic) ...
             qty = float(row.iloc[2]) if not pd.isna(row.iloc[2]) else 0.0
             
-            log_ingestion_item(isin, "PARSED", f"Row {idx+2}: Qty={qty} Op={row.iloc[6]}")
+            # log_ingestion_item(isin, "PARSED", f"Row {idx+2}: Qty={qty} Op={row.iloc[6]}") # Silent in normal mode
 
             # Handle NaT (Not a Time) converting to None
             date_val = row.iloc[5]
@@ -93,20 +93,21 @@ def parse_portfolio_excel(file_stream):
                     break
             
             # Log debug info
-            logger.info(f"INGEST DEBUG: Columns found: {df.columns.tolist()}")
-            logger.info(f"INGEST DEBUG: Asset Type Column Detection -> Index: {type_col_idx} (Name match)")
+            if debug:
+                logger.info(f"INGEST DEBUG: Columns found: {df.columns.tolist()}")
+                logger.info(f"INGEST DEBUG: Asset Type Column Detection -> Index: {type_col_idx} (Name match)")
             
             # 2. Fallback to column index 9 (J) if specifically 10+ columns and no header matched
             if type_col_idx == -1 and df.shape[1] > 9:
                 type_col_idx = 9
-                logger.info(f"INGEST DEBUG: Fallback to Index 9 for Asset Type")
+                if debug: logger.info(f"INGEST DEBUG: Fallback to Index 9 for Asset Type")
             
             if type_col_idx != -1 and type_col_idx < df.shape[1]:
                 raw_type = row.iloc[type_col_idx]
                 if not pd.isna(raw_type):
                     asset_type = str(raw_type).strip().capitalize()
             
-            if idx < 3: # Debug first 3 rows
+            if debug and idx < 3: # Debug first 3 rows
                  logger.info(f"INGEST DEBUG Row {idx}: ISIN={isin}, TypeRaw={row.iloc[type_col_idx] if type_col_idx != -1 else 'N/A'}, Extracted={asset_type}")
 
             entry = {
@@ -123,14 +124,18 @@ def parse_portfolio_excel(file_stream):
             }
             data.append(entry)
             
-        return {
+        result = {
             "type": "PORTFOLIO_SYNC", 
-            "data": data, 
-            "debug": {
+            "data": data
+        }
+        
+        if debug:
+            result["debug"] = {
                 "columns_found": df.columns.tolist(),
                 "asset_type_col_index": type_col_idx
             }
-        }
+            
+        return result
             
     except Exception as e:
         logger.error(f"PARSE EXCEPTION: {str(e)}")
