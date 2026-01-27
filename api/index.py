@@ -1,8 +1,10 @@
 from flask import Flask, jsonify, request
-# Load env vars before other imports
-from dotenv import load_dotenv
 import os
-load_dotenv('.env.local')
+from dotenv import load_dotenv
+
+# Load env vars safely
+if os.path.exists('.env.local'):
+    load_dotenv('.env.local')
 
 from datetime import datetime
 
@@ -16,8 +18,15 @@ from logger import logger
 import io
 import traceback
 import openai
+from dashboard import register_dashboard_routes
+from assets import register_assets_routes
+from portfolio import register_portfolio_routes
 
 app = Flask(__name__)
+register_dashboard_routes(app)
+register_assets_routes(app)
+register_portfolio_routes(app)
+
 import sys
 logger.info("Backend API Initialized")
 logger.info(f"debug_exec: {sys.executable}")
@@ -409,7 +418,7 @@ def calculate_xirr_route():
     except Exception as e:
         return jsonify(error=str(e)), 500
 
-@app.route('/api/portfolios', methods=['POST'])
+@app.route('/api/portfolios', methods=['POST', 'OPTIONS'])
 def create_portfolio():
     try:
         data = request.json
@@ -825,11 +834,5 @@ def test_llm_endpoint():
 
 
 if __name__ == '__main__':
-    from dashboard import register_dashboard_routes
-    from assets import register_assets_routes
-    from portfolio import register_portfolio_routes
-    register_dashboard_routes(app)
-    register_assets_routes(app)
-    register_portfolio_routes(app)
     app.run(port=5328, debug=True)
 
