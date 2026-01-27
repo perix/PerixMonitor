@@ -105,6 +105,9 @@ def parse_portfolio_excel(file_stream):
                 raw_type = row.iloc[type_col_idx]
                 if not pd.isna(raw_type):
                     asset_type = str(raw_type).strip().capitalize()
+            
+            if idx < 3: # Debug first 3 rows
+                 logger.info(f"INGEST DEBUG Row {idx}: ISIN={isin}, TypeRaw={row.iloc[type_col_idx] if type_col_idx != -1 else 'N/A'}, Extracted={asset_type}")
 
             entry = {
                 "description": row.iloc[0],

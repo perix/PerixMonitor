@@ -141,6 +141,10 @@ def sync_transactions():
                     if item.get('isin') and item.get('asset_type_proposal'):
                         isin_to_type[item['isin']] = str(item['asset_type_proposal']).strip()
                 
+                logger.info(f"SYNC DEBUG: Found {len(isin_to_type)} asset type proposals in payload.")
+                if len(isin_to_type) > 0:
+                     logger.info(f"SYNC DEBUG: Sample Proposals: {list(isin_to_type.items())[:3]}")
+                
                 if isin_to_type:
                     # We need to fetch current metadata for these assets to merge
                     existing_assets_data = supabase.table('assets').select("id, isin, metadata").in_('isin', list(isin_to_type.keys())).execute()
