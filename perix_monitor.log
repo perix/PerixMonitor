@@ -1,124 +1,489 @@
-2026-01-26 19:37:13,629 - INFO - Log file cleared successfully.
-2026-01-26 19:37:13,631 - INFO - STARTED Ingestion for file: Uploaded File Stream
-2026-01-26 19:37:13,645 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 2: Qty=0.0 Op=nan
-2026-01-26 19:37:13,646 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 3: Qty=0.0 Op=nan
-2026-01-26 19:37:13,646 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 4: Qty=0.0 Op=nan
-2026-01-26 19:37:13,646 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 5: Qty=0.0 Op=nan
-2026-01-26 19:37:13,647 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 6: Qty=0.0 Op=nan
-2026-01-26 19:37:13,647 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 7: Qty=0.0 Op=nan
-2026-01-26 19:37:13,647 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 8: Qty=0.0 Op=nan
-2026-01-26 19:37:13,647 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 9: Qty=0.0 Op=nan
-2026-01-26 19:37:13,647 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 10: Qty=0.0 Op=nan
-2026-01-26 19:37:13,648 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 11: Qty=0.0 Op=nan
-2026-01-26 19:37:13,648 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 12: Qty=0.0 Op=nan
-2026-01-26 19:37:13,648 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 13: Qty=0.0 Op=nan
-2026-01-26 19:37:13,648 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 14: Qty=0.0 Op=nan
-2026-01-26 19:37:13,648 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 15: Qty=0.0 Op=nan
-2026-01-26 19:37:13,649 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 16: Qty=0.0 Op=nan
-2026-01-26 19:37:13,649 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 17: Qty=0.0 Op=nan
-2026-01-26 19:37:13,649 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 18: Qty=0.0 Op=nan
-2026-01-26 19:37:13,650 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 19: Qty=0.0 Op=nan
-2026-01-26 19:37:13,650 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 20: Qty=0.0 Op=nan
-2026-01-26 19:37:13,650 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 21: Qty=0.0 Op=nan
-2026-01-26 19:37:13,650 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 22: Qty=0.0 Op=nan
-2026-01-26 19:37:13,651 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 23: Qty=0.0 Op=nan
-2026-01-26 19:37:13,651 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 24: Qty=0.0 Op=nan
-2026-01-26 19:37:13,652 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=PARSED DETAILS=Row 25: Qty=0.0 Op=nan
-2026-01-26 19:37:13,664 - INFO - Fetched holdings for cacce9d5-d27f-4b57-94e2-0830b11b3929: 22 assets
-2026-01-26 19:37:13,665 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,665 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,666 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,666 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,666 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,666 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,666 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,666 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,666 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,666 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,666 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,666 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,666 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,667 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,667 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,667 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,667 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,667 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,667 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,667 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,667 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,667 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,667 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,667 - DEBUG - INGESTION ROW: ISIN=LU0345361124 STATUS=SKIP DETAILS=Qty=0 but not explicit 'Vendita'. Treating as Price Update only.
-2026-01-26 19:37:13,667 - DEBUG - INGESTION ROW: ISIN=IT0005419848 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,667 - DEBUG - INGESTION ROW: ISIN=IT0005484552 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,667 - DEBUG - INGESTION ROW: ISIN=FR0013393329 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,667 - DEBUG - INGESTION ROW: ISIN=FR0010923383 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=IE00BYXVGZ48 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=IE00B4L5Y983 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=LU1670707527 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=IT0005630253 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=LU0119620416 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=LU0552385295 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=LU0348926287 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=LU0772944145 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=LU0607983896 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=LU0248184466 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=IE00BM67HT60 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=LU2906336990 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=IT0005386245 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=XS3174997521 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=IE000UL6CLP7 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=DE000VJ0K5X0 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,668 - DEBUG - INGESTION ROW: ISIN=DE000VJ20861 STATUS=SKIP_MISSING DETAILS=Ignored missing asset due to user flag.
-2026-01-26 19:37:13,669 - INFO - COMPLETED Ingestion. Total=24, Updates=0, Missing=0
-2026-01-26 19:37:13,669 - INFO - FINAL DB STATE DUMP:
-2026-01-26 19:37:13,669 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,669 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,669 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,670 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,670 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,670 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,670 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,671 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,671 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,671 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,671 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,671 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,672 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,672 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,672 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,672 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,673 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,673 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,673 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,674 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,677 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,678 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,678 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:13,679 - INFO - DB_DUMP: LU0345361124: 0.0
-2026-01-26 19:37:15,367 - DEBUG - Saved price for LU0345361124: 32.73
-2026-01-26 19:37:15,376 - DEBUG - Saved price for LU0345361124: 32.94
-2026-01-26 19:37:15,383 - DEBUG - Saved price for LU0345361124: 33.59
-2026-01-26 19:37:15,390 - DEBUG - Saved price for LU0345361124: 33.9
-2026-01-26 19:37:15,399 - DEBUG - Saved price for LU0345361124: 32.16
-2026-01-26 19:37:15,406 - DEBUG - Saved price for LU0345361124: 30.86
-2026-01-26 19:37:15,415 - DEBUG - Saved price for LU0345361124: 29.99
-2026-01-26 19:37:15,423 - DEBUG - Saved price for LU0345361124: 30.08
-2026-01-26 19:37:15,455 - DEBUG - Saved price for LU0345361124: 28.88
-2026-01-26 19:37:15,464 - DEBUG - Saved price for LU0345361124: 29.91
-2026-01-26 19:37:15,489 - DEBUG - Saved price for LU0345361124: 31.45
-2026-01-26 19:37:15,504 - DEBUG - Saved price for LU0345361124: 31.51
-2026-01-26 19:37:15,516 - DEBUG - Saved price for LU0345361124: 31.28
-2026-01-26 19:37:15,527 - DEBUG - Saved price for LU0345361124: 32.29
-2026-01-26 19:37:15,535 - DEBUG - Saved price for LU0345361124: 31.14
-2026-01-26 19:37:15,543 - DEBUG - Saved price for LU0345361124: 31.66
-2026-01-26 19:37:15,552 - DEBUG - Saved price for LU0345361124: 29.18
-2026-01-26 19:37:15,564 - DEBUG - Saved price for LU0345361124: 29.34
-2026-01-26 19:37:15,572 - DEBUG - Saved price for LU0345361124: 29.18
-2026-01-26 19:37:15,581 - DEBUG - Saved price for LU0345361124: 29.16
-2026-01-26 19:37:15,590 - DEBUG - Saved price for LU0345361124: 29.7
-2026-01-26 19:37:15,599 - DEBUG - Saved price for LU0345361124: 30.23
-2026-01-26 19:37:15,607 - DEBUG - Saved price for LU0345361124: 28.88
-2026-01-26 19:37:15,617 - DEBUG - Saved price for LU0345361124: 28.88
-2026-01-26 19:37:15,617 - INFO - SYNC: Saved 24 price snapshots.
-2026-01-26 19:37:15,626 - INFO - SYNC: Snapshot records saved.
+2026-01-27 08:18:52,600 - INFO - Log file cleared successfully.
+2026-01-27 08:18:58,772 - ERROR - DEV GET PROMPT FAIL: {'message': 'Cannot coerce the result to a single JSON object', 'code': 'PGRST116', 'hint': None, 'details': 'The result contains 0 rows'}
+2026-01-27 08:18:58,794 - ERROR - DEV GET PROMPT FAIL: {'message': 'Cannot coerce the result to a single JSON object', 'code': 'PGRST116', 'hint': None, 'details': 'The result contains 0 rows'}
+2026-01-27 08:19:12,681 - INFO - DEV TEST LLM: Request for ISIN: LU0345361124
+2026-01-27 08:19:12,682 - INFO - DEV TEST LLM: === FULL PROMPT START ===
+2026-01-27 08:19:12,682 - INFO - Recupera informazioni per l'asset:
+LU0345361124
+da siti di settore affidabili ed inseriscile nel formato JSON seguente senza cambiare la struttura:
+{
+  "schemaVersion": "1.0-min-static",
+  "assetType": "FUND | ETF | CERTIFICATE | GOVERNMENT_BOND",
+
+  "identifiers": {
+    "isin": null,
+    "mic": null,
+    "ticker": null
+  },
+
+  "profile": {
+    "name": null,
+    "issuerOrManagerName": null,
+    "issuerOrManagerLei": null,
+    "domicileCountry": null,
+    "currency": {
+      "base": null,
+      "trading": null
+    },
+    "regulatory": {
+      "ucits": null,
+      "priipsKidAvailable": null
+    },
+    "dates": {
+      "launchOrIssueDate": null,
+      "maturityDate": null
+    },
+    "documentation": {
+      "kidUrl": null,
+      "factsheetUrl": null,
+      "prospectusOrTermsUrl": null
+    }
+  },
+
+  "classification": {
+    "assetClass": null,
+    "category": null,
+    "strategy": null,
+    "underlyingsType": null,
+    "underlyings": [
+      {
+        "type": "INDEX | EQUITY | FUND | ETF | RATE | COMMODITY | FX | BOND | BASKET",
+        "name": null,
+        "isin": null,
+        "ticker": null,
+        "weightPct": null
+      }
+    ],
+    "benchmark": {
+      "name": null,
+      "provider": null,
+      "ticker": null,
+      "isin": null
+    },
+    "currencyExposure": [
+      {
+        "currency": null,
+        "hedged": null
+      }
+    ]
+  },
+
+  "risk": {
+    "kidSRI": null,
+    "standardRiskLevel": null
+  },
+
+  "costs": {
+    "ongoingOrMgmtFeePct": null,
+    "terPct": null,
+    "entryFeeMaxPct": null,
+    "exitFeePct": null,
+    "performanceFee": {
+      "applicable": null,
+      "rule": null
+    }
+  },
+
+  "cashflows": {
+    "incomePolicy": "ACCUMULATING | DISTRIBUTING | COUPON | NONE | MIXED",
+    "frequency": "MONTHLY | QUARTERLY | SEMI_ANNUAL | ANNUAL | IRREGULAR | NONE",
+    "rules": {
+      "exDateRule": null,
+      "paymentDateRule": null,
+      "amountRule": null
+    }
+  },
+
+  "productFeatures": {
+    "fundOrEtf": {
+      "replication": "PHYSICAL | SYNTHETIC | NA",
+      "securitiesLending": null,
+      "hedged": null
+    },
+    "certificate": {
+      "payoffType": null,
+      "capitalProtection": {
+        "type": "NONE | PARTIAL | FULL",
+        "levelPct": null
+      },
+      "barrier": {
+        "present": null,
+        "type": "EUROPEAN | AMERICAN | OTHER | NONE",
+        "levelPct": null
+      },
+      "autocall": {
+        "callable": null
+      },
+      "coupon": {
+        "type": "FIXED | CONDITIONAL | MEMORY | NONE",
+        "ratePct": null
+      },
+      "settlement": "CASH | PHYSICAL | MIXED"
+    },
+    "governmentBond": {
+      "issuerCountry": null,
+      "bondType": "FIXED | FLOATING | ZERO | INFLATION_LINKED | OTHER",
+      "couponRatePct": null,
+      "couponFrequency": "ANNUAL | SEMI_ANNUAL | QUARTERLY | MONTHLY | ZERO",
+      "dayCount": null,
+      "inflationLinked": {
+        "linked": null,
+        "indexName": null
+      }
+    }
+  },
+
+  "ratings": {
+    "issuer": {
+      "sp": null,
+      "moodys": null,
+      "fitch": null
+    },
+    "productOrFund": {
+      "morningstarStars": null
+    }
+  },
+
+  "quality": {
+    "primarySource": {
+      "sourceType": "OFFICIAL | EXCHANGE | DATA_PROVIDER | KID | FACTSHEET",
+      "sourceName": null,
+      "retrievedAt": "YYYY-MM-DDThh:mm:ssZ"
+    }
+  }
+}
+[REGOLE]
+1) se l'informazione non è presente inserisci un valore null, se invece il campo non è applicabile (es. assenza di cedole/dividendi, data di fine non definita) indicare "ND"
+2) non inserire valori di quotazione corrente
+3) confronta siti di settore diversi per validare le informazioni
+4) restituisci il JSON pronto per il parsing senza fornire null'altro
+2026-01-27 08:19:12,690 - INFO - DEV TEST LLM: === FULL PROMPT END ===
+2026-01-27 08:19:28,531 - INFO - DEV TEST LLM: Response received, valid JSON: True
+2026-01-27 08:22:59,906 - INFO - VALIDATE AI REQUEST: Checking model 'gpt-5-mini-2025-08-07'
+2026-01-27 08:23:00,875 - INFO - VALIDATE AI SUCCESS: Model 'gpt-5-mini-2025-08-07' is accessible. ID: gpt-5-mini-2025-08-07
+2026-01-27 08:23:10,472 - ERROR - DEV GET PROMPT FAIL: {'message': 'Cannot coerce the result to a single JSON object', 'code': 'PGRST116', 'hint': None, 'details': 'The result contains 0 rows'}
+2026-01-27 08:23:10,500 - ERROR - DEV GET PROMPT FAIL: {'message': 'Cannot coerce the result to a single JSON object', 'code': 'PGRST116', 'hint': None, 'details': 'The result contains 0 rows'}
+2026-01-27 08:23:22,208 - INFO - DEV TEST LLM: Request for ISIN: FR0013393329
+2026-01-27 08:23:22,209 - INFO - DEV TEST LLM: === FULL PROMPT START ===
+2026-01-27 08:23:22,209 - INFO - Recupera informazioni per l'asset:
+FR0013393329
+da siti di settore affidabili ed inseriscile nel formato JSON seguente senza cambiare la struttura:
+{
+  "schemaVersion": "1.0-min-static",
+  "assetType": "FUND | ETF | CERTIFICATE | GOVERNMENT_BOND",
+
+  "identifiers": {
+    "isin": null,
+    "mic": null,
+    "ticker": null
+  },
+
+  "profile": {
+    "name": null,
+    "issuerOrManagerName": null,
+    "issuerOrManagerLei": null,
+    "domicileCountry": null,
+    "currency": {
+      "base": null,
+      "trading": null
+    },
+    "regulatory": {
+      "ucits": null,
+      "priipsKidAvailable": null
+    },
+    "dates": {
+      "launchOrIssueDate": null,
+      "maturityDate": null
+    },
+    "documentation": {
+      "kidUrl": null,
+      "factsheetUrl": null,
+      "prospectusOrTermsUrl": null
+    }
+  },
+
+  "classification": {
+    "assetClass": null,
+    "category": null,
+    "strategy": null,
+    "underlyingsType": null,
+    "underlyings": [
+      {
+        "type": "INDEX | EQUITY | FUND | ETF | RATE | COMMODITY | FX | BOND | BASKET",
+        "name": null,
+        "isin": null,
+        "ticker": null,
+        "weightPct": null
+      }
+    ],
+    "benchmark": {
+      "name": null,
+      "provider": null,
+      "ticker": null,
+      "isin": null
+    },
+    "currencyExposure": [
+      {
+        "currency": null,
+        "hedged": null
+      }
+    ]
+  },
+
+  "risk": {
+    "kidSRI": null,
+    "standardRiskLevel": null
+  },
+
+  "costs": {
+    "ongoingOrMgmtFeePct": null,
+    "terPct": null,
+    "entryFeeMaxPct": null,
+    "exitFeePct": null,
+    "performanceFee": {
+      "applicable": null,
+      "rule": null
+    }
+  },
+
+  "cashflows": {
+    "incomePolicy": "ACCUMULATING | DISTRIBUTING | COUPON | NONE | MIXED",
+    "frequency": "MONTHLY | QUARTERLY | SEMI_ANNUAL | ANNUAL | IRREGULAR | NONE",
+    "rules": {
+      "exDateRule": null,
+      "paymentDateRule": null,
+      "amountRule": null
+    }
+  },
+
+  "productFeatures": {
+    "fundOrEtf": {
+      "replication": "PHYSICAL | SYNTHETIC | NA",
+      "securitiesLending": null,
+      "hedged": null
+    },
+    "certificate": {
+      "payoffType": null,
+      "capitalProtection": {
+        "type": "NONE | PARTIAL | FULL",
+        "levelPct": null
+      },
+      "barrier": {
+        "present": null,
+        "type": "EUROPEAN | AMERICAN | OTHER | NONE",
+        "levelPct": null
+      },
+      "autocall": {
+        "callable": null
+      },
+      "coupon": {
+        "type": "FIXED | CONDITIONAL | MEMORY | NONE",
+        "ratePct": null
+      },
+      "settlement": "CASH | PHYSICAL | MIXED"
+    },
+    "governmentBond": {
+      "issuerCountry": null,
+      "bondType": "FIXED | FLOATING | ZERO | INFLATION_LINKED | OTHER",
+      "couponRatePct": null,
+      "couponFrequency": "ANNUAL | SEMI_ANNUAL | QUARTERLY | MONTHLY | ZERO",
+      "dayCount": null,
+      "inflationLinked": {
+        "linked": null,
+        "indexName": null
+      }
+    }
+  },
+
+  "ratings": {
+    "issuer": {
+      "sp": null,
+      "moodys": null,
+      "fitch": null
+    },
+    "productOrFund": {
+      "morningstarStars": null
+    }
+  },
+
+  "quality": {
+    "primarySource": {
+      "sourceType": "OFFICIAL | EXCHANGE | DATA_PROVIDER | KID | FACTSHEET",
+      "sourceName": null,
+      "retrievedAt": "YYYY-MM-DDThh:mm:ssZ"
+    }
+  }
+}
+[REGOLE]
+1) se l'informazione non è presente inserisci un valore null, se invece il campo non è applicabile (es. assenza di cedole/dividendi, data di fine non definita) indicare "ND"
+2) non inserire valori di quotazione corrente
+3) confronta siti di settore diversi per validare le informazioni
+4) restituisci il JSON pronto per il parsing senza fornire null'altro
+2026-01-27 08:23:22,214 - INFO - DEV TEST LLM: === FULL PROMPT END ===
+2026-01-27 08:23:39,556 - INFO - DEV TEST LLM: Response received, valid JSON: True
+2026-01-27 08:29:49,079 - ERROR - DEV GET PROMPT FAIL: {'message': 'Cannot coerce the result to a single JSON object', 'code': 'PGRST116', 'hint': None, 'details': 'The result contains 0 rows'}
+2026-01-27 08:29:49,101 - ERROR - DEV GET PROMPT FAIL: {'message': 'Cannot coerce the result to a single JSON object', 'code': 'PGRST116', 'hint': None, 'details': 'The result contains 0 rows'}
+2026-01-27 08:29:56,544 - INFO - DEV: LLM prompt template saved
+2026-01-27 08:32:24,636 - INFO - DEV: LLM prompt template saved
+2026-01-27 08:32:26,036 - INFO - DEV TEST LLM: Resolved asset name for FR0013393329: H2O MULTIBONDS R EUR
+2026-01-27 08:32:26,060 - INFO - DEV TEST LLM: Request for ISIN: FR0013393329
+2026-01-27 08:32:26,066 - INFO - DEV TEST LLM: === FULL PROMPT START ===
+2026-01-27 08:32:26,067 - INFO - Recupera informazioni per l'asset:
+FR0013393329 - H2O MULTIBONDS R EUR
+da siti di settore affidabili e crea una descrizione sintetica ma completa dell'asset: emittente/gestore, TER, Composizione dell'asset (geografica e di sottostanti), scopo dell'asset, benchmark di riferimento, eventuali regole per dividendi/cedole, data di emissione dell'asset, data di fine dell'asset (se applciabile), etc. 
+Procedi passo per passo e confronta i risultati tra i vari siti per essere certo delle informazioni recuperate.
+
+[REGOLE]
+1) se l'informazione non è presente non inventare e tralascia l'elemento nella descrizione
+2) non inserire valori di quotazione corrente
+3) confronta siti di settore diversi per validare le informazioni
+4) utilizza la formattazione markdown per strutturare la sintesi dell'asset in modo leggibile
+2026-01-27 08:32:26,069 - INFO - DEV TEST LLM: === FULL PROMPT END ===
+2026-01-27 08:32:33,748 - INFO - DEV TEST LLM: Response received, valid JSON: False
+2026-01-27 08:39:28,583 - INFO - Backend API Initialized
+2026-01-27 08:39:28,584 - INFO - debug_exec: C:\Code\PerixMonitor\.venv\Scripts\python.exe
+2026-01-27 08:39:28,584 - INFO - debug_path: ['C:\\Code\\PerixMonitor\\api', 'C:\\Python311\\python311.zip', 'C:\\Python311\\DLLs', 'C:\\Python311\\Lib', 'C:\\Python311', 'C:\\Code\\PerixMonitor\\.venv', 'C:\\Code\\PerixMonitor\\.venv\\Lib\\site-packages']
+2026-01-27 08:41:09,645 - INFO - DEV: LLM prompt template saved
+2026-01-27 08:41:20,365 - INFO - DEV: LLM prompt template saved
+2026-01-27 08:41:25,817 - INFO - DEV: LLM prompt template saved
+2026-01-27 08:41:36,656 - INFO - DEV TEST LLM: Resolved asset name for IE000UL6CLP7: GLB X SILV USD-A EUR
+2026-01-27 08:41:36,674 - INFO - DEV TEST LLM: Request for ISIN: IE000UL6CLP7
+2026-01-27 08:41:36,674 - INFO - DEV TEST LLM: === FULL PROMPT START ===
+2026-01-27 08:41:36,674 - INFO - Recupera informazioni per l'asset:
+IE000UL6CLP7 - GLB X SILV USD-A EUR
+da siti di settore affidabili e crea una descrizione sintetica ma completa dell'asset: emittente/gestore, TER, Composizione dell'asset (geografica e di sottostanti), scopo dell'asset, benchmark di riferimento, eventuali regole per dividendi/cedole, data di emissione dell'asset, data di fine dell'asset (se applciabile), etc. 
+Procedi passo per passo e confronta i risultati tra i vari siti per essere certo delle informazioni recuperate.
+
+[REGOLE]
+1) se l'informazione non è presente non inventare e tralascia l'elemento nella descrizione.
+2) non inserire valori di quotazione corrente.
+3) confronta siti di settore diversi per validare le informazioni.
+4) utilizza la formattazione markdown per strutturare la sintesi dell'asset in modo leggibile.
+2026-01-27 08:41:36,675 - INFO - DEV TEST LLM: === FULL PROMPT END ===
+2026-01-27 08:41:49,499 - INFO - DEV TEST LLM: Response received, valid JSON: False
+2026-01-27 08:43:55,210 - INFO - DEV: LLM prompt template saved
+2026-01-27 08:43:56,755 - INFO - DEV TEST LLM: Resolved asset name for IE000UL6CLP7: GLB X SILV USD-A EUR
+2026-01-27 08:43:56,767 - INFO - DEV TEST LLM: Request for ISIN: IE000UL6CLP7
+2026-01-27 08:43:56,767 - INFO - DEV TEST LLM: === FULL PROMPT START ===
+2026-01-27 08:43:56,768 - INFO - Recupera informazioni per l'asset:
+IE000UL6CLP7 - GLB X SILV USD-A EUR
+da siti di settore affidabili e crea una descrizione sintetica ma completa dell'asset: emittente/gestore, TER, Composizione dell'asset (geografica e di sottostanti), scopo dell'asset, benchmark di riferimento, eventuali regole per dividendi/cedole, data di emissione dell'asset, data di fine dell'asset (se applciabile), etc. 
+Procedi passo per passo e confronta i risultati tra i vari siti per essere certo delle informazioni recuperate.
+
+[REGOLE]
+1) se l'informazione non è presente non inventare e tralascia l'elemento nella descrizione
+2) non inserire valori di quotazione corrente
+3) confronta siti di settore diversi per validare le informazioni
+4) utilizza la formattazione markdown per strutturare la sintesi dell'asset in modo leggibile
+5) non terminare la descrizione con mote aggiuntive o inutili domande o frasi di circostanza. Privilegia la sintesi.
+
+2026-01-27 08:43:56,770 - INFO - DEV TEST LLM: === FULL PROMPT END ===
+2026-01-27 08:44:05,889 - INFO - DEV TEST LLM: Response received, valid JSON: False
+2026-01-27 08:46:29,519 - INFO - DEV TEST LLM: Resolved asset name for IE000UL6CLP7: GLB X SILV USD-A EUR
+2026-01-27 08:46:29,537 - INFO - DEV TEST LLM: Request for ISIN: IE000UL6CLP7
+2026-01-27 08:46:29,537 - INFO - DEV TEST LLM: === FULL PROMPT START ===
+2026-01-27 08:46:29,538 - INFO - Recupera informazioni per l'asset:
+IE000UL6CLP7 - GLB X SILV USD-A EUR
+da siti di settore affidabili e crea una descrizione sintetica ma completa dell'asset: emittente/gestore, TER, Composizione dell'asset (geografica e di sottostanti), scopo dell'asset, benchmark di riferimento, eventuali regole per dividendi/cedole, data di emissione dell'asset, data di fine dell'asset (se applciabile), etc. 
+Procedi passo per passo e confronta i risultati tra i vari siti per essere certo delle informazioni recuperate.
+
+[REGOLE]
+1) se l'informazione non è presente non inventare e tralascia l'elemento nella descrizione
+2) non inserire valori di quotazione corrente
+3) confronta siti di settore diversi per validare le informazioni
+4) utilizza la formattazione markdown per strutturare la sintesi dell'asset in modo leggibile
+5) non terminare la descrizione con mote aggiuntive o inutili domande o frasi di circostanza. Privilegia la sintesi.
+
+2026-01-27 08:46:29,539 - INFO - DEV TEST LLM: === FULL PROMPT END ===
+2026-01-27 08:46:40,040 - INFO - DEV TEST LLM: Response received, valid JSON: False
+2026-01-27 08:55:27,638 - INFO - DEV: LLM prompt template saved
+2026-01-27 08:55:29,477 - INFO - DEV TEST LLM: Resolved asset name for IE000UL6CLP7: GLB X SILV USD-A EUR
+2026-01-27 08:55:29,497 - INFO - DEV TEST LLM: Request for ISIN: IE000UL6CLP7
+2026-01-27 08:55:29,497 - INFO - DEV TEST LLM: === FULL PROMPT START ===
+2026-01-27 08:55:29,497 - INFO - # Obiettivo
+Recupera informazioni sull'asset:
+IE000UL6CLP7 - GLB X SILV USD-A EUR
+da siti di settore affidabili e crea una sintesi sintetica ma completa seguendo questi criteri:
+## Istruzioni
+- Ricava i seguenti dati, se disponibili:
+- Emittente/Gestore
+- TER (Total Expense Ratio)
+- Composizione dell’asset (es. ripartizione geografica, tipologia di sottostanti)
+- Scopo dell’asset
+- Benchmark di riferimento
+- Regole dividendi/cedole
+- Data di emissione (formato: AAAA-MM-GG)
+- Data di scadenza, se applicabile (formato: AAAA-MM-GG)
+- Altri dati rilevanti
+- Procedi passo-passo, confrontando i risultati tra più fonti autorevoli per garantire accuratezza.
+Inizia con una checklist concettuale dei passi che eseguirai: raccolta delle fonti, estrazione e confronto dei dati, validazione delle discrepanze, sintesi secondo il formato richiesto.
+Dopo aver prodotto la sintesi, verifica che tutte le informazioni siano corrispondenti alle fonti consultate; se rilevi discrepanze durante il confronto dei dati tra le fonti, evidenziale chiaramente nel campo interessato.
+## Requisiti
+1. Se un’informazione non è disponibile pubblicamente, omettere (non inventare o inserire placeholder);
+2. Non inserire valori di quotazione corrente;
+3. Confrontare almeno due fonti diverse per validare ogni dato. In caso di incoerenza, segnalare la discrepanza nel campo specifico, indicando entrambe le versioni e le rispettive fonti;
+4. Strutturare la sintesi in markdown secondo lo schema fornito nella sezione Output Format;
+5. Non concludere la descrizione con note aggiuntive, domande o frasi di circostanza. Privilegiare la sintesi.
+## Output Format
+Presenta la sintesi con questo schema markdown:
+```markdown
+# [Nome Asset]
+- **Emittente/Gestore:** ...
+- **TER:** ...
+- **Composizione:** ...
+- **Scopo:** ...
+- **Benchmark di riferimento:** ...
+- **Dividendi/Cedole:** ...
+- **Data di emissione:** AAAA-MM-GG
+- **Data di scadenza:** AAAA-MM-GG (se applicabile)
+*Eventuali discrepanze vanno annotate direttamente nel campo interessato, specificando dettagli e fonti.*
+```
+Elencare solo i campi disponibili. Le date vanno sempre in formato AAAA-MM-GG.
+
+2026-01-27 08:55:29,501 - INFO - DEV TEST LLM: === FULL PROMPT END ===
+2026-01-27 08:55:34,119 - INFO - DEV TEST LLM: Response received, valid JSON: False
+2026-01-27 08:56:40,210 - INFO - DEV TEST LLM: Resolved asset name for XS3174997521: BSKT/BNPI 28
+2026-01-27 08:56:40,229 - INFO - DEV TEST LLM: Request for ISIN: XS3174997521
+2026-01-27 08:56:40,232 - INFO - DEV TEST LLM: === FULL PROMPT START ===
+2026-01-27 08:56:40,234 - INFO - # Obiettivo
+Recupera informazioni sull'asset:
+XS3174997521 - BSKT/BNPI 28
+da siti di settore affidabili e crea una sintesi sintetica ma completa seguendo questi criteri:
+## Istruzioni
+- Ricava i seguenti dati, se disponibili:
+- Emittente/Gestore
+- TER (Total Expense Ratio)
+- Composizione dell’asset (es. ripartizione geografica, tipologia di sottostanti)
+- Scopo dell’asset
+- Benchmark di riferimento
+- Regole dividendi/cedole
+- Data di emissione (formato: AAAA-MM-GG)
+- Data di scadenza, se applicabile (formato: AAAA-MM-GG)
+- Altri dati rilevanti
+- Procedi passo-passo, confrontando i risultati tra più fonti autorevoli per garantire accuratezza.
+Inizia con una checklist concettuale dei passi che eseguirai: raccolta delle fonti, estrazione e confronto dei dati, validazione delle discrepanze, sintesi secondo il formato richiesto.
+Dopo aver prodotto la sintesi, verifica che tutte le informazioni siano corrispondenti alle fonti consultate; se rilevi discrepanze durante il confronto dei dati tra le fonti, evidenziale chiaramente nel campo interessato.
+## Requisiti
+1. Se un’informazione non è disponibile pubblicamente, omettere (non inventare o inserire placeholder);
+2. Non inserire valori di quotazione corrente;
+3. Confrontare almeno due fonti diverse per validare ogni dato. In caso di incoerenza, segnalare la discrepanza nel campo specifico, indicando entrambe le versioni e le rispettive fonti;
+4. Strutturare la sintesi in markdown secondo lo schema fornito nella sezione Output Format;
+5. Non concludere la descrizione con note aggiuntive, domande o frasi di circostanza. Privilegiare la sintesi.
+## Output Format
+Presenta la sintesi con questo schema markdown:
+```markdown
+# [Nome Asset]
+- **Emittente/Gestore:** ...
+- **TER:** ...
+- **Composizione:** ...
+- **Scopo:** ...
+- **Benchmark di riferimento:** ...
+- **Dividendi/Cedole:** ...
+- **Data di emissione:** AAAA-MM-GG
+- **Data di scadenza:** AAAA-MM-GG (se applicabile)
+*Eventuali discrepanze vanno annotate direttamente nel campo interessato, specificando dettagli e fonti.*
+```
+Elencare solo i campi disponibili. Le date vanno sempre in formato AAAA-MM-GG.
+
+2026-01-27 08:56:40,240 - INFO - DEV TEST LLM: === FULL PROMPT END ===
+2026-01-27 08:56:44,354 - INFO - DEV TEST LLM: Response received, valid JSON: False

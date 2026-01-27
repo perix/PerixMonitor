@@ -11,7 +11,8 @@ import {
     CheckCircle2,
     AlertCircle,
     FileJson,
-    RefreshCw
+    RefreshCw,
+    RotateCw
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -144,6 +145,23 @@ export default function DevTestPanel() {
         setPrompt(savedPrompt);
     };
 
+    // [NEW] Reset prompt to APPLICATION DEFAULT
+    const handleResetToDefault = async () => {
+        if (!confirm("Sei sicuro di voler ripristinare il prompt di default? Le modifiche non salvate verranno perse.")) return;
+
+        setLoadingPrompt(true);
+        try {
+            const res = await axios.get('/api/dev/prompt?default=true');
+            const p = res.data.prompt || '';
+            setPrompt(p);
+            // We don't save automatically, user must decide to save
+        } catch (error) {
+            console.error('Failed to fetch default prompt:', error);
+        } finally {
+            setLoadingPrompt(false);
+        }
+    };
+
     return (
         <div className="space-y-8">
             <div className="flex items-center gap-4">
@@ -223,14 +241,22 @@ export default function DevTestPanel() {
                                         className="text-slate-400 hover:text-white"
                                     >
                                         <RefreshCw className="w-4 h-4 mr-1" />
-                                        Reset
+                                        Annulla modifiche
                                     </Button>
                                 )}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleResetToDefault}
+                                    className="border-white/10 hover:bg-white/5 text-slate-400 hover:text-white text-xs"
+                                >
+                                    <RotateCw className="w-3 h-3 mr-1" />
+                                    Default
+                                </Button>
                             </div>
                         </div>
                         <CardDescription>
-                            Modifica il prompt usato per recuperare informazioni asset.
-                            Usa <code className="bg-slate-800 px-1 rounded">{'{isin}'}</code> e <code className="bg-slate-800 px-1 rounded">{'{template}'}</code> come placeholder.
+                            Modifica il prompt usato per recuperare informazioni asset. Usa <code className="bg-slate-800 px-1 rounded">{'{isin}'}</code> e <code className="bg-slate-800 px-1 rounded">{'{nome_asset}'}</code> come placeholder. <code className="bg-slate-800 px-1 rounded">{'{template}'}</code> è un JSON cablato nell'applicazione per la generazione della risposta in formato JSON.
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">

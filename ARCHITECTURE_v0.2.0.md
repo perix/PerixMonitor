@@ -175,3 +175,44 @@ Il sistema adotta un approccio "Read-Preview-Write" per evitare contaminazione d
 ### Prossimi Passi (Roadmap)
 - [ ] **MWRR Engine**: Aggiornare il calcolo XIRR per includere i dividendi.
 - [ ] **Asset History Fill**: Popolare `asset_metrics_history` durante la sync per abilitare grafici per singolo asset.
+
+## 6. Ambiente di Test e Produzione
+
+Il progetto è configurato per supportare due ambienti distinti, garantendo la possibilità di testare in locale prima del deploy:
+
+### 1. Locale (Sviluppo & Test)
+L'ambiente locale utilizza **Docker Desktop** e richiede l'avvio coordinato di tre componenti in terminali separati.
+
+#### Procedura di Avvio (Step-by-Step)
+
+1.  **Tab 1: Infrastructure (Supabase)**
+    - Assicurati che Docker Desktop sia aperto.
+    - Esegui: `supabase start`
+    - *Nota*: Questo avvia il database, l'autenticazione e lo storage.
+
+2.  **Tab 2: Backend (Python API)**
+    - Attiva il virtual environment (se non già attivo): `.\.venv\Scripts\activate`
+    - Installa le dipendenze: `pip install -r requirements.txt`
+    - Esegui: `python api/index.py`
+    - *Porta*: **5328**
+    - *Scopo*: Gestisce i calcoli finanziari (XIRR), l'analisi Excel e la logica di business. Deve rimanere attivo affinché il frontend possa funzionare.
+
+3.  **Tab 3: Frontend (Next.js)**
+    - Esegui: `npm run dev`
+    - *Porta*: **3500** (URL: `http://localhost:3500`)
+    - *Scopo*: Interfaccia utente interattiva.
+
+#### Troubleshooting Locale
+- **Errore `ECONNREFUSED 127.0.0.1:5328`**: Il server Backend Python non è attivo o si è interrotto. Controlla il Tab 2.
+- **Porta Occupata (EACCES)**: Se ricevi errori sulla porta 3000 o 3010, il comando `npm run dev` è già configurato per usare la **3500**.
+- **Errore Database**: Se `supabase start` fallisce, prova a eseguire `supabase stop` prima di riavviare.
+- **Variabili d'ambiente**: Localmente vengono lette dal file `.env.local`.
+
+### 2. Produzione (Vercel)
+L'ambiente live accessibile via web.
+
+- **Database**: Project Supabase ospitato su Cloud (Piano Free).
+- **Backend**: Le API Python vengono convertite in **Serverless Functions** su Vercel.
+- **Frontend**: Compilato e servito dalla CDN di Vercel.
+- **Configurazione**: Le variabili d'ambiente sono gestite tramite la dashboard di Vercel (Project Settings > Environment Variables).
+

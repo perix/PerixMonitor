@@ -689,6 +689,9 @@ def set_log_config():
 def get_dev_prompt():
     """Get the current LLM prompt template (from DB or default)."""
     try:
+        if request.args.get('default') == 'true':
+             return jsonify(prompt=DEFAULT_LLM_PROMPT, is_default=True), 200
+
         supabase = get_supabase_client()
         res = supabase.table('app_config').select('value').eq('key', 'llm_asset_prompt').single().execute()
         

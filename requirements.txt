@@ -1,8 +1,9 @@
 flask
 pandas
 numpy
-scipy
+
 requests
-supabase
+supabase<2.10.0
 openpyxl
 openai
+python-dotenv

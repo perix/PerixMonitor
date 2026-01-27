@@ -35,6 +35,16 @@ Hosting: Vercel (Front-end + Backend).
 
 ### IMPORTANT: take into account the limitation of the free usage of Vercel and Supabase and implement code optimization to cope with these limitations.
 
+## ENVIRONMENT STRATEGY (Dual Testing):
+- **Local (Docker Desktop)**:
+    - Database & Auth: Supabase CLI (Docker).
+    - Frontend: Local Next.js (`npm run dev`).
+    - Backend: Local Flask (`python api/index.py`).
+- **Production (Vercel + Supabase Cloud)**:
+    - Frontend + Backend: Deployed on Vercel.
+    - Database: Supabase Free Tier.
+
+
 ## KEY FUNCTIONAL REQUIREMENTS:
 
 - Language: In interactions with the user, always respond in Italian.

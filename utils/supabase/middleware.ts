@@ -1,53 +1,21 @@
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function updateSession(request: NextRequest) {
-    let supabaseResponse = NextResponse.next({
-        request,
-    })
+    console.log("Middleware: updateSession started (BYPASS MODE)");
+    console.log("Middleware: URL", request.nextUrl.pathname);
 
-    const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-            cookies: {
-                getAll() {
-                    return request.cookies.getAll()
-                },
-                setAll(cookiesToSet) {
-                    cookiesToSet.forEach(({ name, value, options }) =>
-                        request.cookies.set(name, value)
-                    )
-                    supabaseResponse = NextResponse.next({
-                        request,
-                    })
-                    cookiesToSet.forEach(({ name, value, options }) =>
-                        supabaseResponse.cookies.set(name, value, options)
-                    )
-                },
-            },
-        }
-    )
+    // TEMPORARY BYPASS FOR DEBUGGING
+    return { response: NextResponse.next(), user: null }
 
-    // IMPORTANT: Avoid writing any logic between createServerClient and
-    // supabase.auth.getUser(). A simple mistake could make it very hard to debug
-    // issues with users being randomly logged out.
-
-    const {
-        data: { user },
-    } = await supabase.auth.getUser()
-
-    if (
-        !user &&
-        !request.nextUrl.pathname.startsWith('/login') &&
-        !request.nextUrl.pathname.startsWith('/auth')
-    ) {
-        // no user, potentially respond by redirecting the user to the login page
-        const url = request.nextUrl.clone()
-        url.pathname = '/login'
-        return { response: NextResponse.redirect(url), user: null }
+    /* 
+    try {
+        let supabaseResponse = NextResponse.next({
+            request,
+        })
+        // ... (rest of logic commented out)
+    } catch (e) {
+        console.error("Middleware: CRITICAL ERROR", e);
+        return { response: NextResponse.next(), user: null };
     }
-
-    // IMPORTANT: You *must* return the supabaseResponse object as it is. 
-    return { response: supabaseResponse, user }
+    */
 }
