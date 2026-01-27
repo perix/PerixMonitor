@@ -47,7 +47,7 @@ def handle_exception(e):
 
 @app.route('/api/hello', methods=['GET'])
 def hello():
-    return jsonify(message="Hello from Python!")
+    return jsonify(message="Hello from Python!", version="1.1", build="20260127-fix-assets")
 
 from supabase_client import get_supabase_client, get_or_create_default_portfolio
 

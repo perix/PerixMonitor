@@ -115,7 +115,14 @@ def parse_portfolio_excel(file_stream):
             }
             data.append(entry)
             
-        return {"type": "PORTFOLIO_SYNC", "data": data}
+        return {
+            "type": "PORTFOLIO_SYNC", 
+            "data": data, 
+            "debug": {
+                "columns_found": df.columns.tolist(),
+                "asset_type_col_index": type_col_idx
+            }
+        }
             
     except Exception as e:
         logger.error(f"PARSE EXCEPTION: {str(e)}")
