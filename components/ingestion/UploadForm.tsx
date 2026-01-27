@@ -25,7 +25,7 @@ export const UploadForm = () => {
     const [ignoreMissing, setIgnoreMissing] = useState(false);
 
     // Global Context State
-    const { selectedPortfolioId, setSelectedPortfolioId, invalidateCache } = usePortfolio();
+    const { selectedPortfolioId, setSelectedPortfolioId, invalidateCache, clearCache } = usePortfolio();
 
     // Clear logs on mount
     React.useEffect(() => {
@@ -95,7 +95,7 @@ export const UploadForm = () => {
                         portfolio_id: selectedPortfolioId,
                         enable_ai_lookup: enableAiLookup
                     });
-                    invalidateCache(selectedPortfolioId);
+                    clearCache();
                     alert("Cedole importate con successo!");
                 }
             } else {
@@ -135,7 +135,9 @@ export const UploadForm = () => {
                 snapshot: pricesAndSnapshot?.snapshot,
                 enable_ai_lookup: enableAiLookup
             });
-            invalidateCache(selectedPortfolioId);
+            // Invalidate ALL caches because Assets are shared globally.
+            // If we updated an Asset Name/Type, it affects other portfolios too.
+            clearCache();
             alert("Sincronizzazione completata con successo!");
             setShowModal(false);
         } catch (e: any) {

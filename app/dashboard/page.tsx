@@ -13,12 +13,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#a855f7', '#ec4899', '#6366f1', '#14b8a6'];
 
 export default function DashboardPage() {
-    const { selectedPortfolioId, dashboardCache, setDashboardCache } = usePortfolio();
+    const { selectedPortfolioId, dashboardCache, setDashboardCache, portfolioCache } = usePortfolio();
 
     const [summary, setSummary] = useState<any>(null);
     const [history, setHistory] = useState<any>([]);
     const [loading, setLoading] = useState(true);
     const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
+    const [portfolioName, setPortfolioName] = useState("");
 
     const [initialSettings, setInitialSettings] = useState<{ timeWindow?: number, yAxisScale?: number } | null>(null);
 
@@ -57,6 +58,14 @@ export default function DashboardPage() {
                 setHistory(cached.history);
                 setInitialSettings(cached.settings);
 
+                // Restore name from cache
+                if (cached.name) {
+                    setPortfolioName(cached.name);
+                } else if (portfolioCache[selectedPortfolioId]) {
+                    // Fallback to portfolio cache if available
+                    setPortfolioName(portfolioCache[selectedPortfolioId].name);
+                }
+
                 // Restore selected assets logic if needed, or just default to all if not cached separately
                 // Ideally we might want to cache selectedAssets too, but for now re-init is fine
                 // or we can infer it. 
@@ -87,10 +96,12 @@ export default function DashboardPage() {
 
                 const dataSummary = resSummary.data;
                 const dataHistory = resHistory.data;
-                const settings = resDetails.data.settings || {};
+                const portfolioDetails = resDetails.data;
+                const settings = portfolioDetails.settings || {};
 
                 setSummary(dataSummary);
                 setHistory(dataHistory);
+                setPortfolioName(portfolioDetails.name);
 
                 // Set initial settings if present
                 setInitialSettings(settings);
@@ -104,7 +115,8 @@ export default function DashboardPage() {
                 setDashboardCache(selectedPortfolioId, {
                     summary: dataSummary,
                     history: dataHistory,
-                    settings: settings
+                    settings: settings,
+                    name: portfolioDetails.name
                 });
 
             } catch (e) {
@@ -141,7 +153,7 @@ export default function DashboardPage() {
     return (
 
         <div className="flex flex-1 flex-col h-full bg-background/50 p-6 overflow-y-auto">
-            <PanelHeader title="Dashboard" />
+            <PanelHeader title={`Dashboard - ${portfolioName || 'Loading...'}`} />
 
             <div className="flex flex-col gap-3">
                 <div className="grid gap-3" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr)" }}>

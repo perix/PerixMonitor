@@ -216,7 +216,14 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                 <CardContent>
                     <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
                         <div className="min-w-0 flex-1 basis-64">
-                            <h2 className="text-2xl font-bold truncate">{displayName}</h2>
+                            <h2 className="text-2xl font-bold truncate">
+                                {displayName}
+                                {asset.metadata?.assetType && (
+                                    <span className="text-lg font-normal text-muted-foreground ml-2">
+                                        ({asset.metadata.assetType})
+                                    </span>
+                                )}
+                            </h2>
                             <p className="text-sm text-muted-foreground font-mono">{asset.isin}</p>
                         </div>
                         <div className="text-right shrink-0">

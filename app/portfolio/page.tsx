@@ -1,6 +1,7 @@
 'use client';
 
 import { PanelHeader } from "@/components/layout/PanelHeader";
+import { Separator } from "@/components/ui/separator";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -38,6 +39,8 @@ export default function PortfolioPage() {
     const [loading, setLoading] = useState(true);
     const [selectedIsin, setSelectedIsin] = useState<string | null>(null);
     const [portfolioName, setPortfolioName] = useState<string>("");
+    const [liquidity, setLiquidity] = useState<number>(0);
+    const [isEditingLiquidity, setIsEditingLiquidity] = useState(false);
 
     useEffect(() => {
         async function fetchAssets() {
@@ -51,6 +54,19 @@ export default function PortfolioPage() {
                 const cached = portfolioCache[selectedPortfolioId];
                 setAssets(cached.assets);
                 setPortfolioName(cached.name);
+                // We don't cache liquidity specifically in the portfolioCache type yet, 
+                // but we can fetch it or just rely on the fresh fetch below if we want to be safe.
+                // For now, let's always fetch settings to get the fresh liquidity.
+                // Ideally, we should update the cache structure to include settings/liquidity.
+
+                // Let's do a quick fetch for settings anyway to ensure liquidity is up to date
+                try {
+                    const portfolioRes = await axios.get(`/api/portfolio/${selectedPortfolioId}`);
+                    const settings = portfolioRes.data.settings || {};
+                    setLiquidity(Number(settings.liquidity) || 0);
+                } catch (e) {
+                    console.error("Failed to fetch latest liquidity", e);
+                }
 
                 // Auto-select first asset if available and none selected yet
                 if (cached.assets.length > 0 && !selectedIsin) {
@@ -71,9 +87,11 @@ export default function PortfolioPage() {
 
                 const fetchedAssets = assetsRes.data.assets || [];
                 const fetchedName = portfolioRes.data.name || "";
+                const fetchedSettings = portfolioRes.data.settings || {};
 
                 setAssets(fetchedAssets);
                 setPortfolioName(fetchedName);
+                setLiquidity(Number(fetchedSettings.liquidity) || 0);
 
                 // Auto-select first asset if available
                 if (fetchedAssets.length > 0 && !selectedIsin) {
@@ -96,7 +114,28 @@ export default function PortfolioPage() {
         fetchAssets();
     }, [selectedPortfolioId]);
 
+    const handleLiquidityUpdate = async (newValue: string) => {
+        if (!selectedPortfolioId) return;
+        const val = parseFloat(newValue);
+        if (isNaN(val)) return;
+
+        setLiquidity(val);
+        try {
+            await axios.patch(`/api/portfolio/${selectedPortfolioId}/settings`, {
+                liquidity: val
+            });
+        } catch (e) {
+            console.error("Failed to update liquidity", e);
+            // Optionally revert state on error
+        }
+    };
+
     const selectedAsset = assets.find(a => a.isin === selectedIsin) || null;
+
+    // Calculate totals
+    const totalAssetsValue = assets.reduce((sum, asset) => sum + (asset.current_value || 0), 0);
+    const totalPortfolioValue = totalAssetsValue + liquidity;
+    const liquidityPercent = totalPortfolioValue > 0 ? (liquidity / totalPortfolioValue) * 100 : 0;
 
     if (loading) {
         return (
@@ -118,7 +157,7 @@ export default function PortfolioPage() {
         );
     }
 
-    if (assets.length === 0) {
+    if (assets.length === 0 && liquidity === 0) {
         return (
             <div className="flex flex-1 flex-col h-full bg-background/50 p-6">
                 <PanelHeader title="Portafoglio" />
@@ -130,11 +169,35 @@ export default function PortfolioPage() {
         );
     }
 
+
     return (
         <div className="flex flex-col h-full bg-background/50 p-6 overflow-hidden">
-            <PanelHeader title={portfolioName ? `Portafoglio ${portfolioName}` : "Portafoglio"} />
+            <div className="flex flex-col gap-2 mb-6">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <h1 className="text-2xl font-bold tracking-tight">
+                            {portfolioName ? `Portafoglio ${portfolioName}` : "Portafoglio"}
+                        </h1>
+                        <div className="flex items-center gap-2 text-lg">
+                            <input
+                                type="number"
+                                value={liquidity}
+                                onChange={(e) => handleLiquidityUpdate(e.target.value)}
+                                className="w-32 bg-transparent border-b border-dashed border-muted-foreground/50 focus:border-primary focus:outline-none text-right font-mono"
+                                placeholder="0.00"
+                                step="100"
+                            />
+                            <span className="font-medium">€</span>
+                            <span className="text-muted-foreground ml-2">
+                                (Totale {totalPortfolioValue.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € - liquidità {liquidityPercent.toFixed(0)}%)
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                <Separator className="bg-border/40" />
+            </div>
 
-            <div className="flex-1 w-full min-h-0 mt-4 relative">
+            <div className="flex-1 w-full min-h-0 relative">
                 <ResizablePortfolioLayout
                     leftPanel={
                         <AssetList

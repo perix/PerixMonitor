@@ -7,6 +7,7 @@ export interface DashboardData {
     summary: any;
     history: any;
     settings: { timeWindow?: number; yAxisScale?: number } | null;
+    name?: string;
     timestamp: number;
 }
 
@@ -25,6 +26,7 @@ interface PortfolioContextType {
     setDashboardCache: (portfolioId: string, data: Omit<DashboardData, 'timestamp'>) => void;
     setPortfolioCache: (portfolioId: string, data: Omit<PortfolioData, 'timestamp'>) => void;
     invalidateCache: (portfolioId: string) => void;
+    clearCache: () => void;
 }
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
@@ -81,6 +83,11 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
         });
     };
 
+    const clearCache = () => {
+        setDashboardCacheState({});
+        setPortfolioCacheState({});
+    };
+
     return (
         <PortfolioContext.Provider value={{
             selectedPortfolioId,
@@ -89,7 +96,8 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
             portfolioCache,
             setDashboardCache,
             setPortfolioCache,
-            invalidateCache
+            invalidateCache,
+            clearCache
         }}>
             {children}
         </PortfolioContext.Provider>

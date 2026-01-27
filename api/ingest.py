@@ -80,6 +80,13 @@ def parse_portfolio_excel(file_stream):
                     date_val = str(date_val)
                 except:
                     date_val = None
+            
+            # [NEW] Parse Asset Type from Column J (Index 9)
+            asset_type = None
+            if df.shape[1] > 9:
+                 raw_type = row.iloc[9]
+                 if not pd.isna(raw_type):
+                     asset_type = str(raw_type).strip().capitalize()
 
             entry = {
                 "description": row.iloc[0],
@@ -90,7 +97,8 @@ def parse_portfolio_excel(file_stream):
                 "date": date_val, 
                 "operation": str(row.iloc[6]).strip() if not pd.isna(row.iloc[6]) else None,
                 "op_price_eur": float(row.iloc[7]) if not pd.isna(row.iloc[7]) else 0.0,
-                "current_price": float(row.iloc[8]) if df.shape[1] > 8 and not pd.isna(row.iloc[8]) else None
+                "current_price": float(row.iloc[8]) if df.shape[1] > 8 and not pd.isna(row.iloc[8]) else None,
+                "asset_type": asset_type
             }
             data.append(entry)
             
@@ -170,6 +178,7 @@ def calculate_delta(excel_data, db_holdings, ignore_missing=False):
             "excel_price": op_price,
             "excel_date": op_date,
             "excel_description": row.get('description'),  # Asset name from Excel column A
+            "asset_type_proposal": row.get('asset_type'), # [NEW] Pass asset type proposal
             "current_db_qty": db_qty,
             "new_total_qty": excel_qty
         }

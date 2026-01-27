@@ -133,25 +133,78 @@ def sync_transactions():
                 exist_ids = list(asset_map.values())
                 if exist_ids:
                      assign_colors(portfolio_id, exist_ids)
+
+                # [NEW] Backfill Asset Type for EXISTING assets
+                # If the file provides asset_type, we should update the metadata even if asset exists.
+                isin_to_type = {}
+                for item in changes:
+                    if item.get('isin') and item.get('asset_type_proposal'):
+                        isin_to_type[item['isin']] = str(item['asset_type_proposal']).strip()
+                
+                if isin_to_type:
+                    # We need to fetch current metadata for these assets to merge
+                    existing_assets_data = supabase.table('assets').select("id, isin, metadata").in_('isin', list(isin_to_type.keys())).execute()
+                    if existing_assets_data.data:
+                        for row in existing_assets_data.data:
+                            isin = row['isin']
+                            new_type = isin_to_type.get(isin)
+                            if new_type:
+                                current_meta = row.get('metadata') or {}
+                                if not isinstance(current_meta, dict):
+                                    current_meta = {}
+                                
+                                # Check if update is needed
+                                    current_meta['assetType'] = new_type
+                                    logger.info(f"SYNC: Backfilling Asset Type for {isin} -> {new_type}")
+                                    supabase.table('assets').update({"metadata": current_meta}).eq('id', row['id']).execute()
+                        
+                        # [NEW] Update Asset Names (Description) for EXISTING assets
+                        # If Excel has a better/new description, update the global asset name.
+                        isin_to_desc = {}
+                        for item in changes:
+                            if item.get('isin') and item.get('excel_description'):
+                                isin_to_desc[item['isin']] = str(item['excel_description']).strip()
+                        
+                        if isin_to_desc:
+                             # Re-using existing_assets_data if possible or fetch again. 
+                             # We can just iterate the same rows since we fetched 'id' and 'isin' (and 'name' if we add it to select)
+                             existing_assets_names = supabase.table('assets').select("id, isin, name").in_('isin', list(isin_to_desc.keys())).execute()
+                             if existing_assets_names.data:
+                                 for row in existing_assets_names.data:
+                                     isin = row['isin']
+                                     new_name = isin_to_desc.get(isin)
+                                     current_name = row.get('name')
+                                     
+                                     # Update if different and new name is valid
+                                     if new_name and new_name != current_name and len(new_name) > 2:
+                                         logger.info(f"SYNC: Updating Asset Name for {isin}: '{current_name}' -> '{new_name}'")
+                                         supabase.table('assets').update({"name": new_name}).eq('id', row['id']).execute()
                 
                 # 3c. Identify and Create missing assets
                 missing_isins = target_isins - set(asset_map.keys())
                 
                 if missing_isins:
-                    # Build a map of ISIN -> description from changes
+                    # Build a map of ISIN -> description and Type from changes
                     isin_to_description = {}
+                    isin_to_type = {}
                     for item in changes:
-                        if item.get('isin') and item.get('excel_description'):
-                            isin_to_description[item['isin']] = str(item['excel_description']).strip()
+                        if item.get('isin'):
+                             if item.get('excel_description'):
+                                isin_to_description[item['isin']] = str(item['excel_description']).strip()
+                             if item.get('asset_type_proposal'):
+                                isin_to_type[item['isin']] = str(item['asset_type_proposal']).strip()
                     
-                    # Create assets with proper names from Excel
-                    new_assets_payload = [
-                        {
+                    # Create assets with proper names from Excel and initial metadata
+                    new_assets_payload = []
+                    for isin in missing_isins:
+                        asset_payload = {
                             "isin": isin, 
                             "name": isin_to_description.get(isin, isin)  # Use Excel description or fallback to ISIN
-                        } 
-                        for isin in missing_isins
-                    ]
+                        }
+                        if isin in isin_to_type:
+                            asset_payload["metadata"] = {"assetType": isin_to_type[isin]}
+                        
+                        new_assets_payload.append(asset_payload)
                     res_new = supabase.table('assets').insert(new_assets_payload).execute()
                     if res_new.data:
                         for row in res_new.data:
@@ -172,8 +225,16 @@ def sync_transactions():
                                     try:
                                         if llm_result.get('response_type') == 'json':
                                             # Save structured JSON to metadata column
+                                            # [FIX] Merge with existing metadata if present (like assetType)
+                                            current_meta = row.get('metadata') or {}
+                                            if not isinstance(current_meta, dict):
+                                                current_meta = {}
+                                            
+                                            # Merge LLM data into current metadata
+                                            new_meta = {**current_meta, **llm_result['data']}
+                                            
                                             supabase.table('assets').update({
-                                                "metadata": llm_result['data'],
+                                                "metadata": new_meta,
                                                 "metadata_text": None
                                             }).eq('id', row['id']).execute()
                                             logger.info(f"SYNC: Updated asset {row['isin']} with LLM JSON metadata")
