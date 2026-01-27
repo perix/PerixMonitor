@@ -30,6 +30,7 @@ interface ReconciliationModalProps {
 
 export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen, onClose, delta, prices, onConfirm }) => {
   const [resolutions, setResolutions] = useState<Record<string, { date: string, price: number }>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleResolutionChange = (isin: string, field: 'date' | 'price', value: string | number) => {
     setResolutions(prev => ({
@@ -41,7 +42,7 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
     }));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const finalData = delta.map(item => {
       if (item.type === 'MISSING_FROM_UPLOAD') {
         const res = resolutions[item.isin];
@@ -53,7 +54,16 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
       return item;
     }).filter(Boolean);
 
-    onConfirm(finalData);
+    setIsSubmitting(true);
+    document.body.style.cursor = 'wait';
+    try {
+      await onConfirm(finalData);
+    } catch (e) {
+      console.error("Submission failed", e);
+    } finally {
+      setIsSubmitting(false);
+      document.body.style.cursor = 'default';
+    }
   };
 
   const missingItems = delta.filter(d => d.type === 'MISSING_FROM_UPLOAD');
@@ -204,9 +214,9 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Annulla</Button>
-          <Button onClick={handleSubmit} disabled={!canSubmit}>
-            Conferma e Sincronizza
+          <Button variant="outline" onClick={onClose} disabled={isSubmitting}>Annulla</Button>
+          <Button onClick={handleSubmit} disabled={!canSubmit || isSubmitting}>
+            {isSubmitting ? 'Sincronizzazione...' : 'Conferma e Sincronizza'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -138,10 +138,17 @@ Il sistema adotta un approccio "Read-Preview-Write" per evitare contaminazione d
 ## 4. Strategie di Dati
 
 ### Manual Price Ingestion
-- Non usiamo API esterne (es. Yahoo Finance) per i prezzi.
 - La fonte di verità è la **Colonna I ("Prezzo Corrente") del file Excel**.
 - Questi prezzi vengono salvati nella tabella `asset_prices` con `source='Manual Upload'`.
 - Questi prezzi alimentano sia il valore corrente del portafoglio sia lo storico per i grafici.
+
+### Client-Side Caching (Performance)
+- **Problem**: La navigazione tra Dashboard e Portafoglio causava ricaricamenti ridondanti dei dati.
+- **Solution**: Implementata una cache a livello di `PortfolioContext`.
+    - **Dashboard Cache**: Memorizza Summary, History e Settings per ogni Portafoglio visitato.
+    - **Portfolio Cache**: Memorizza lista Asset e dettagli Portafoglio.
+- **Invalidation**: La cache viene invalidata automaticamente al caricamento di nuovi dati (Ingest) o alla modifica delle impostazioni.
+- **Persistence**: I dati rimangono in memoria per la sessione corrente (o fino al reload pagina), garantendo navigazione istantanea.
 
 ### Gestione Cedole, Dividendi e Spese
 - **Rilevamento File**: Identificazione automatica tramite intestazione colonna C ("Data Flusso") o struttura a 3 colonne.
@@ -157,6 +164,7 @@ Il sistema adotta un approccio "Read-Preview-Write" per evitare contaminazione d
 - [x] **Dividend Support**: Parsing file 3 colonne e tabella DB dedicata.
 - [x] **Manual Prices**: Salvataggio storico prezzi da Excel.
 - [x] **UI/UX**: Integrazione modali di conferma e feedback visivi.
+- [x] **Performance**: Caching client-side per navigazione istantanea.
 
 ### Prossimi Passi (Roadmap)
 - [ ] **MWRR Engine**: Aggiornare il calcolo XIRR per includere i dividendi.

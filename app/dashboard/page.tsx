@@ -13,7 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#a855f7', '#ec4899', '#6366f1', '#14b8a6'];
 
 export default function DashboardPage() {
-    const { selectedPortfolioId } = usePortfolio();
+    const { selectedPortfolioId, dashboardCache, setDashboardCache } = usePortfolio();
 
     const [summary, setSummary] = useState<any>(null);
     const [history, setHistory] = useState<any>([]);
@@ -27,6 +27,15 @@ export default function DashboardPage() {
         if (!selectedPortfolioId) return;
         try {
             await axios.patch(`/api/portfolio/${selectedPortfolioId}/settings`, newSettings);
+
+            // Update cache optimistically
+            if (dashboardCache[selectedPortfolioId]) {
+                const currentCache = dashboardCache[selectedPortfolioId];
+                setDashboardCache(selectedPortfolioId, {
+                    ...currentCache,
+                    settings: { ...currentCache.settings, ...newSettings }
+                });
+            }
         } catch (e) {
             console.error("Failed to update settings:", e);
         }
@@ -38,6 +47,26 @@ export default function DashboardPage() {
                 setLoading(false);
                 setSummary(null);
                 setHistory([]);
+                return;
+            }
+
+            // Check Cache
+            if (dashboardCache[selectedPortfolioId]) {
+                const cached = dashboardCache[selectedPortfolioId];
+                setSummary(cached.summary);
+                setHistory(cached.history);
+                setInitialSettings(cached.settings);
+
+                // Restore selected assets logic if needed, or just default to all if not cached separately
+                // Ideally we might want to cache selectedAssets too, but for now re-init is fine
+                // or we can infer it. 
+                // Let's re-init selection based on history series for now to be safe.
+                if (cached.history?.series) {
+                    const allIsins = new Set<string>(cached.history.series.map((s: any) => s.isin));
+                    setSelectedAssets(allIsins);
+                }
+
+                setLoading(false);
                 return;
             }
 
@@ -56,17 +85,27 @@ export default function DashboardPage() {
                     axios.get(`/api/portfolio/${selectedPortfolioId}`)
                 ]);
 
-                setSummary(resSummary.data);
-                setHistory(resHistory.data);
+                const dataSummary = resSummary.data;
+                const dataHistory = resHistory.data;
+                const settings = resDetails.data.settings || {};
+
+                setSummary(dataSummary);
+                setHistory(dataHistory);
 
                 // Set initial settings if present
-                const settings = resDetails.data.settings || {};
                 setInitialSettings(settings);
 
-                if (resHistory.data?.series) {
-                    const allIsins = new Set<string>(resHistory.data.series.map((s: any) => s.isin));
+                if (dataHistory.series) {
+                    const allIsins = new Set<string>(dataHistory.series.map((s: any) => s.isin));
                     setSelectedAssets(allIsins);
                 }
+
+                // Update Cache
+                setDashboardCache(selectedPortfolioId, {
+                    summary: dataSummary,
+                    history: dataHistory,
+                    settings: settings
+                });
 
             } catch (e) {
                 console.error("Dashboard fetch error:", e);

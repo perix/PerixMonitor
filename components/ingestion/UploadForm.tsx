@@ -25,7 +25,7 @@ export const UploadForm = () => {
     const [ignoreMissing, setIgnoreMissing] = useState(false);
 
     // Global Context State
-    const { selectedPortfolioId, setSelectedPortfolioId } = usePortfolio();
+    const { selectedPortfolioId, setSelectedPortfolioId, invalidateCache } = usePortfolio();
 
     // Clear logs on mount
     React.useEffect(() => {
@@ -71,6 +71,8 @@ export const UploadForm = () => {
         formData.append('ignore_missing', ignoreMissing ? 'true' : 'false');
 
 
+        document.body.style.cursor = 'wait';
+
         try {
             const response = await axios.post('/api/ingest', formData);
             const data = response.data;
@@ -93,6 +95,7 @@ export const UploadForm = () => {
                         portfolio_id: selectedPortfolioId,
                         enable_ai_lookup: enableAiLookup
                     });
+                    invalidateCache(selectedPortfolioId);
                     alert("Cedole importate con successo!");
                 }
             } else {
@@ -116,6 +119,7 @@ export const UploadForm = () => {
             setError(serverError ? `Errore Server: ${serverError}` : genericError);
         } finally {
             setLoading(false);
+            document.body.style.cursor = 'default';
         }
     };
 
@@ -131,9 +135,9 @@ export const UploadForm = () => {
                 snapshot: pricesAndSnapshot?.snapshot,
                 enable_ai_lookup: enableAiLookup
             });
+            invalidateCache(selectedPortfolioId);
             alert("Sincronizzazione completata con successo!");
             setShowModal(false);
-            // Optional: Request dashboard refresh
         } catch (e: any) {
             console.error(e);
             alert("Errore durante la sincronizzazione: " + (e.response?.data?.error || e.message));

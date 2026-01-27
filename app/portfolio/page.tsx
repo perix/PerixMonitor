@@ -33,7 +33,7 @@ interface Asset {
 }
 
 export default function PortfolioPage() {
-    const { selectedPortfolioId } = usePortfolio();
+    const { selectedPortfolioId, portfolioCache, setPortfolioCache } = usePortfolio();
     const [assets, setAssets] = useState<Asset[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedIsin, setSelectedIsin] = useState<string | null>(null);
@@ -46,6 +46,21 @@ export default function PortfolioPage() {
                 return;
             }
 
+            // Check Cache
+            if (portfolioCache[selectedPortfolioId]) {
+                const cached = portfolioCache[selectedPortfolioId];
+                setAssets(cached.assets);
+                setPortfolioName(cached.name);
+
+                // Auto-select first asset if available and none selected yet
+                if (cached.assets.length > 0 && !selectedIsin) {
+                    setSelectedIsin(cached.assets[0].isin);
+                }
+
+                setLoading(false);
+                return;
+            }
+
             setLoading(true);
             try {
                 // Parallel fetch for assets and portfolio details
@@ -54,13 +69,23 @@ export default function PortfolioPage() {
                     axios.get(`/api/portfolio/${selectedPortfolioId}`)
                 ]);
 
-                setAssets(assetsRes.data.assets || []);
-                setPortfolioName(portfolioRes.data.name || "");
+                const fetchedAssets = assetsRes.data.assets || [];
+                const fetchedName = portfolioRes.data.name || "";
+
+                setAssets(fetchedAssets);
+                setPortfolioName(fetchedName);
 
                 // Auto-select first asset if available
-                if (assetsRes.data.assets?.length > 0 && !selectedIsin) {
-                    setSelectedIsin(assetsRes.data.assets[0].isin);
+                if (fetchedAssets.length > 0 && !selectedIsin) {
+                    setSelectedIsin(fetchedAssets[0].isin);
                 }
+
+                // Update Cache
+                setPortfolioCache(selectedPortfolioId, {
+                    assets: fetchedAssets,
+                    name: fetchedName
+                });
+
             } catch (e) {
                 console.error("Portfolio data fetch error:", e);
             } finally {
