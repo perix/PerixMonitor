@@ -81,12 +81,25 @@ def parse_portfolio_excel(file_stream):
                 except:
                     date_val = None
             
-            # [NEW] Parse Asset Type from Column J (Index 9)
+            # [NEW] Parse Asset Type dynamically by column name or fallback to index 9
             asset_type = None
-            if df.shape[1] > 9:
-                 raw_type = row.iloc[9]
-                 if not pd.isna(raw_type):
-                     asset_type = str(raw_type).strip().capitalize()
+            
+            # 1. Try to find column by header name
+            type_col_idx = -1
+            for i, col_name in enumerate(df.columns):
+                c_str = str(col_name).lower().strip()
+                if "tipologia" in c_str or "asset class" in c_str or ("tipo" in c_str and "strumento" in c_str):
+                    type_col_idx = i
+                    break
+            
+            # 2. Fallback to column index 9 (J) if specifically 10+ columns and no header matched
+            if type_col_idx == -1 and df.shape[1] > 9:
+                type_col_idx = 9
+            
+            if type_col_idx != -1 and type_col_idx < df.shape[1]:
+                raw_type = row.iloc[type_col_idx]
+                if not pd.isna(raw_type):
+                    asset_type = str(raw_type).strip().capitalize()
 
             entry = {
                 "description": row.iloc[0],
