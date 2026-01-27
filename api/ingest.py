@@ -92,9 +92,14 @@ def parse_portfolio_excel(file_stream):
                     type_col_idx = i
                     break
             
+            # Log debug info
+            logger.info(f"INGEST DEBUG: Columns found: {df.columns.tolist()}")
+            logger.info(f"INGEST DEBUG: Asset Type Column Detection -> Index: {type_col_idx} (Name match)")
+            
             # 2. Fallback to column index 9 (J) if specifically 10+ columns and no header matched
             if type_col_idx == -1 and df.shape[1] > 9:
                 type_col_idx = 9
+                logger.info(f"INGEST DEBUG: Fallback to Index 9 for Asset Type")
             
             if type_col_idx != -1 and type_col_idx < df.shape[1]:
                 raw_type = row.iloc[type_col_idx]
