@@ -100,14 +100,21 @@ export const UploadForm = () => {
                 }
             } else {
                 // Standard Portfolio
-                const { delta, prices, snapshot_proposal } = data;
+                console.log("Ingest Response Data:", data); // Debug log for user
+                const { delta, prices, snapshot_proposal, debug } = data;
                 setDelta(delta);
                 setPricesAndSnapshot({ prices, snapshot: snapshot_proposal });
 
                 if ((delta && delta.length > 0) || (prices && prices.length > 0)) {
                     setShowModal(true);
                 } else {
-                    alert("Nessuna modifica rilevata (né transazioni né prezzi nuovi)!");
+                    let msg = "Nessuna modifica rilevata (né transazioni né prezzi nuovi)!";
+                    if (debug?.columns_found) {
+                        msg += `\n\n[DEBUG] Colonne trovate: ${debug.columns_found.join(', ')}`;
+                        if (debug.asset_type_col_index === -1) msg += "\n[DEBUG] Colonna 'Tipologia' NON trovata.";
+                        else msg += `\n[DEBUG] Colonna 'Tipologia' trovata all'indice ${debug.asset_type_col_index}.`;
+                    }
+                    alert(msg);
                 }
             }
 
