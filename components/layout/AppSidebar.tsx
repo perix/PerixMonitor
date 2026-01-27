@@ -125,11 +125,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                         <SidebarMenuButton size="lg" asChild>
                             <Link href="/">
                                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                                    <GalleryVerticalEnd className="size-4" />
+                                    {/* <GalleryVerticalEnd className="size-4" /> */}
+                                    <img src="/logo.png" alt="Logo" className="size-6" />
                                 </div>
                                 <div className="grid flex-1 text-left text-sm leading-tight">
-                                    <span className="truncate font-semibold">PerixMonitor</span>
-                                    <span className="truncate text-xs">V0.1.0</span>
+                                    <span className="truncate font-semibold">Portfolio Monitor</span>
+                                    <span className="truncate text-xs">V1.0</span>
                                 </div>
                             </Link>
                         </SidebarMenuButton>
