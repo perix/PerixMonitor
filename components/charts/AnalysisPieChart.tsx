@@ -104,8 +104,8 @@ export function AnalysisPieChart({ data, onSelect, colors }: AnalysisPieChartPro
                         data={data}
                         cx="40%"
                         cy="50%"
-                        innerRadius={100}
-                        outerRadius={200}
+                        innerRadius="40%"
+                        outerRadius="70%"
                         fill="#8884d8"
                         dataKey="value"
                         onMouseEnter={onPieEnter}
