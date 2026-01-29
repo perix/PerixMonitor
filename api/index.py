@@ -28,11 +28,13 @@ import openai
 from dashboard import register_dashboard_routes
 from assets import register_assets_routes
 from portfolio import register_portfolio_routes
+from analysis import register_analysis_routes
 
 app = Flask(__name__)
 register_dashboard_routes(app)
 register_assets_routes(app)
 register_portfolio_routes(app)
+register_analysis_routes(app)
 
 import sys
 logger.info("Backend API Initialized")
@@ -182,9 +184,13 @@ def sync_transactions():
                                     current_meta = {}
                                 
                                 # Check if update is needed
-                                    current_meta['assetType'] = new_type
-                                    if debug_mode: logger.info(f"SYNC: Backfilling Asset Type for {isin} -> {new_type}")
-                                    supabase.table('assets').update({"metadata": current_meta}).eq('id', row['id']).execute()
+                                current_meta['assetType'] = new_type
+                                if debug_mode: logger.info(f"SYNC: Backfilling Asset Type for {isin} -> {new_type}")
+                                # Update both metadata and asset_class column for consistency
+                                supabase.table('assets').update({
+                                    "metadata": current_meta,
+                                    "asset_class": new_type
+                                }).eq('id', row['id']).execute()
                         
                         # [NEW] Update Asset Names (Description) for EXISTING assets
                         # If Excel has a better/new description, update the global asset name.
@@ -218,7 +224,8 @@ def sync_transactions():
                     for item in changes:
                         if item.get('isin'):
                              if item.get('excel_description'):
-                                isin_to_description[item['isin']] = str(item['excel_description']).strip()
+                                is_description = str(item['excel_description']).strip()
+                                isin_to_description[item['isin']] = is_description
                              if item.get('asset_type_proposal'):
                                 isin_to_type[item['isin']] = str(item['asset_type_proposal']).strip()
                     
@@ -227,7 +234,8 @@ def sync_transactions():
                     for isin in missing_isins:
                         asset_payload = {
                             "isin": isin, 
-                            "name": isin_to_description.get(isin, isin)  # Use Excel description or fallback to ISIN
+                            "name": isin_to_description.get(isin, isin),  # Use Excel description or fallback to ISIN
+                            "asset_class": isin_to_type.get(isin) # Directly set asset_class
                         }
                         if isin in isin_to_type:
                             asset_payload["metadata"] = {"assetType": isin_to_type[isin]}
@@ -624,8 +632,6 @@ def validate_model_route():
 
     except Exception as e:
         logger.error(f"VALIDATE AI CRITICAL ERROR: {e}")
-        return jsonify(error=str(e)), 500
-
         return jsonify(error=str(e)), 500
 
 # --- ADMIN USER MANAGEMENT ---

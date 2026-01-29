@@ -34,7 +34,7 @@ export default function Home() {
       <div className="relative flex place-items-center mb-16">
         <div className="absolute -z-10 h-[300px] w-[500px] rounded-full bg-primary/20 blur-[100px] opacity-50" />
         <h1 className="text-6xl font-bold tracking-tighter text-center">
-          PerixMonitor
+          Portfolio Monitor by Perix©
           <span className="block text-2xl font-normal text-muted-foreground mt-4 tracking-wide font-serif">
             Wealth Tracking, <span className="text-primary font-semibold">Elevated.</span>
           </span>

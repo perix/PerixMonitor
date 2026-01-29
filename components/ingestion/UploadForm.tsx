@@ -19,6 +19,7 @@ export const UploadForm = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [delta, setDelta] = useState<any[] | null>(null);
+    const [dividends, setDividends] = useState<any[] | null>(null);
     const [pricesAndSnapshot, setPricesAndSnapshot] = useState<{ prices: any[], snapshot: any } | null>(null);
     const [showModal, setShowModal] = useState(false);
     const [enableAiLookup, setEnableAiLookup] = useState(true);
@@ -48,25 +49,13 @@ export const UploadForm = () => {
 
         setLoading(true);
         setError(null);
+        // Reset previous state
+        setDelta(null);
+        setDividends(null);
+        setPricesAndSnapshot(null);
 
         const formData = new FormData();
         formData.append('file', file);
-        // Only sending file for analysis, portfolio ID needed for persistence later 
-        // (but actually ingestion might also need DB holdings of THAT portfolio to calculate delta)
-        // Only sending file for analysis, portfolio ID needed for persistence later and for delta calc
-        // formData.append('db_holdings', JSON.stringify({})); // Removed: Backend now fetches this.
-        // We really should fetch DB holdings for THIS portfolio_id here.
-        // For now, let's proceed, but note that Delta Calc assumes empty DB if we don't pass it.
-        // Or we pass portfolio_id to ingest API and let it fetch?
-        // But ingest API doesn't use Supabase client yet to fetch holdings... 
-
-        // Let's pass portfolio_id to ingest API so IT can fetch current holdings?
-        // Wait, ingest.py uses 'db_holdings' param.
-        // We should fetch db_holdings in Frontend? Or let backend do it?
-        // Backend is better. UploadForm shouldn't fail if we can't fetch.
-
-        // Actually, let's keep it simple: Pass 'portfolio_id' to ingest as well, 
-        // and update ingest.py to fetch holdings if present.
         formData.append('portfolio_id', selectedPortfolioId);
         formData.append('ignore_missing', ignoreMissing ? 'true' : 'false');
 
@@ -78,26 +67,9 @@ export const UploadForm = () => {
             const data = response.data;
 
             if (data.type === 'DIVIDENDS') {
-                // Special handling for dividends
-                if (confirm(`${data.message}\n\nStai per importare dei flussi di cassa (Cedole/Dividendi). Confermi l'importazione?`)) {
-                    // Auto-confirm for now, or use a nicer modal.
-                    // The user asked for "Feedback in UI". A native confirm is "meh". 
-                    // Let's use the modal but maybe adapt it? 
-                    // Or just direct confirm via sync since there is no "Delta" to resolve usually in dividends (just overwrite).
-                    // Let's try to just call handleReconciliationConfirm with empty delta but filled dividends.
-
-                    // Actually let's use a simple confirm for now to speed up, or set a "dividendMode" state.
-                    // The user requested: "fornisci un feedback all'utente nella UI perchè sia cosciente del fatto che sta gestendo cedole".
-
-                    await axios.post('/api/sync', {
-                        changes: [],
-                        dividends: data.parsed_data,
-                        portfolio_id: selectedPortfolioId,
-                        enable_ai_lookup: enableAiLookup
-                    });
-                    clearCache();
-                    alert("Cedole importate con successo!");
-                }
+                // Store dividends and show modal
+                setDividends(data.parsed_data);
+                setShowModal(true);
             } else {
                 // Standard Portfolio
                 console.log("Ingest Response Data:", data); // Debug log for user
@@ -136,7 +108,8 @@ export const UploadForm = () => {
         // Send final sync command to backend
         try {
             await axios.post('/api/sync', {
-                changes: resolutions,
+                changes: resolutions, // Delta resolutions
+                dividends: dividends || [], // Pass dividends if present
                 portfolio_id: selectedPortfolioId,
                 prices: pricesAndSnapshot?.prices || [],
                 snapshot: pricesAndSnapshot?.snapshot,
@@ -147,6 +120,8 @@ export const UploadForm = () => {
             clearCache();
             alert("Sincronizzazione completata con successo!");
             setShowModal(false);
+            setDividends(null); // Reset after sync
+            setDelta(null);
         } catch (e: any) {
             console.error(e);
             alert("Errore durante la sincronizzazione: " + (e.response?.data?.error || e.message));
@@ -241,11 +216,12 @@ export const UploadForm = () => {
 
 
 
-            {delta && (
+            {showModal && (
                 <ReconciliationModal
                     isOpen={showModal}
                     onClose={() => setShowModal(false)}
-                    delta={delta}
+                    delta={delta || []} // Safe fallback
+                    dividends={dividends || []} // Pass dividends
                     prices={pricesAndSnapshot?.prices || []}
                     onConfirm={handleReconciliationConfirm}
                 />

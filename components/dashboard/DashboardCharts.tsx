@@ -3,243 +3,384 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResponsiveContainer, Tooltip, Legend, LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine } from 'recharts';
 
+
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#a855f7', '#ec4899', '#6366f1', '#14b8a6'];
 
 interface DashboardChartsProps {
     allocationData: { name: string; value: number; sector: string; color?: string }[];
     history: {
-        series: { isin: string; name: string; color?: string; data: { date: string; value: number; pnl?: number }[] }[];
-        portfolio: { date: string; value: number }[];
+        series: { isin: string; name: string; color?: string; data: { date: string; value: number; pnl?: number, market_value?: number }[] }[];
+        portfolio: { date: string; value: number, market_value?: number }[];
     };
-    initialTimeWindow?: number;
-    initialYAxisScale?: number;
-    onSettingsChange?: (settings: { timeWindow?: number, yAxisScale?: number }) => void;
+    initialSettings?: {
+        timeWindow?: number;
+        mwr?: { yMin: number, yMax: number };
+        value?: { yMin: number, yMax: number };
+        // Legacy support
+        yAxisScale?: number;
+    };
+    onSettingsChange?: (settings: any) => void;
+    portfolioName?: string;
 }
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useTransition } from "react";
 import { RangeSlider } from "@/components/ui/range-slider";
 import { Checkbox } from "@/components/ui/checkbox";
 
-export function DashboardCharts({ allocationData, history, initialTimeWindow, initialYAxisScale, onSettingsChange }: DashboardChartsProps) {
+export function DashboardCharts({ allocationData, history, initialSettings, onSettingsChange, portfolioName }: DashboardChartsProps) {
     const [dateRange, setDateRange] = useState<number[]>([0, 0]);
-    const [yRange, setYRange] = useState<number[]>([0, 100]);
+    // Separate state for ranges
+    const [mwrRange, setMwrRange] = useState<number[]>([0, 100]);
+    const [valueRange, setValueRange] = useState<number[]>([0, 100]);
+
+    // View Mode
+    const [viewMode, setViewMode] = useState<'mwr' | 'value'>('mwr');
+    const [isPending, startTransition] = useTransition();
+
+    // Handler for viewing mode change with transition
+    const handleViewModeChange = (checked: boolean) => {
+        const start = performance.now();
+
+        startTransition(() => {
+            setViewMode(checked ? 'value' : 'mwr');
+        });
+    };
+
+    // Tracking render time
+
+
+    // Helper to get current range based on mode
+    const yRange = viewMode === 'mwr' ? mwrRange : valueRange;
+    const setYRange = (val: number[]) => {
+        const start = performance.now();
+        if (viewMode === 'mwr') {
+            setMwrRange(val);
+        } else {
+            // For Value mode, strictly enforce 0 as minimum
+            setValueRange([0, val[1]]);
+        }
+
+    };
     const [showMajorGrid, setShowMajorGrid] = useState(true);
+    // Remove minor grid state interaction if not needed for the new right axis, but keep for MWR compatibility? 
+    // User asked for "sempre solo le major" for Right Axis. We can keep the state for MWR or generic, 
+    // but force logic in render.
     const [showMinorGrid, setShowMinorGrid] = useState(false);
 
     // Track if initialized to avoid overwriting user interaction with default logic
     const initializedRef = useRef(false);
 
-    // 1. Prepare raw data (all dates)
+    // 1. Prepare raw data (all dates) - OPTIMIZED O(N)
     const rawChartData = useMemo(() => {
         if (!history || !history.portfolio) return [];
 
         const allDates = new Set<string>();
-        history.portfolio.forEach(d => allDates.add(d.date));
-        history.series?.forEach(s => s.data.forEach(d => allDates.add(d.date)));
+        // Pre-process Portfolio data into a Map for O(1) lookup
+        const portfolioMap = new Map<string, { value: number, market_value: number }>();
+        history.portfolio.forEach(d => {
+            allDates.add(d.date);
+            portfolioMap.set(d.date, { value: d.value, market_value: d.market_value || 0 });
+        });
+
+        // Pre-process Series data into Maps
+        const seriesMaps = new Map<string, Map<string, { value: number, market_value: number, pnl: number }>>();
+        history.series?.forEach(s => {
+            const sMap = new Map<string, { value: number, market_value: number, pnl: number }>();
+            s.data.forEach(d => {
+                allDates.add(d.date);
+                sMap.set(d.date, { value: d.value, market_value: d.market_value || 0, pnl: d.pnl || 0 });
+            });
+            seriesMaps.set(s.isin, sMap);
+        });
+
         const sortedDates = Array.from(allDates).sort();
 
+        // Single pass construction
         return sortedDates.map(date => {
             const item: any = { date };
-            const portVal = history.portfolio.find(d => d.date === date);
-            if (portVal) item.Portfolio = portVal.value;
+
+            // Portfolio lookup
+            const portVal = portfolioMap.get(date);
+            if (portVal) {
+                // Determine what to put in "Portfolio" key
+                // For Value Mode: we want "Portfolio" to map to the Right Axis
+                // effectively the number is the same, but we might treat it differently in the chart config
+                item.Portfolio = viewMode === 'value' ? portVal.market_value : portVal.value;
+            }
+
+            // Series lookup
             history.series?.forEach(s => {
-                const val = s.data.find(d => d.date === date);
+                const sMap = seriesMaps.get(s.isin);
+                const val = sMap?.get(date);
                 if (val) {
                     const displayName = `${s.name} (${s.isin})`;
-                    item[displayName] = val.value;
-                    item[`${displayName}_pnl`] = (val as any).pnl || 0;
+                    item[displayName] = viewMode === 'value' ? val.market_value : val.value;
+                    item[`${displayName}_pnl`] = val.pnl;
                 }
             });
             return item;
         });
-    }, [history]);
+    }, [history, viewMode]);
 
     // Compute min/max Y values from all data for the Y-axis slider bounds
-    const { yMin, yMax } = useMemo(() => {
-        if (!history || !history.portfolio) return { yMin: -50, yMax: 100 };
+    const { yMinLimit, yMaxLimit } = useMemo(() => {
+        if (!history || !history.portfolio) return { yMinLimit: -50, yMaxLimit: 100 };
 
         const allValues: number[] = [];
-        history.portfolio.forEach(d => allValues.push(d.value));
-        history.series?.forEach(s => s.data.forEach(d => allValues.push(d.value)));
+        // Collect values based on current viewMode logic
+        // In VALUE mode: The slider ONLY controls the Portfolio Axis (Right).
+        // So strictly speaking, the limits should be based on Portfolio values if we want to zoom perfectly on Portfolio?
+        // OR should it be consistent? User said "slider verticale deve essere attivo solo per la parte superiore"
+        // and "valore di asset e portafoglio non possono essere negativi".
 
-        if (allValues.length === 0) return { yMin: -50, yMax: 100 };
+        // Let's collect Portfolio values for the limit calculation in Value mode, 
+        // because that's what the slider controls directly.
+        // Asset values will determine the Left Axis 'auto' scale.
+
+        if (viewMode === 'value') {
+            // USER REQUEST: Initialize slider to the Max Value of the largest ASSET.
+            // The slider controls the Left Axis (Assets).
+            // So we should collect Asset values for the limit calculation.
+            history.series?.forEach(s => s.data.forEach(d => allValues.push(d.market_value || 0)));
+            // Fallback if no series? Use portfolio? Or just 100.
+            if (allValues.length === 0) allValues.push(100);
+        } else {
+            history.portfolio.forEach(d => allValues.push(d.value));
+            history.series?.forEach(s => s.data.forEach(d => allValues.push(d.value)));
+        }
+
+        if (allValues.length === 0) return { yMinLimit: 0, yMaxLimit: 100 };
 
         const min = Math.floor(Math.min(...allValues));
         const max = Math.ceil(Math.max(...allValues));
 
-        // Add some padding to the range
+        // Add padding
         const padding = Math.max(10, Math.abs(max - min) * 0.1);
+
+        if (viewMode === 'value') {
+            // Force 0 min for value mode as requested
+            // And slider controls Portfolio Max.
+            // Max limit should be enough to cover the max portfolio value.
+            return {
+                yMinLimit: 0,
+                yMaxLimit: Math.ceil(max + padding)
+            };
+        }
+
         return {
-            yMin: Math.floor(min - padding),
-            yMax: Math.ceil(max + padding)
+            yMinLimit: Math.floor(min - padding),
+            yMaxLimit: Math.ceil(max + padding)
         };
-    }, [history]);
+    }, [history, viewMode]);
 
     // 2. Initialize ranges when data loads
     useEffect(() => {
         if (rawChartData.length > 0 && !initializedRef.current) {
-            // Priority: passed prop > default full range
-            if (initialTimeWindow !== undefined && initialTimeWindow >= 0) {
-                // initialTimeWindow is likely just "number of days ago" or similar? 
-                // Or rather, let's assume it's the start index?
-                // Wait, saving "index" is risky if data length changes (new days).
-                // Saving "Lookback days" is better.
-                // BUT for now, let's stick to what the slider does: index range.
-                // If the user wants specific logic, we might need to change what is saved.
-                // User asked "modified values stored". The slider value is [start, end].
-                // Storing raw index is brittle. 
-                // Let's assume we store the "start index" relative to the end?
-                // Or just simpler: Store the raw index value if compatible, else clamp.
-
-                // NOTE: Implementing "slider position" persistence roughly.
-                // Ideally should persist "start date" or "days duration".
-                // Let's interpret 'initialTimeWindow' as the start index for now.
+            // Restore Time Window
+            if (initialSettings?.timeWindow !== undefined && initialSettings.timeWindow >= 0) {
                 const maxIdx = rawChartData.length - 1;
-                const start = Math.min(Math.max(0, initialTimeWindow), maxIdx);
+                const start = Math.min(Math.max(0, initialSettings.timeWindow), maxIdx);
                 setDateRange([start, maxIdx]);
             } else {
                 setDateRange([0, rawChartData.length - 1]);
             }
+
+            // Restore Y-Ranges
+            if (initialSettings) {
+                if (initialSettings.mwr) {
+                    setMwrRange([initialSettings.mwr.yMin, initialSettings.mwr.yMax]);
+                } else if (initialSettings.yAxisScale) {
+                    setMwrRange([-50, initialSettings.yAxisScale]);
+                }
+
+                if (initialSettings.value) {
+                    // Force 0 start for value mode restoration
+                    setValueRange([0, initialSettings.value.yMax]);
+                }
+            }
+
             initializedRef.current = true;
         }
-    }, [rawChartData.length, initialTimeWindow]);
+    }, [rawChartData.length, initialSettings]);
 
-    // Initialize Y range when data loads
+    // Initialize Y range when data loads or view mode changes
     useEffect(() => {
-        // This effect resets Y range on data load. We need to respect initialYAxisScale.
-        // But Y range slider is [min, max]. 
-        // Let's check if we want to persist custom Y range.
-        // User said "slider modifications". The slider sets both min and max?
-        // Actually the code shows: 
-        // const [yRange, setYRange] = useState<number[]>([0, 100]);
-        // And the slider controls yRange.
-        // So we should save/load [min, max] or maybe just the 'max' or 'range factor'?
-        // The user request says "slider orizzontale e verticale".
-        // Let's persist the full tuple logic. 'yAxisScale' needs to be an array or object then?
-        // implementation_plan used just separate fields? 
-        // "initialYAxisScale" (singular). 
-
-        // Let's look at how yRange is updated.
-        // We'll treat initialYAxisScale as "max Y" for now? Or we need to persist the tuple.
-        // Let's persist the Max value and let Min be auto/fixed? 
-        // Or persist the raw array.
-        // Let's assume onSettingsChange passes { timeWindow: startIdx, yAxisScale: maxVal } ?
-
-        // No, let's persist what the UI uses.
-        // Code uses `yRange` [min, max].
-        // If `initialYAxisScale` is passed (let's say it's the Max value), we use it.
-        // Or we can try to assume it contains the whole state.
-        // Let's just persist the MAX value for simplicity unless user wants both bounds.
-        // Usually users zoom in/out by changing the Scale (range).
-
-        if (initialYAxisScale !== undefined) {
-            setYRange([yMin, initialYAxisScale]); // Keep Auto Min, Restore Max? 
-            // Or maybe restore both if we saved both.
-            // Given limitations, let's try to restore Max.
-        } else {
-            setYRange([yMin, yMax]);
+        if (viewMode === 'value') {
+            // Always ensure min is 0
+            if (valueRange[0] !== 0 || (valueRange[1] === 100 && yMaxLimit !== 100)) {
+                setValueRange([0, yMaxLimit]);
+            }
         }
-    }, [yMin, yMax, initialYAxisScale]);
+        if (viewMode === 'mwr' && mwrRange[0] === 0 && mwrRange[1] === 100 && !initialSettings?.mwr && !initialSettings?.yAxisScale) {
+            setMwrRange([yMinLimit, yMaxLimit]);
+        }
+    }, [yMinLimit, yMaxLimit, viewMode]);
 
-    // Effect to notify settings change (debounced manually or just effect)
+    // Effect to notify settings change
     useEffect(() => {
         if (onSettingsChange && initializedRef.current) {
-            // We want to save when user stops dragging... difficult with simple effect.
-            // But we can just call it. The parent debounces it!
-            // Wait, parent's `updateSettings` calls API. We should debounce here or there.
-            // Parent has `const updateSettings = async ...`. It is NOT debounced in parent code I wrote!
-            // I commented "// Debounced update function" but implemented direct axios call.
-            // I should debounce in parent or here. 
-            // Better to use a timeout here to avoid spamming the parent callback.
-
             const timer = setTimeout(() => {
                 onSettingsChange({
-                    timeWindow: dateRange[0], // Saving start index
-                    yAxisScale: yRange[1]     // Saving max Y
+                    timeWindow: dateRange[0],
+                    mwr: { yMin: mwrRange[0], yMax: mwrRange[1] },
+                    value: { yMin: valueRange[0], yMax: valueRange[1] },
+                    yAxisScale: mwrRange[1]
                 });
-            }, 1000); // 1s debounce
+            }, 1000);
 
             return () => clearTimeout(timer);
         }
-    }, [dateRange, yRange]); // Warning: this depends on yRange including yMin/yMax defaults which change on load.
-    // We should be careful not to save 'default' values as 'user settings' immediately on load.
+    }, [dateRange, mwrRange, valueRange]);
 
-    // 3. Filter data based on range indices
+    // 3. Filter data
     const chartData = useMemo(() => {
         if (rawChartData.length === 0) return [];
         const [start, end] = dateRange;
-        // Ensure valid slice
         const safeStart = Math.max(0, start);
         const safeEnd = Math.min(rawChartData.length - 1, end);
-
-        // If start > end (shouldn't happen with slider but safety first), return empty or swap?
         if (safeStart > safeEnd) return [];
-
         return rawChartData.slice(safeStart, safeEnd + 1);
     }, [rawChartData, dateRange]);
 
     // Compute tick values for Y-axis (major and minor)
+    // For MWR mode: Uses generic logic
+    // For Value mode: Logic applies to the RIGHT axis (Portfolio)
+    // --- LEFT AXIS TICKS (Controlled by Slider) ---
     const { majorTicks, minorTicks, allTicks, majorStep } = useMemo(() => {
         const [min, max] = yRange;
-        const range = max - min;
-        const majorStep = range > 50 ? 20 : range > 20 ? 10 : 5;
-        // Only 1 minor tick between each major tick (divide by 2 instead of 5)
+        const range = Math.abs(max - min);
+        const validRange = range === 0 ? 100 : range;
+
+        const targetTickCount = 8;
+        const rawStep = validRange / targetTickCount;
+
+        const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+        const baseStep = rawStep / magnitude;
+
+        let niceStep;
+        if (baseStep > 5) niceStep = 10 * magnitude;
+        else if (baseStep > 2) niceStep = 5 * magnitude;
+        else if (baseStep > 1) niceStep = 2 * magnitude;
+        else niceStep = 1 * magnitude;
+
+        const majorStep = niceStep;
         const minorStep = majorStep / 2;
 
         const majorTicks: number[] = [];
         const minorTicks: number[] = [];
 
-        // Generate major ticks with rounding
-        const startMajor = Math.ceil(min / majorStep) * majorStep;
-        for (let v = startMajor; v <= max; v += majorStep) {
-            majorTicks.push(Math.round(v));
+        const startMajor = Math.floor(min / majorStep) * majorStep;
+        let current = startMajor;
+        let safety = 0;
+
+        while (current <= max + majorStep && safety < 1000) {
+            if (current >= min && current <= max) {
+                majorTicks.push(current);
+            }
+            current += majorStep;
+            safety++;
         }
 
-        // Generate minor ticks (only if minor grid is enabled)
-        if (showMinorGrid) {
-            const startMinor = Math.ceil(min / minorStep) * minorStep;
-            for (let v = startMinor; v <= max; v += minorStep) {
-                const roundedV = Math.round(v * 10) / 10; // Round to 1 decimal place
-                // Skip positions that are major ticks (use approximate comparison)
-                const isMajorTick = majorTicks.some(mt => Math.abs(mt - roundedV) < 0.01);
-                if (!isMajorTick) {
-                    minorTicks.push(roundedV);
+        if (showMinorGrid && viewMode !== 'value') {
+            const startMinor = Math.floor(min / minorStep) * minorStep;
+            current = startMinor;
+            safety = 0;
+            while (current <= max + minorStep && safety < 2000) {
+                const isMajor = majorTicks.some(m => Math.abs(m - current) < (majorStep / 100));
+                if (current >= min && current <= max && !isMajor) {
+                    minorTicks.push(current);
                 }
+                current += minorStep;
+                safety++;
             }
         }
 
-        // Combine and sort all ticks
         const allTicks = [...majorTicks, ...minorTicks].sort((a, b) => a - b);
-
         return { majorTicks, minorTicks, allTicks, majorStep };
-    }, [yRange, showMinorGrid]);
+    }, [yRange, showMinorGrid, viewMode]);
 
-    // Custom tick component for Y-axis
+
+
+    // Calculate Portfolio Max for Right Axis
+    // This is needed for the custom gridlines and axis scaling in Value mode
+    const portfolioMax = useMemo(() => {
+        if (!history || !history.portfolio || history.portfolio.length === 0) return 100;
+
+        if (viewMode === 'value') {
+            const maxVal = Math.max(...history.portfolio.map(d => d.market_value || 0));
+            // Add padding (5%)
+            return maxVal > 0 ? maxVal * 1.05 : 100;
+        }
+        // Fallback for types or generic usage
+        return 100;
+    }, [history, viewMode]);
+
+    // --- RIGHT AXIS TICKS (Portfolio, Static/Auto based on Max) ---
+    const rightAxisTicks = useMemo(() => {
+        if (viewMode !== 'value') return [];
+
+        // Like standard calculation but for 0 -> portfolioMax
+        const min = 0;
+        const max = portfolioMax;
+        const range = max;
+        const validRange = range === 0 ? 100 : range;
+
+        const targetTickCount = 8;
+        const rawStep = validRange / targetTickCount;
+        const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+        const baseStep = rawStep / magnitude;
+
+        let niceStep;
+        if (baseStep > 5) niceStep = 10 * magnitude;
+        else if (baseStep > 2) niceStep = 5 * magnitude;
+        else if (baseStep > 1) niceStep = 2 * magnitude;
+        else niceStep = 1 * magnitude;
+
+        const ticks: number[] = [];
+        let current = 0;
+        let safety = 0;
+        while (current <= max + niceStep && safety < 1000) {
+            if (current <= max) ticks.push(current);
+            current += niceStep;
+            safety++;
+        }
+        return ticks;
+    }, [portfolioMax, viewMode]);
+
+
+    // Custom tick component
     const CustomYAxisTick = ({ x, y, payload }: any) => {
         const value = payload.value;
         const isMajor = majorTicks.includes(value);
         const isZero = value === 0;
         const isPositive = value > 0;
-        const isNegative = value < 0;
 
-        // Determine color: green for positive, red for negative, white for zero
-        const color = isZero ? '#ffffff' : isPositive ? '#22c55e' : '#ef4444';
+        // Color logic
+        let color = '#94a3b8'; // default slate-400
+        if (viewMode === 'mwr') {
+            color = isZero ? '#ffffff' : isPositive ? '#22c55e' : '#ef4444';
+        }
 
-        // Format label: add + for positive, keep - for negative
-        const label = isPositive ? `+${value}%` : `${value}%`;
+        const label = viewMode === 'value'
+            ? `€${(value / 1000).toLocaleString('it-IT', { maximumFractionDigits: 0 })}k`
+            : (isPositive ? `+${value}%` : `${value}%`);
+
+        const valStr = viewMode === 'value'
+            ? `€${value.toLocaleString('it-IT', { maximumFractionDigits: 0 })}`
+            : label;
 
         return (
             <text
                 x={x}
                 y={y}
                 dy={4}
-                textAnchor="end"
+                textAnchor={viewMode === 'value' ? "end" : "end"}
                 fill={color}
-                fontSize={isMajor ? 12 : 9}
+                fontSize={isMajor ? 12 : 10}
                 fontWeight={isZero ? 'bold' : 'normal'}
                 opacity={isMajor ? 1 : 0.7}
             >
-                {label}
+                {valStr}
             </text>
         );
     };
@@ -251,20 +392,44 @@ export function DashboardCharts({ allocationData, history, initialTimeWindow, in
 
     return (
         <div className="grid gap-4 md:grid-cols-1 mt-4">
-            <Card className="bg-card/80 backdrop-blur-xl border-white/40 shadow-lg px-6 pt-6">
+            <Card className="bg-card/80 backdrop-blur-xl border-white/40 shadow-lg px-6 pt-6 transition-all duration-300">
                 <CardHeader className="px-0 pt-0 pb-4">
                     <div className="flex items-center justify-between">
                         <div>
-                            <CardTitle className="text-xl font-medium tracking-tight">Andamento MWR nel Tempo</CardTitle>
-                            <p className="text-sm text-muted-foreground">Performance Money-Weighted per asset e portafoglio</p>
+                            <div className="flex items-center gap-2">
+                                <CardTitle className="text-xl font-medium tracking-tight">
+                                    {viewMode === 'value' ? `Andamento Controvalore` : `Andamento MWR`} - {portfolioName || 'Portafoglio'}
+                                </CardTitle>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                                {viewMode === 'value' ? 'Valore di mercato del portafoglio e dei singoli asset' : 'Performance Money-Weighted per asset e portafoglio'}
+                            </p>
                         </div>
                         <div className="flex items-center gap-4">
+                            <div className="flex items-center space-x-2">
+                                <Checkbox
+                                    id="view-mode-value"
+                                    checked={viewMode === 'value'}
+                                    onCheckedChange={handleViewModeChange}
+                                    className="border-white/50"
+                                    disabled={isPending}
+                                />
+                                <label htmlFor="view-mode-value" className={`text-xs text-muted-foreground cursor-pointer ${isPending ? 'opacity-50' : ''}`}>
+                                    Controvalore (€)
+                                </label>
+                            </div>
+                            <div className="h-4 w-[1px] bg-white/10 mx-2"></div>
+                            {/* Hide Grid controls in Value mode as we enforce specific grids? 
+                                 Or just keep them effectively disabled/overridden?
+                                 User said "gridlines... devono essere sempre solo le major".
+                                 So we might want to disable the Minor checkbox or hide it. */}
                             <div className="flex items-center space-x-2">
                                 <Checkbox
                                     id="major-grid"
                                     checked={showMajorGrid}
                                     onCheckedChange={(checked) => setShowMajorGrid(checked === true)}
-                                    className="border-white/50"
+                                    className="border-white/50 disabled:opacity-50"
+                                    disabled={viewMode === 'value'} // Forced ON for Value mode mostly
                                 />
                                 <label htmlFor="major-grid" className="text-xs text-muted-foreground cursor-pointer">
                                     Major Grid
@@ -275,7 +440,8 @@ export function DashboardCharts({ allocationData, history, initialTimeWindow, in
                                     id="minor-grid"
                                     checked={showMinorGrid}
                                     onCheckedChange={(checked) => setShowMinorGrid(checked === true)}
-                                    className="border-white/50"
+                                    className="border-white/50 disabled:opacity-50"
+                                    disabled={viewMode === 'value'} // Forced OFF for Value mode
                                 />
                                 <label htmlFor="minor-grid" className="text-xs text-muted-foreground cursor-pointer">
                                     Minor Grid
@@ -286,21 +452,33 @@ export function DashboardCharts({ allocationData, history, initialTimeWindow, in
                 </CardHeader>
 
                 {/* Chart area with Y-axis slider on the left */}
-                <div className="flex items-stretch">
+                <div
+                    className={`flex items-stretch transition-opacity duration-200 ${isPending ? 'opacity-50 cursor-wait' : 'opacity-100'}`}
+                >
                     {/* Y-Axis Slider (Vertical) */}
+                    {/* In Value Mode, this slider controls the Right Axis (Portfolio). 
+                        It might be more intuitive to move it to the RIGHT side? 
+                        But User asked for existing behavior modification. 
+                        "lo slider verticale dovrebbe quindi poter essere attivo solo per la parte superiore"
+                        Let's keep it left for now to avoid layout shift unless requested. 
+                    */}
                     <div className="flex flex-col items-center justify-between pr-3 py-2" style={{ height: '450px' }}>
-                        <span className="text-xs text-muted-foreground writing-mode-vertical">{yRange[1]}%</span>
+                        <span className="text-xs text-muted-foreground writing-mode-vertical">
+                            {viewMode === 'value' ? `€${yRange[1]}` : `${yRange[1]}%`}
+                        </span>
                         <RangeSlider
-                            min={yMin}
-                            max={yMax}
-                            step={1}
+                            min={yMinLimit}
+                            max={yMaxLimit}
+                            step={viewMode === 'value' ? 100 : 1}
                             value={yRange}
                             onValueChange={setYRange}
                             orientation="vertical"
                             className="h-[380px]"
-                            inverted
+                            disabledLower={viewMode === 'value'}
                         />
-                        <span className="text-xs text-muted-foreground writing-mode-vertical">{yRange[0]}%</span>
+                        <span className="text-xs text-muted-foreground writing-mode-vertical">
+                            {viewMode === 'value' ? `€${yRange[0]}` : `${yRange[0]}%`}
+                        </span>
                     </div>
 
                     {/* Chart */}
@@ -308,47 +486,61 @@ export function DashboardCharts({ allocationData, history, initialTimeWindow, in
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart
                                 data={chartData}
-                                margin={{ top: 10, right: 30, left: 0, bottom: 20 }}
+                                margin={{ top: 10, right: 10, left: 10, bottom: 20 }}
                             >
-                                {/* Major Gridlines */}
+                                {/* 
+                                    GRIDLINES LOGIC 
+                                    1. Standard (Left Axis): Controlled by Checkboxes. Visible in ALL modes.
+                                    2. Custom (Right Axis): Visible ONLY in Value mode. Only Major.
+                                */}
                                 {showMajorGrid && (
                                     <CartesianGrid
+
                                         strokeDasharray="0"
                                         stroke="#475569"
                                         opacity={0.5}
                                         vertical={false}
                                         horizontalCoordinatesGenerator={({ yAxis }) => {
                                             if (!yAxis) return [];
-                                            const { scale } = yAxis;
-                                            const [min, max] = [yRange[0], yRange[1]];
-                                            const range = max - min;
-                                            // Major gridlines every 10%
-                                            const step = range > 50 ? 20 : range > 20 ? 10 : 5;
-                                            const ticks = [];
-                                            for (let v = Math.ceil(min / step) * step; v <= max; v += step) {
-                                                ticks.push(scale(v));
-                                            }
-                                            return ticks;
+                                            return majorTicks.map(t => yAxis.scale(t));
                                         }}
                                     />
                                 )}
-                                {/* Minor Gridlines - using ReferenceLine for reliable rendering */}
-                                {showMinorGrid && minorTicks.map((tick) => (
+                                {viewMode === 'value' && (
+                                    // Custom Gridlines for Right Axis (Portfolio)
+                                    rightAxisTicks.map(tick => (
+                                        <ReferenceLine
+                                            key={`custom-grid-right-${tick}`}
+                                            y={tick}
+                                            yAxisId="right"
+                                            stroke="#818cf8"
+                                            strokeOpacity={0.4}
+                                            strokeDasharray="4 2"
+                                        />
+                                    ))
+                                )}
+
+                                {/* Minor Gridlines (MWR only) */}
+                                {viewMode !== 'value' && showMinorGrid && minorTicks.map((tick) => (
                                     <ReferenceLine
                                         key={`minor-grid-${tick}`}
                                         y={tick}
+                                        yAxisId="left"
                                         stroke="#64748b"
                                         strokeDasharray="4 6"
                                         strokeOpacity={0.6}
                                     />
                                 ))}
-                                {/* Zero line - bold white */}
+
+                                {/* Zero line */}
                                 <ReferenceLine
                                     y={0}
+                                    yAxisId={viewMode === 'value' ? 'right' : 'left'}
                                     stroke="#ffffff"
                                     strokeWidth={2}
                                     strokeOpacity={0.8}
                                 />
+
                                 <XAxis
                                     dataKey="date"
                                     stroke="#94a3b8"
@@ -358,27 +550,67 @@ export function DashboardCharts({ allocationData, history, initialTimeWindow, in
                                     tickFormatter={(val) => new Date(val).toLocaleDateString(undefined, { month: 'short', year: '2-digit' })}
                                     dy={10}
                                 />
+
+                                {/* PRIMARY Y-AXIS (Left) 
+                                    MWR: Controls everything.
+                                    Value: Controls ASSETS only. Auto scaled.
+                                */}
                                 <YAxis
+                                    yAxisId="left"
+                                    orientation="left"
                                     stroke="#94a3b8"
                                     tickLine={false}
                                     axisLine={false}
+                                    // In value mode, left axis is controlled by slider (yRange)
                                     domain={[yRange[0], yRange[1]]}
                                     allowDataOverflow={true}
-                                    ticks={allTicks}
-                                    tick={<CustomYAxisTick />}
+                                    ticks={viewMode === 'value' ? majorTicks : allTicks}
+                                    tick={viewMode === 'value'
+                                        ? ({ x, y, payload }) => (
+                                            <text x={x} y={y} dy={4} fill="#94a3b8" fontSize={10} textAnchor="end">
+                                                {`€${(payload.value / 1000).toFixed(0)}k`}
+                                            </text>
+                                        )
+                                        : <CustomYAxisTick />
+                                    }
                                 />
+
+                                {/* SECONDARY Y-AXIS (Right) - Only for Value Mode */}
+                                {viewMode === 'value' && (
+                                    <YAxis
+                                        yAxisId="right"
+                                        orientation="right"
+                                        stroke="#818cf8"
+                                        tickLine={false}
+                                        axisLine={false}
+                                        domain={[0, portfolioMax]} // Fixed range based on data
+                                        allowDataOverflow={true}
+                                        ticks={rightAxisTicks} // Fixed ticks
+                                        tick={({ x, y, payload }) => (
+                                            <text x={x} y={y} dy={4} fill="#818cf8" fontSize={12} textAnchor="start" fontWeight="bold">
+                                                {`€${payload.value.toLocaleString('it-IT')}`}
+                                            </text>
+                                        )}
+                                    />
+                                )}
+
                                 <Tooltip
                                     contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc', borderRadius: '8px' }}
                                     itemStyle={{ padding: 0 }}
                                     formatter={(value: number, name: string, props: any) => {
                                         const pnl = props.payload[`${name}_pnl`];
                                         const pnlStr = pnl !== undefined ? ` \n(P&L: ${pnl > 0 ? '+' : ''}${pnl.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })})` : '';
-                                        return [`${value.toFixed(2)}%${pnlStr}`, name];
+                                        const valStr = viewMode === 'value'
+                                            ? `€${value.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                            : `${value.toFixed(2)}%`;
+                                        return [`${valStr}${pnlStr}`, name];
                                     }}
                                     labelFormatter={(label) => new Date(label).toLocaleDateString(undefined, { dateStyle: 'medium' })}
                                 />
-                                {/* Portfolio Line (Thick) */}
+
+                                {/* Portfolio Line */}
                                 <Line
+                                    yAxisId={viewMode === 'value' ? "right" : "left"}
                                     type="monotone"
                                     dataKey="Portfolio"
                                     stroke="#ffffff"
@@ -394,6 +626,7 @@ export function DashboardCharts({ allocationData, history, initialTimeWindow, in
                                     return (
                                         <Line
                                             key={s.isin}
+                                            yAxisId="left" // Always on Left
                                             type="monotone"
                                             dataKey={displayName}
                                             stroke={s.color || COLORS[idx % COLORS.length]}

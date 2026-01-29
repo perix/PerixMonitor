@@ -13,6 +13,8 @@ def register_dashboard_routes(app):
     
     @app.route('/api/dashboard/summary', methods=['GET'])
     def get_dashboard_summary():
+        t_start = datetime.now()
+        logger.info(f"[DASHBOARD_SUMMARY] Started at {t_start}")
         try:
             portfolio_id = request.args.get('portfolio_id')
             if not portfolio_id:
@@ -21,8 +23,14 @@ def register_dashboard_routes(app):
             supabase = get_supabase_client()
             
             # 1. Fetch Transactions
-            res_trans = supabase.table('transactions').select("*, assets(id, isin, name)").eq('portfolio_id', portfolio_id).execute()
+            res_trans = supabase.table('transactions').select("*, assets(id, isin, name, asset_class)").eq('portfolio_id', portfolio_id).execute()
             transactions = res_trans.data
+            
+            # Filter by specific assets if requested
+            assets_param = request.args.get('assets')
+            if assets_param:
+                selected_isins = set(assets_param.split(','))
+                transactions = [t for t in transactions if t['assets']['isin'] in selected_isins]
             
             if not transactions:
                 return jsonify({
@@ -50,7 +58,7 @@ def register_dashboard_routes(app):
                 
                 # Update Holdings
                 if isin not in holdings:
-                    holdings[isin] = {"qty": 0, "cost": 0, "name": name}
+                    holdings[isin] = {"qty": 0, "cost": 0, "name": name, "asset_class": t['assets'].get('asset_class')}
                 
                 if is_buy:
                     holdings[isin]["qty"] += qty
@@ -113,7 +121,7 @@ def register_dashboard_routes(app):
                 allocation_data.append({
                     "name": data['name'],
                     "value": market_val,
-                    "sector": sector,
+                    "sector": data.get('asset_class') or "Other",
                     "isin": isin,
                     "quantity": data['qty'],
                     "price": current_price
@@ -163,6 +171,8 @@ def register_dashboard_routes(app):
             pl_value = current_total_value - total_invested
             pl_percent = (pl_value / total_invested * 100) if total_invested > 0 else 0
 
+            t_end = datetime.now()
+            logger.info(f"[DASHBOARD_SUMMARY] Completed in {(t_end - t_start).total_seconds():.2f}s")
             return jsonify({
                 "total_value": round(current_total_value, 2),
                 "total_invested": round(total_invested, 2),
@@ -183,6 +193,8 @@ def register_dashboard_routes(app):
 
     @app.route('/api/dashboard/history', methods=['GET'])
     def get_mwrr_history():
+        t0 = datetime.now()
+        logger.info(f"[DASHBOARD_HISTORY] Request received at {t0}")
         try:
             portfolio_id = request.args.get('portfolio_id')
             if not portfolio_id:
@@ -191,11 +203,13 @@ def register_dashboard_routes(app):
             supabase = get_supabase_client()
             
             # 1. Fetch all transactions with metadata
-            res_trans = supabase.table('transactions').select("*, assets(id, isin, name, metadata)").eq('portfolio_id', portfolio_id).order('date').execute()
+            res_trans = supabase.table('transactions').select("*, assets(id, isin, name, asset_class, metadata)").eq('portfolio_id', portfolio_id).order('date').execute()
             if not res_trans.data:
                 return jsonify(history=[], assets=[])
                 
             transactions = res_trans.data
+            t1 = datetime.now()
+            logger.info(f"[DASHBOARD_HISTORY] Transactions fetched: {len(transactions)} (Time: {(t1 - t0).total_seconds():.2f}s)")
             
             # 2. Identify active assets and time range
             all_isins = set(t['assets']['isin'] for t in transactions)
@@ -260,6 +274,10 @@ def register_dashboard_routes(app):
 
             # 3. Calculate MWR History per Asset
             assets_history = []
+            
+            t2 = datetime.now()
+            logger.info(f"[DASHBOARD_HISTORY] Checkpoints generated: {len(check_points)} (Start: {check_points[0]}, End: {check_points[-1]})")
+            logger.info(f"[DASHBOARD_HISTORY] Processing {len(all_isins)} assets...")
             
             for isin in all_isins:
                 # Find a transaction for this ISIN to get asset details
@@ -331,7 +349,8 @@ def register_dashboard_routes(app):
                                 mwr_series.append({
                                     "date": cp_str,
                                     "value": round(val * 100, 2),
-                                    "pnl": round(pnl_at_cp, 2)
+                                    "pnl": round(pnl_at_cp, 2),
+                                    "market_value": round(current_val, 2)
                                 })
                         except:
                             pass
@@ -344,19 +363,33 @@ def register_dashboard_routes(app):
                     sample_t = next((t for t in transactions if t['assets']['isin'] == isin), None)
                     asset_id = sample_t['assets']['id'] if sample_t else None
                     
-                    # Fetch color (could be optimized with bulk fetch outside loop, but this is fine for N < 50)
+                    # Fetch color
                     color = "#888888"
                     if asset_id:
                          try:
+                             # Optimization: we could look up in color_map if we built it, 
+                             # but for now independent fetch is safe-ish or we can improve later.
                              res_c = supabase.table('portfolio_asset_settings').select('color').eq('portfolio_id', portfolio_id).eq('asset_id', asset_id).execute()
                              if res_c.data:
                                  color = res_c.data[0]['color']
                          except: pass
 
+                    # Extract Asset Type
+                    asset_type = sample_t['assets'].get('asset_class') or "Altro"
+                    
+                    # Fallback to metadata if asset_class is null/empty for some reason
+                    if (not asset_type or asset_type == "Altro") and sample_t['assets'].get('metadata'):
+                        meta = sample_t['assets']['metadata']
+                        if isinstance(meta, dict):
+                            asset_type = meta.get('assetType', "Altro")
+                    
+                    # logger.info(f"DEBUG TYPE for {isin}: {asset_type}")
+
                     assets_history.append({
                         "isin": isin,
                         "name": asset_name,
-                        "color": color, 
+                        "color": color,
+                        "type": asset_type,
                         "data": mwr_series
                     })
 
@@ -427,6 +460,9 @@ def register_dashboard_routes(app):
                 # We need Total Value at CP.
                 # Total Value = Sum(Qty * Price) for all assets
                 pass
+            
+            t3 = datetime.now()
+            logger.info(f"[DASHBOARD_HISTORY] Asset calculations done in {(t3 - t2).total_seconds():.2f}s")
 
             # REDOING PORTFOLIO LOOP EFFICIENTLY
             # 1. Build Global Price Map
@@ -436,6 +472,9 @@ def register_dashboard_routes(app):
                  global_price_map[isin] = {p['date']: p['price'] for p in ph}
                  
             sorted_global_dates = {isin: sorted(global_price_map[isin].keys()) for isin in all_isins}
+
+            t4 = datetime.now()
+            logger.info(f"[DASHBOARD_HISTORY] Global price map built in {(t4 - t3).total_seconds():.2f}s")
 
             # 2. Loop checkpoints for portfolio
             for cp in check_points:
@@ -486,9 +525,14 @@ def register_dashboard_routes(app):
                          if val is not None:
                              portfolio_series.append({
                                  "date": cp_str,
-                                 "value": round(val * 100, 2)
+                                 "value": round(val * 100, 2),
+                                 "market_value": round(port_value_at_cp, 2)
                              })
                      except: pass
+            
+            t_final = datetime.now()
+            logger.info(f"[DASHBOARD_HISTORY] Portfolio loop done in {(t_final - t4).total_seconds():.2f}s")
+            logger.info(f"[DASHBOARD_HISTORY] Total Request Time: {(t_final - t0).total_seconds():.2f}s")
             
             return jsonify({
                 "series": assets_history,

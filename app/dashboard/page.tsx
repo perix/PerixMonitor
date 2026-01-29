@@ -19,12 +19,13 @@ export default function DashboardPage() {
     const [history, setHistory] = useState<any>([]);
     const [loading, setLoading] = useState(true);
     const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
+    const [filteredSummary, setFilteredSummary] = useState<any>(null); // State for filtered subset
     const [portfolioName, setPortfolioName] = useState("");
 
-    const [initialSettings, setInitialSettings] = useState<{ timeWindow?: number, yAxisScale?: number } | null>(null);
+    const [initialSettings, setInitialSettings] = useState<any>(null);
 
     // Debounced update function
-    const updateSettings = async (newSettings: { timeWindow?: number, yAxisScale?: number }) => {
+    const updateSettings = async (newSettings: any) => {
         if (!selectedPortfolioId) return;
         try {
             await axios.patch(`/api/portfolio/${selectedPortfolioId}/settings`, newSettings);
@@ -137,6 +138,38 @@ export default function DashboardPage() {
         };
     }, [history, selectedAssets]);
 
+    // Effect to fetch filtered summary when selection changes
+    useEffect(() => {
+        if (!selectedPortfolioId || !history?.series) return;
+
+        // If all selected or none selected (initial/reset), logic might vary but usually we want to know
+        // IF selectedAssets.size != history.series.length, we fetch.
+        // If they are equal, filteredSummary CAN be same as summary (optimization).
+
+        const totalAssetsCount = history.series.length;
+        const selectedCount = selectedAssets.size;
+
+        if (selectedCount === 0 || selectedCount === totalAssetsCount) {
+            setFilteredSummary(null); // No special filter active (or all active)
+            return;
+        }
+
+        const fetchFiltered = async () => {
+            try {
+                const assetsParam = Array.from(selectedAssets).join(',');
+                const res = await axios.get(`/api/dashboard/summary?portfolio_id=${selectedPortfolioId}&assets=${assetsParam}`);
+                setFilteredSummary(res.data);
+            } catch (e) {
+                console.error("Error fetching filtered summary", e);
+            }
+        };
+
+        const timeoutId = setTimeout(fetchFiltered, 500); // 500ms debounce
+        return () => clearTimeout(timeoutId);
+
+    }, [selectedAssets, selectedPortfolioId, history]);
+
+
     if (loading) {
         return <div className="flex h-full items-center justify-center p-8"><Loader2 className="animate-spin h-8 w-8 text-primary" /></div>;
     }
@@ -156,10 +189,10 @@ export default function DashboardPage() {
             <PanelHeader title={`Dashboard - ${portfolioName || 'Loading...'}`} />
 
             <div className="flex flex-col gap-3">
-                <div className="grid gap-3" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr)" }}>
+                <div className="grid gap-3" style={{ gridTemplateColumns: "minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 1.6fr)" }}>
                     <Card className="bg-card/80 backdrop-blur-xl border-white/40 shadow-lg hover:bg-card/90 transition-colors">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                            <CardTitle className="text-sm font-medium">Patrimonio Totale</CardTitle>
+                            <CardTitle className="text-sm font-medium">Controvalore Portafoglio</CardTitle>
                             <Euro className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
@@ -167,6 +200,16 @@ export default function DashboardPage() {
                             <p className="text-xs text-muted-foreground">
                                 {summary.pl_percent >= 0 ? '+' : ''}{summary.pl_percent}% P&L
                             </p>
+                            {filteredSummary && (
+                                <div className="mt-2 pt-2 border-t border-white/10">
+                                    <div className="text-sm font-semibold text-muted-foreground">
+                                        €{filteredSummary.total_value?.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground/70">
+                                        Selezione
+                                    </p>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
                     <Card className="bg-card/80 backdrop-blur-xl border-white/40 shadow-lg hover:bg-card/90 transition-colors">
@@ -181,6 +224,16 @@ export default function DashboardPage() {
                             <p className="text-xs text-muted-foreground">
                                 XIRR Annualizzato
                             </p>
+                            {filteredSummary && (
+                                <div className="mt-2 pt-2 border-t border-white/10">
+                                    <div className={`text-sm font-semibold ${filteredSummary.xirr >= 0 ? 'text-green-500/80' : 'text-red-500/80'}`}>
+                                        {filteredSummary.xirr}%
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground/70">
+                                        Selezione
+                                    </p>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
                     <Card className="bg-card/80 backdrop-blur-xl border-white/40 shadow-lg hover:bg-card/90 transition-colors">
@@ -195,11 +248,21 @@ export default function DashboardPage() {
                             <p className="text-xs text-muted-foreground">
                                 Rispetto al capitale investito
                             </p>
+                            {filteredSummary && (
+                                <div className="mt-2 pt-2 border-t border-white/10">
+                                    <div className={`text-sm font-semibold ${filteredSummary.pl_value >= 0 ? 'text-green-500/80' : 'text-red-500/80'}`}>
+                                        €{filteredSummary.pl_value?.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground/70">
+                                        Selezione
+                                    </p>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
                     <Card className="bg-card/80 backdrop-blur-xl border-white/40 shadow-lg hover:bg-card/90 transition-colors gap-0">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                            <CardTitle className="text-sm font-medium">Asset Attivi</CardTitle>
+                            <CardTitle className="text-sm font-medium">Asset in Portafoglio</CardTitle>
                             <Wallet className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent className="pt-0">
@@ -241,39 +304,101 @@ export default function DashboardPage() {
                             </div>
 
                             <ScrollArea className="h-[160px] w-full rounded border border-white/10 bg-white/5 p-2 mt-3">
-                                <div className="flex flex-col gap-2">
-                                    {history.series?.map((s: any, idx: number) => (
-                                        <div key={s.isin} className="flex items-center space-x-2">
-                                            <Checkbox
-                                                id={`filter-${s.isin}`}
-                                                checked={selectedAssets.has(s.isin)}
-                                                onCheckedChange={(checked) => {
-                                                    const next = new Set(selectedAssets);
-                                                    if (checked) {
-                                                        next.add(s.isin);
-                                                    } else {
-                                                        next.delete(s.isin);
-                                                    }
-                                                    setSelectedAssets(next);
-                                                }}
-                                                className="border-white/50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                                                style={{
-                                                    borderColor: s.color || COLORS[idx % COLORS.length],
-                                                    backgroundColor: selectedAssets.has(s.isin) ? (s.color || COLORS[idx % COLORS.length]) : 'transparent'
-                                                }}
-                                            />
-                                            <label
-                                                htmlFor={`filter-${s.isin}`}
-                                                className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer w-full text-left"
-                                                title={`${s.name} (${s.isin})`}
-                                                style={{ color: s.color || COLORS[idx % COLORS.length] }}
-                                            >
-                                                <div className="truncate" style={{ width: 'calc(100% - 20px)' }}>
-                                                    {s.name} <span className="text-[10px] opacity-70">({s.isin})</span>
+                                <div className="flex h-full gap-4">
+                                    {/* Asset Types List (Left) */}
+                                    <div className="w-1/3 border-r border-white/10 pr-2 flex flex-col gap-1">
+                                        <div className="text-[10px] font-semibold text-muted-foreground mb-1 uppercase tracking-wider">Tipologie</div>
+                                        {Array.from(new Set((history.series || []).map((s: any) => s.type || "Altro")))
+                                            .sort((a: any, b: any) => b.localeCompare(a))
+                                            .map((type: any) => {
+                                                const assetsOfType = (history.series || []).filter((s: any) => (s.type || "Altro") === type);
+                                                const allSelected = assetsOfType.every((s: any) => selectedAssets.has(s.isin));
+                                                const someSelected = assetsOfType.some((s: any) => selectedAssets.has(s.isin));
+
+                                                // Count selected / total
+                                                const countSelected = assetsOfType.filter((s: any) => selectedAssets.has(s.isin)).length;
+
+                                                return (
+                                                    <div key={type} className="flex items-center space-x-2 py-1 hover:bg-white/5 rounded px-1 transition-colors">
+                                                        <Checkbox
+                                                            id={`type-${type}`}
+                                                            checked={allSelected ? true : (someSelected ? "indeterminate" : false)}
+                                                            onCheckedChange={(checked) => {
+                                                                const next = new Set(selectedAssets);
+                                                                assetsOfType.forEach((s: any) => {
+                                                                    if (checked) {
+                                                                        next.add(s.isin);
+                                                                    } else {
+                                                                        next.delete(s.isin);
+                                                                    }
+                                                                });
+                                                                setSelectedAssets(next);
+                                                            }}
+                                                            className="border-white/50 data-[state=checked]:bg-primary"
+                                                        />
+                                                        <label
+                                                            htmlFor={`type-${type}`}
+                                                            className="text-xs font-medium cursor-pointer flex-1 truncate"
+                                                            title={type}
+                                                            onClick={(e) => {
+                                                                // Optional: Click label to ISOLATE (Select ONLY this type)
+                                                                e.preventDefault();
+                                                                const next = new Set<string>();
+                                                                assetsOfType.forEach((s: any) => next.add(s.isin));
+                                                                setSelectedAssets(next);
+                                                            }}
+                                                        >
+                                                            {type} <span className="opacity-50 text-[10px]">({countSelected}/{assetsOfType.length})</span>
+                                                        </label>
+                                                    </div>
+                                                );
+                                            })}
+                                    </div>
+
+                                    {/* Assets List (Right) */}
+                                    <div className="w-2/3 flex flex-col gap-1 pl-1">
+                                        <div className="text-[10px] font-semibold text-muted-foreground mb-1 uppercase tracking-wider">Asset</div>
+                                        {(history.series || [])
+                                            .slice()
+                                            .sort((a: any, b: any) => {
+                                                const typeA = a.type || "Altro";
+                                                const typeB = b.type || "Altro";
+                                                if (typeA !== typeB) return typeB.localeCompare(typeA);
+                                                return a.name.localeCompare(b.name);
+                                            })
+                                            .map((s: any, idx: number) => (
+                                                <div key={s.isin} className="flex items-center space-x-2 py-0.5">
+                                                    <Checkbox
+                                                        id={`filter-${s.isin}`}
+                                                        checked={selectedAssets.has(s.isin)}
+                                                        onCheckedChange={(checked) => {
+                                                            const next = new Set(selectedAssets);
+                                                            if (checked) {
+                                                                next.add(s.isin);
+                                                            } else {
+                                                                next.delete(s.isin);
+                                                            }
+                                                            setSelectedAssets(next);
+                                                        }}
+                                                        className="border-2 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground h-4 w-4"
+                                                        style={{
+                                                            borderColor: s.color || COLORS[idx % COLORS.length],
+                                                            backgroundColor: selectedAssets.has(s.isin) ? (s.color || COLORS[idx % COLORS.length]) : 'transparent'
+                                                        }}
+                                                    />
+                                                    <label
+                                                        htmlFor={`filter-${s.isin}`}
+                                                        className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer w-full text-left"
+                                                        title={`${s.name} (${s.isin})`}
+                                                        style={{ color: s.color || COLORS[idx % COLORS.length] }}
+                                                    >
+                                                        <div className="truncate w-full">
+                                                            {s.name}
+                                                        </div>
+                                                    </label>
                                                 </div>
-                                            </label>
-                                        </div>
-                                    ))}
+                                            ))}
+                                    </div>
                                 </div>
                             </ScrollArea>
                         </CardContent>
@@ -290,9 +415,9 @@ export default function DashboardPage() {
                         <DashboardCharts
                             allocationData={summary.allocation}
                             history={filteredHistory}
-                            initialTimeWindow={initialSettings?.timeWindow}
-                            initialYAxisScale={initialSettings?.yAxisScale}
+                            initialSettings={initialSettings}
                             onSettingsChange={updateSettings}
+                            portfolioName={portfolioName}
                         />
                     </div>
                 </div>
