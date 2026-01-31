@@ -78,6 +78,18 @@ Implementare una cache persistente lato client (browser) più robusta del sempli
 | **Frontend State** | React Context | TanStack Query | TanStack Query + IndexedDB |
 | **Rendering Grafici** | Punti Reali | Downsampling leggero | Aggregazione Server-Side (SQL) |
 
+## 4.1 Gestione Serie Storiche Irregolari (Price Ingestion)
+Poiché l'ingestione dei prezzi è irregolare (settimanale/episodica), i grafici temporali richiedono una strategia per gestire i "buchi" nei dati senza compromettere la fluidità della UI.
+
+### Strategia Attuale
+- Il frontend collega i punti disponibili. Se i punti sono distanti (es. 1 settimana), si vede una linea retta.
+
+### Strategia Evolutiva (Consigliata)
+Per ottenere grafici "giornalieri" precisi anche con dati settimanali, si consiglia di spostare la logica di **Interpolazione su SQL** (Time Bucket Pattern):
+- **Cosa fare**: Creare una query che genera una serie temporale giornaliera continua (tramite `generate_series`).
+- **Come riempire i buchi**: Usare funzioni SQL come `locf()` (Last Observation Carried Forward) per proiettare l'ultimo prezzo noto sui giorni vuoti.
+- **Vantaggio**: Il frontend riceve sempre una serie pulita e continua, indipendentemente dalla frequenza di caricamento dell'Excel, garantendo massima fluidità visiva.
+
 ## 5. Raccomandazione Immediata (Next Steps - Free Tier Compatible)
 
 L'azione più efficace a costo zero è:

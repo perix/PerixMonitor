@@ -139,10 +139,14 @@ Il sistema adotta un approccio "Read-Preview-Write" per evitare contaminazione d
 
 ## 4. Strategie di Dati
 
-### Manual Price Ingestion
+### Manual Price Ingestion & Frequency
 - La fonte di verità è la **Colonna I ("Prezzo Corrente") del file Excel**.
+- **Frequenza Irregolare**: L'applicazione è progettata per gestire aggiornamenti di prezzo sporadici (es. settimanali o su richiesta).
+- **Logica di Continuità (LOCF)**:
+    - Poiché i prezzi non sono giornalieri, il sistema adotta la logica **Last Observation Carried Forward**.
+    - Il valore di un asset al giorno X (se non presente un prezzo esplicito) è assunto uguale all'ultimo prezzo noto precedente.
+    - Questo garantisce che i grafici di andamento ("Portfolio History") non abbiano "buchi" temporali e rimangano fluidi anche con dati sparsi.
 - Questi prezzi vengono salvati nella tabella `asset_prices` con `source='Manual Upload'`.
-- Questi prezzi alimentano sia il valore corrente del portafoglio sia lo storico per i grafici.
 
 ### Client-Side Caching (Performance)
 - **Problem**: La navigazione tra Dashboard e Portafoglio causava ricaricamenti ridondanti dei dati.
