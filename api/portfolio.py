@@ -123,21 +123,30 @@ def register_portfolio_routes(app):
                     
                     # Get latest price
                     price_data = get_latest_price(isin)
+                    
+                    latest_price = 0.0
                     if price_data:
                         latest_price = float(price_data['price'])
                         asset_info['latest_price'] = latest_price
                         asset_info['price_date'] = price_data['date']
                         asset_info['price_source'] = price_data['source']
                     else:
-                        latest_price = 0
                         asset_info['latest_price'] = None
                         asset_info['price_date'] = None
                         asset_info['price_source'] = None
                     
+                    # FALLBACK: If price is 0 (missing), we use 0.
+                    # Do NOT fallback to Cost Basis, as it masks P&L.
+                    if latest_price == 0 and current_qty > 0:
+                         latest_price = 0
+                             # Indicate it's a fallback? Maybe not needed for calculation, just for display value.
+                             # We don't change source to keep it clear it's not a real price update.
+
+                    asset_info['latest_price'] = latest_price if latest_price > 0 else None
                     asset_info['current_qty'] = current_qty
                     
                     # Calculate current value
-                    current_value = current_qty * latest_price if latest_price else 0
+                    current_value = current_qty * latest_price
                     asset_info['current_value'] = round(current_value, 2)
                     
                     # Calculate P&L
@@ -150,20 +159,43 @@ def register_portfolio_routes(app):
                     
                     # Calculate MWR (XIRR) for this asset
                     mwr = None
+                    mwr_type = "NONE"
+                    
                     if current_value > 0 and data['cashflows']:
-                        # Add current value as final inflow
-                        cashflows = data['cashflows'].copy()
-                        cashflows.append({
-                            "date": datetime.now(),
-                            "amount": current_value
-                        })
-                        try:
-                            xirr_result = xirr(cashflows)
-                            if xirr_result is not None:
-                                mwr = round(xirr_result * 100, 2)  # As percentage
-                        except:
-                            pass
+                        # Get tier params
+                        # Get tier params from DB settings if not in args
+                        # Note: This API is usually called without args from the Portfolio page.
+                        # We should check the portfolio settings fetched via get_portfolio_details or just fetch them here optimization.
+                        # Since we are inside a loop, we should fetch settings ONCE outside.
+                        
+                        # (Correction: we are inside the function, let's fetch settings once efficiently)
+                        if 'settings_cache' not in locals():
+                             try:
+                                 res_s = supabase.table('portfolios').select('settings').eq('id', portfolio_id).single().execute()
+                                 settings_cache = res_s.data.get('settings') or {}
+                             except:
+                                 settings_cache = {}
+                        
+                        # Use args first, then DB settings, then default
+                        t1_val = request.args.get('mwr_t1')
+                        if t1_val is None:
+                             t1_val = settings_cache.get('mwr_t1', 30)
+                        
+                        t2_val = request.args.get('mwr_t2')
+                        if t2_val is None:
+                             t2_val = settings_cache.get('mwr_t2', 365)
+
+                        mwr_t1 = int(t1_val)
+                        mwr_t2 = int(t2_val)
+                        
+                        from finance import get_tiered_mwr
+                        # cashflows is just the history list so far
+                        mwr_val, mwr_t = get_tiered_mwr(data['cashflows'], current_value, t1=mwr_t1, t2=mwr_t2)
+                        mwr = mwr_val
+                        mwr_type = mwr_t
+
                     asset_info['mwr'] = mwr
+                    asset_info['mwr_type'] = mwr_type
                     
                     result.append(asset_info)
             

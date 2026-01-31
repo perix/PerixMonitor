@@ -23,7 +23,6 @@ export const UploadForm = () => {
     const [pricesAndSnapshot, setPricesAndSnapshot] = useState<{ prices: any[], snapshot: any } | null>(null);
     const [showModal, setShowModal] = useState(false);
     const [enableAiLookup, setEnableAiLookup] = useState(true);
-    const [ignoreMissing, setIgnoreMissing] = useState(false);
 
     // Global Context State
     const { selectedPortfolioId, setSelectedPortfolioId, invalidateCache, clearCache } = usePortfolio();
@@ -57,7 +56,7 @@ export const UploadForm = () => {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('portfolio_id', selectedPortfolioId);
-        formData.append('ignore_missing', ignoreMissing ? 'true' : 'false');
+
 
 
         document.body.style.cursor = 'wait';
@@ -72,8 +71,8 @@ export const UploadForm = () => {
                 setShowModal(true);
             } else {
                 // Standard Portfolio
-                console.log("Ingest Response Data:", data); // Debug log for user
                 const { delta, prices, snapshot_proposal, debug } = data;
+
                 setDelta(delta);
                 setPricesAndSnapshot({ prices, snapshot: snapshot_proposal });
 
@@ -155,6 +154,7 @@ export const UploadForm = () => {
                         className="file:text-foreground text-foreground border-white/20 bg-secondary/20"
                     />
 
+
                     {/* AI Lookup Toggle */}
                     <div className="flex items-center justify-between p-3 rounded-lg border border-white/10 bg-secondary/20 mb-2">
                         <div className="flex items-center gap-3">
@@ -172,29 +172,6 @@ export const UploadForm = () => {
                             id="ai-lookup"
                             checked={enableAiLookup}
                             onCheckedChange={setEnableAiLookup}
-                        />
-                    </div>
-
-                    {/* Ignore Missing Assets Toggle */}
-                    <div className="flex items-center justify-between p-3 rounded-lg border border-white/10 bg-secondary/20">
-                        <div className="flex items-center gap-3">
-                            <div className="w-5 h-5 flex items-center justify-center text-orange-400">
-                                {/* Simple icon or just verify alignment */}
-                                <span className="font-bold text-lg">!</span>
-                            </div>
-                            <div>
-                                <Label htmlFor="ignore-missing" className="text-sm font-medium text-foreground cursor-pointer">
-                                    Ignora Asset Mancanti
-                                </Label>
-                                <p className="text-xs text-muted-foreground">
-                                    Non segnalare come "Venduti" gli asset in DB assenti nel file
-                                </p>
-                            </div>
-                        </div>
-                        <Switch
-                            id="ignore-missing"
-                            checked={ignoreMissing}
-                            onCheckedChange={setIgnoreMissing}
                         />
                     </div>
 

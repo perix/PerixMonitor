@@ -1,0 +1,40 @@
+SUMMARY ERROR: 2026-01-31 16:34:32.975410
+Traceback (most recent call last):
+  File "C:\Code\PerixMonitor\api\dashboard.py", line 138, in get_dashboard_summary
+    mwr_value, mwr_type = get_tiered_mwr(cash_flows, current_total_value, t1=mwr_t1, t2=mwr_t2)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Code\PerixMonitor\api\finance.py", line 96, in get_tiered_mwr
+    end_date = datetime.now()
+               ^^^^^^^^
+NameError: name 'datetime' is not defined
+
+SUMMARY ERROR: 2026-01-31 16:34:33.060828
+Traceback (most recent call last):
+  File "C:\Code\PerixMonitor\api\dashboard.py", line 138, in get_dashboard_summary
+    mwr_value, mwr_type = get_tiered_mwr(cash_flows, current_total_value, t1=mwr_t1, t2=mwr_t2)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Code\PerixMonitor\api\finance.py", line 96, in get_tiered_mwr
+    end_date = datetime.now()
+               ^^^^^^^^
+NameError: name 'datetime' is not defined
+
+SUMMARY ERROR: 2026-01-31 16:36:20.041287
+Traceback (most recent call last):
+  File "C:\Code\PerixMonitor\api\dashboard.py", line 138, in get_dashboard_summary
+    mwr_value, mwr_type = get_tiered_mwr(cash_flows, current_total_value, t1=mwr_t1, t2=mwr_t2)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Code\PerixMonitor\api\finance.py", line 96, in get_tiered_mwr
+    end_date = datetime.now()
+               ^^^^^^^^
+NameError: name 'datetime' is not defined
+
+SUMMARY ERROR: 2026-01-31 16:36:20.248108
+Traceback (most recent call last):
+  File "C:\Code\PerixMonitor\api\dashboard.py", line 138, in get_dashboard_summary
+    mwr_value, mwr_type = get_tiered_mwr(cash_flows, current_total_value, t1=mwr_t1, t2=mwr_t2)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Code\PerixMonitor\api\finance.py", line 96, in get_tiered_mwr
+    end_date = datetime.now()
+               ^^^^^^^^
+NameError: name 'datetime' is not defined
+

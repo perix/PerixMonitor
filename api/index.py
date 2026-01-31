@@ -76,6 +76,7 @@ def check_debug_mode(portfolio_id):
 @app.route('/api/sync', methods=['POST'])
 def sync_transactions():
     try:
+        from logger import configure_file_logging
         data = request.json
         changes = data.get('changes', [])
         portfolio_id = data.get('portfolio_id')
@@ -83,6 +84,7 @@ def sync_transactions():
         
         # Check debug mode
         debug_mode = check_debug_mode(portfolio_id)
+        configure_file_logging(debug_mode)
 
         if not portfolio_id:
             return jsonify(error="Missing portfolio_id"), 400
@@ -92,15 +94,9 @@ def sync_transactions():
 
         supabase = get_supabase_client()
         
-        # --- 1. Handle Prices (If present) ---
+        
+        # --- 1. Init Prices (Processing moved to end) ---
         prices = data.get('prices', [])
-        if prices:
-            from price_manager import save_price_snapshot
-            count_prices = 0
-            for p in prices:
-                save_price_snapshot(p['isin'], p['price'], p.get('date'), p.get('source', 'Manual Upload'))
-                count_prices += 1
-            if debug_mode: logger.info(f"SYNC: Saved {count_prices} price snapshots.")
 
         # --- 2. Handle Snapshot Record (If present) ---
         snapshot = data.get('snapshot')
@@ -329,7 +325,30 @@ def sync_transactions():
                             "price_eur": float(price),
                             "date": date_val
                         })
+                        
+                        # [NEW] Save Transaction Price as Market Data
+                        # This ensures we have at least one data point for history/P&L even if no external price source exists yet.
+                        try:
+                            # We use the transaction date. If multiple prices for same day, latest wins (upsert).
+                            # Source = 'Transaction' to distinguish from 'Manual Upload' or 'Yahoo Finance'
+                            from price_manager import save_price_snapshot
+                            save_price_snapshot(isin, float(price), date=date_val, source="Transaction")
+                        except Exception as e_price:
+                            logger.error(f"SYNC: Failed to save transaction price for {isin}: {e_price}")
         
+        # --- 4. Process Prices (Now that Assets are ensured to exist) ---
+        if prices:
+            from price_manager import save_price_snapshot
+            count_prices = 0
+            for p in prices:
+                 try:
+                     save_price_snapshot(p['isin'], p['price'], p.get('date'), p.get('source', 'Manual Upload'))
+                     count_prices += 1
+                 except Exception as p_err:
+                     logger.error(f"SYNC PRICE FAIL: {p['isin']} -> {p_err}")
+            
+            if debug_mode: logger.info(f"SYNC: Saved {count_prices} price snapshots.")
+
         if valid_transactions:
             res = supabase.table('transactions').insert(valid_transactions).execute()
             if debug_mode: logger.info(f"SYNC SUCCESS: Inserted {len(valid_transactions)} transactions for portfolio {portfolio_id}.")
@@ -356,14 +375,31 @@ def reset_db_route():
 
         supabase = get_supabase_client()
         
-        # Delete transactions for this portfolio
-        supabase.table('transactions').delete().eq('portfolio_id', portfolio_id).execute()
+        # NUCLEAR OPTION: Wipe everything except User/Portfolio structure.
+        # 1. Dependent Tables first
+        logger.info("RESET: Deleting ALL Transactions...")
+        supabase.table('transactions').delete().neq('id', -1).execute() # Delete All
         
-        # Delete snapshots (history) for this portfolio
-        supabase.table('snapshots').delete().eq('portfolio_id', portfolio_id).execute()
+        logger.info("RESET: Deleting ALL Dividends...")
+        supabase.table('dividends').delete().neq('id', -1).execute() # Delete All
         
-        logger.info(f"DB Reset: Cleared transactions and snapshots for portfolio {portfolio_id}")
-        return jsonify(status="ok", message="Portfolio data (transactions & history) cleared"), 200
+        logger.info("RESET: Deleting ALL Snapshots...")
+        supabase.table('snapshots').delete().neq('id', -1).execute() # Delete All
+        
+        # 2. Global Data
+        logger.info("RESET: Deleting ALL Asset Prices...")
+        # asset_prices PK is composite, but we can filter by non-null ISIN
+        supabase.table('asset_prices').delete().neq('isin', 'X_INVALID').execute()
+        
+        logger.info("RESET: Deleting ALL Assets...")
+        # assets PK is id
+        supabase.table('assets').delete().neq('id', -1).execute() 
+        
+        logger.info("RESET: Deleting ALL Portfolios...")
+        supabase.table('portfolios').delete().neq('id', -1).execute()
+
+        logger.info(f"DB Reset: FULL WIPE COMPLETED (Virgin DB). User preserved.")
+        return jsonify(status="ok", message="Database completely wiped (Portfolios, Assets, Prices, History, Transactions)."), 200
             
     except Exception as e:
         logger.error(f"RESET FAIL: {e}")
@@ -371,8 +407,15 @@ def reset_db_route():
 
 @app.route('/api/ingest', methods=['POST'])
 def ingest_excel():
-    from logger import clear_log_file
-    # We clear the log at the very beginning
+    from logger import clear_log_file, configure_file_logging
+    
+    # [NEW] Configure logging based on user preference ASAP
+    # We peek at portfolio_id to check settings (even if we validate it later)
+    portfolio_id_param = request.form.get('portfolio_id')
+    debug_mode = check_debug_mode(portfolio_id_param)
+    configure_file_logging(debug_mode)
+
+    # We clear the log at the very beginning if enabled
     try:
         clear_log_file()
     except:
@@ -443,8 +486,7 @@ def ingest_excel():
                 pass
 
         # Calculate Delta
-        ignore_missing = request.form.get('ignore_missing') == 'true'
-        delta = calculate_delta(parse_result['data'], db_holdings, ignore_missing=ignore_missing)
+        delta = calculate_delta(parse_result['data'], db_holdings)
         
         # Prepare Price Snapshots (Don't save yet)
         prices_to_save = []
@@ -491,10 +533,15 @@ def ingest_excel():
                 "log_summary": f"Imported {len(parse_result['data'])} rows. Value: {total_value_eur:.2f}€"
             }
 
+        # [DEBUG] Log the outgoing details
+        logger.info(f"INGEST DEBUG: Sending Response. Delta Len: {len(delta)}, Prices Len: {len(prices_to_save)}")
+        if len(delta) > 0:
+             logger.info(f"INGEST DEBUG: Delta Sample: {delta[0]}")
+
         return jsonify(
             type='PORTFOLIO',
             parsed_data=parse_result['data'],
-            delta=delta,
+            delta=list(delta),
             prices=prices_to_save,
             snapshot_proposal=snapshot_proposal
         )
@@ -534,9 +581,19 @@ def calculate_xirr_route():
     except Exception as e:
         return jsonify(error=str(e)), 500
 
-@app.route('/api/portfolios', methods=['POST', 'OPTIONS'])
-def create_portfolio():
+@app.route('/api/portfolios', methods=['GET', 'POST', 'OPTIONS'])
+def manage_portfolios():
     try:
+        if request.method == 'GET':
+            user_id = request.args.get('user_id')
+            if not user_id:
+                return jsonify(error="Missing user_id"), 400
+            
+            supabase = get_supabase_client()
+            res = supabase.table('portfolios').select('id, name, description, user_id, created_at').eq('user_id', user_id).order('created_at', desc=True).execute()
+            return jsonify(res.data if res.data else []), 200
+
+        # POST (Create)
         data = request.json
         name = data.get('name')
         user_id = data.get('user_id')
@@ -559,7 +616,7 @@ def create_portfolio():
             return jsonify(error="Failed to create portfolio"), 500
 
     except Exception as e:
-        logger.error(f"PORTFOLIO CREATE FAIL: {e}")
+        logger.error(f"PORTFOLIO MANAGE FAIL: {e}")
         return jsonify(error=str(e)), 500
 
 @app.route('/api/portfolios/<portfolio_id>', methods=['DELETE'])

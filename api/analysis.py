@@ -85,16 +85,18 @@ def register_analysis_routes(app):
                 
                 # Update holding state (just for calculating final value)
                 if isin not in holdings:
-                    holdings[isin] = {"qty": 0}
+                    holdings[isin] = {"qty": 0, "invested": 0.0}
 
                 # Update Cash Flows
                 flow_amount = 0
                 if is_buy:
                     holdings[isin]["qty"] += qty
+                    holdings[isin]["invested"] += (qty * price)
                     flow_amount = -(qty * price) # Outflow
                     components_data[component]["invested_capital"] += (qty * price)
                 else:
                     holdings[isin]["qty"] -= qty
+                    holdings[isin]["invested"] -= (qty * price)
                     flow_amount = (qty * price) # Inflow
                     components_data[component]["invested_capital"] -= (qty * price)
                 
@@ -115,6 +117,11 @@ def register_analysis_routes(app):
                 component = get_component_from_asset_type(asset_type)
                 
                 curr_price = fetch_price(isin)
+                
+                # FALLBACK Replaced by Strict Pricing (0 if unknown)
+                if curr_price == 0 and data["invested"] > 0:
+                    curr_price = 0
+                
                 mkt_value = qty * curr_price
                 
                 if component not in components_data:
@@ -166,6 +173,11 @@ def register_analysis_routes(app):
             # 5. Finalize Metrics (XIRR, P&L)
             result_list = []
             
+            # Get MWR params
+            mwr_t1 = int(request.args.get('mwr_t1', 30))
+            mwr_t2 = int(request.args.get('mwr_t2', 365))
+            from finance import get_tiered_mwr
+            
             for comp_name, data in components_data.items():
                 curr_val = data["current_value"]
                 invested = data["invested_capital"]
@@ -175,21 +187,8 @@ def register_analysis_routes(app):
                 if curr_val <= 0 and invested <= 0:
                     continue
 
-                # Add current value as final positive cash flow for XIRR
-                if curr_val > 0 and cfs:
-                    cfs.append({
-                        "date": datetime.now(),
-                        "amount": curr_val
-                    })
-                
-                # Calculate XIRR
-                comp_xirr = 0
-                try:
-                    if cfs:
-                        val = xirr(cfs)
-                        if val: comp_xirr = val * 100
-                except:
-                    pass
+                # Calculate Tiered MWR
+                mwr_val, mwr_type = get_tiered_mwr(cfs, curr_val, t1=mwr_t1, t2=mwr_t2)
                 
                 pl_val = curr_val - invested
                 pl_pct = (pl_val / invested * 100) if invested > 0 else 0
@@ -216,7 +215,8 @@ def register_analysis_routes(app):
                     "invested": round(invested, 2),
                     "pl_value": round(pl_val, 2),
                     "pl_percent": round(pl_pct, 2),
-                    "mwr": round(comp_xirr, 2),
+                    "mwr": mwr_val,
+                    "mwr_type": mwr_type,
                     "assets": final_assets
                 })
 

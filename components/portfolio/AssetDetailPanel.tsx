@@ -3,8 +3,12 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { TrendingUp, TrendingDown, Euro, Database, Activity, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { TrendingUp, TrendingDown, Euro, Database, Activity, ArrowUpRight, ArrowDownRight, Loader2 } from "lucide-react";
 import { formatSwissMoney, formatSwissNumber } from "@/lib/utils";
+import { DashboardCharts } from "@/components/dashboard/DashboardCharts";
+import { usePortfolio } from "@/context/PortfolioContext";
+import axios from "axios";
+import { useEffect, useState, useCallback } from "react";
 
 interface Asset {
     id: string;
@@ -27,7 +31,9 @@ interface Asset {
     invested?: number;
     pnl_value?: number;
     pnl_percent?: number;
+
     mwr?: number;
+    mwr_type?: string;
 }
 
 interface AssetDetailPanelProps {
@@ -201,9 +207,51 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
         );
     }
 
+    const { selectedPortfolioId } = usePortfolio();
+    const [history, setHistory] = useState<any>(null);
+    const [loadingHistory, setLoadingHistory] = useState(false);
+    const [visibleStats, setVisibleStats] = useState<{ pnl: number; mwr: number } | null>(null);
+
+    // Fetch history when asset changes
+    useEffect(() => {
+        if (!asset || !selectedPortfolioId) {
+            setHistory(null);
+            setVisibleStats(null);
+            return;
+        }
+
+        const fetchHistory = async () => {
+            setLoadingHistory(true);
+            try {
+                const res = await axios.get(`/api/dashboard/history?portfolio_id=${selectedPortfolioId}&assets=${asset.isin}`);
+                setHistory(res.data);
+            } catch (e) {
+                console.error("Failed to fetch asset history", e);
+            } finally {
+                setLoadingHistory(false);
+            }
+        };
+
+        const timeoutId = setTimeout(fetchHistory, 100);
+        return () => clearTimeout(timeoutId);
+    }, [asset.isin, selectedPortfolioId]);
+
+    const handleVisibleStatsChange = useCallback((stats: { pnl: number; mwr: number }) => {
+        // Prevent unnecessary state updates if values are same (though object identity differs)
+        setVisibleStats(prev => {
+            if (prev && prev.pnl === stats.pnl && prev.mwr === stats.mwr) return prev;
+            return stats;
+        });
+    }, []);
+
     const displayName = getAssetDisplayName(asset);
-    const isPnlPositive = (asset.pnl_value ?? 0) >= 0;
-    const isMwrPositive = (asset.mwr ?? 0) >= 0;
+
+    // Use visible stats if available (from chart interaction), otherwise fallback to asset snapshot
+    const activePnl = visibleStats?.pnl ?? asset.pnl_value;
+    const activeMwr = visibleStats?.mwr ?? asset.mwr;
+
+    const isPnlPositive = (activePnl ?? 0) >= 0;
+    const isMwrPositive = (activeMwr ?? 0) >= 0;
 
     return (
         <div className="h-full flex flex-col gap-4">
@@ -269,17 +317,21 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                             <div className="flex items-center gap-1">
                                 {isPnlPositive ? <ArrowUpRight className="h-4 w-4 text-green-500 shrink-0" /> : <ArrowDownRight className="h-4 w-4 text-red-500 shrink-0" />}
                                 <span className={`font-medium text-base truncate ${isPnlPositive ? 'text-green-500' : 'text-red-500'}`}>
-                                    {asset.pnl_value ? `€${formatSwissMoney(asset.pnl_value)}` : '-'}
+                                    {activePnl !== undefined && activePnl !== null ? `€${formatSwissMoney(activePnl)}` : '-'}
                                 </span>
                             </div>
                         </div>
 
                         <div className="space-y-1">
-                            <span className="text-xs text-muted-foreground block truncate">MWR</span>
+                            <span className="text-xs text-muted-foreground block truncate">
+                                {asset.mwr_type === 'SIMPLE' ? 'Simple Return' :
+                                    asset.mwr_type === 'PERIOD' ? 'Period XIRR' :
+                                        'MWR (Annual)'}
+                            </span>
                             <div className="flex items-center gap-1">
                                 <Activity className={`h-4 w-4 shrink-0 ${isMwrPositive ? 'text-green-500' : 'text-red-500'}`} />
                                 <span className={`font-medium text-base truncate ${isMwrPositive ? 'text-green-500' : 'text-red-500'}`}>
-                                    {asset.mwr ? `${formatSwissNumber(asset.mwr, 2)}%` : '-'}
+                                    {activeMwr !== undefined && activeMwr !== null ? `${formatSwissNumber(activeMwr, 2)}%` : '-'}
                                 </span>
                             </div>
                         </div>
@@ -287,18 +339,44 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                 </CardContent>
             </Card>
 
-            {/* Bottom Panel: Detailed Info */}
-            <Card className="bg-card/80 backdrop-blur-xl border-white/40 flex-1 overflow-auto flex flex-col min-w-0">
-                <CardHeader className="pb-2 border-b border-white/10 shrink-0">
-                    <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                        <Database className="h-4 w-4" />
-                        Info Asset (Dettagli)
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-4 overflow-auto">
-                    <FullMetadataDisplay metadata={asset.metadata} metadataText={asset.metadata_text} />
-                </CardContent>
-            </Card>
+            {/* Bottom Section: Chart + Details Grid */}
+            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+                {/* Left: Chart (2 cols) */}
+                <div className="lg:col-span-2 flex flex-col min-h-0">
+                    {loadingHistory ? (
+                        <Card className="bg-card/80 backdrop-blur-xl border-white/40 h-full flex items-center justify-center">
+                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                        </Card>
+                    ) : history ? (
+                        <DashboardCharts
+                            allocationData={[]}
+                            history={history}
+                            portfolioName={displayName}
+                            hidePortfolio={true}
+                            className="mt-0 h-full"
+                            onVisibleStatsChange={handleVisibleStatsChange}
+                        />
+                    ) : (
+                        <Card className="bg-card/80 backdrop-blur-xl border-white/40 h-full flex items-center justify-center">
+                            <p className="text-muted-foreground">Grafico non disponibile</p>
+                        </Card>
+                    )}
+                </div>
+
+                {/* Right: Details (1 col) */}
+                <Card className="bg-card/80 backdrop-blur-xl border-white/40 overflow-hidden flex flex-col min-h-0 lg:col-span-1">
+                    <CardHeader className="pb-2 border-b border-white/10 shrink-0">
+                        <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                            <Database className="h-4 w-4" />
+                            Info Asset (Dettagli)
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4 overflow-y-auto flex-1">
+                        <FullMetadataDisplay metadata={asset.metadata} metadataText={asset.metadata_text} />
+                    </CardContent>
+                </Card>
+            </div>
         </div>
     );
 }

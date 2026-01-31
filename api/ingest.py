@@ -6,6 +6,62 @@ try:
 except ImportError:
     from logger import log_ingestion_start, log_ingestion_item, log_ingestion_summary, log_final_state, logger
 
+def clean_money_value(val):
+    """
+    Robustly parses money values from strings or numbers.
+    Handles:
+    - "5.05 €" -> 5.05
+    - "1.200,50" -> 1200.50 (IT format)
+    - "1,200.50" -> 1200.50 (US format)
+    - None/NaN -> 0.0
+    """
+    if pd.isna(val) or val is None:
+        return 0.0
+    
+    # If already a number, return float
+    if isinstance(val, (int, float)):
+        return float(val)
+        
+    # Convert to string and strip symbols
+    s = str(val).strip()
+    # Remove currency symbols and common non-numeric chars (except . , -)
+    # kept: numbers, ., ,, -
+    import re
+    # Remove euro, dollar, spaces, letters
+    s = re.sub(r'[^\d\.\,\-]', '', s)
+    
+    if not s:
+        return 0.0
+        
+    try:
+        # Heuristic for Decimal Separator:
+        # If both . and , exist:
+        #  - Last one is decimal separator
+        # If only one exists:
+        #  - If usually 3 decimals (like 1.000) it might be thousands, but prices usually have 2 or 4.
+        #  - Standard IT: 1.000,00 -> dot is thousands, comma is decimal
+        #  - Standard US: 1,000.00 -> comma is thousands, dot is decimal
+        
+        if ',' in s and '.' in s:
+            if s.rfind(',') > s.rfind('.'):
+                # IT style: 1.000,50
+                s = s.replace('.', '').replace(',', '.')
+            else:
+                # US style: 1,000.50
+                s = s.replace(',', '') 
+        elif ',' in s:
+            # Ambiguous: "5,05" vs "1,200"
+            # If it has ONE comma and 2 digits after, it's likely decimal "5,05"
+            # If it has 3 digits after, it MIGHT be thousands "1,200" but could be precise price "1,234"
+            # Safest assumption for EUR context: Comma is DECIMAL.
+            s = s.replace(',', '.')
+        
+        # If only dots, leaving as is usually works for US format/Standard float string
+        
+        return float(s)
+    except:
+        return 0.0
+
 def parse_portfolio_excel(file_stream, debug=False):
     # Expected columns for Portfolio: A-I (9 columns)
     # Expected for Dividends: A-C (3 columns): ISIN, Amount, Date
@@ -32,8 +88,8 @@ def parse_portfolio_excel(file_stream, debug=False):
                 if pd.isna(row.iloc[0]): continue
                 
                 isin = str(row.iloc[0]).strip()
-                # [MODIFIED] Allow negative amounts (expenses)
-                amount = float(row.iloc[1]) if not pd.isna(row.iloc[1]) else 0.0
+                # [MODIFIED] Use clean_money_value
+                amount = clean_money_value(row.iloc[1])
                 date_val = row.iloc[2]
                 
                 # Date parsing
@@ -41,7 +97,12 @@ def parse_portfolio_excel(file_stream, debug=False):
                     date_val = None
                 else:
                     try:
-                        date_val = str(date_val)
+                        # [FIX] Use same logic for dividends
+                        if isinstance(date_val, (pd.Timestamp, datetime)):
+                             date_val = date_val.strftime('%Y-%m-%d')
+                        else:
+                             dt_obj = pd.to_datetime(date_val, dayfirst=True)
+                             date_val = dt_obj.strftime('%Y-%m-%d')
                     except:
                         date_val = None
                 
@@ -70,23 +131,30 @@ def parse_portfolio_excel(file_stream, debug=False):
             isin = str(row.iloc[1]).strip()
             # ... (parsing logic) ...
             # Qty can be None (Price Update only) or float
-            qty = float(row.iloc[2]) if not pd.isna(row.iloc[2]) else None
+            qty = clean_money_value(row.iloc[2]) if not pd.isna(row.iloc[2]) else None
             
             # log_ingestion_item(isin, "PARSED", f"Row {idx+2}: Qty={qty} Op={row.iloc[6]}") # Silent in normal mode
 
             # Handle NaT (Not a Time) converting to None
-            date_val = row.iloc[5]
-            if pd.isna(date_val): 
-                date_val = None
-            else:
-                try:
-                    # Ensure it's a string or datetime compatible with JSON
-                    date_val = str(date_val)
-                except:
-                    date_val = None
-            
             # [NEW] Parse Asset Type dynamically by column name or fallback to index 9
             asset_type = None
+
+            # [FIX] Date Parsing Logic
+            # Force Day-First if string (dd/mm/yyyy -> Feb 1st, not Jan 2nd)
+            date_val = None
+            raw_date = row.iloc[5]
+            if not pd.isna(raw_date):
+                try:
+                    # If it's already a datetime object (Excel might have parsed it)
+                    if isinstance(raw_date, (pd.Timestamp, datetime)):
+                        date_val = raw_date.strftime('%Y-%m-%d')
+                    else:
+                        # It's a string, use dayfirst=True
+                        dt_obj = pd.to_datetime(raw_date, dayfirst=True)
+                        date_val = dt_obj.strftime('%Y-%m-%d')
+                except Exception as e:
+                    if debug: logger.warning(f"DATE PARSE ERROR (Row {idx}): {raw_date} -> {e}")
+                    date_val = None
             
             # 1. Try to find column by header name
             type_col_idx = -1
@@ -114,16 +182,25 @@ def parse_portfolio_excel(file_stream, debug=False):
             if debug and idx < 3: # Debug first 3 rows
                  logger.info(f"INGEST DEBUG Row {idx}: ISIN={isin}, TypeRaw={row.iloc[type_col_idx] if type_col_idx != -1 else 'N/A'}, Extracted={asset_type}")
 
+            # [FIX] Sanitize NaN values for JSON compatibility
+            currency_val = row.iloc[3]
+            if pd.isna(currency_val): currency_val = None
+            else: currency_val = str(currency_val).strip()
+
+            op_val = row.iloc[6]
+            if pd.isna(op_val): op_val = None
+            else: op_val = str(op_val).strip()
+
             entry = {
                 "description": row.iloc[0],
                 "isin": isin,
                 "quantity": qty,
-                "currency": row.iloc[3],
-                "avg_price_eur": float(row.iloc[4]) if not pd.isna(row.iloc[4]) else 0.0,
+                "currency": currency_val,
+                "avg_price_eur": clean_money_value(row.iloc[4]),
                 "date": date_val, 
-                "operation": str(row.iloc[6]).strip() if not pd.isna(row.iloc[6]) else None,
-                "op_price_eur": float(row.iloc[7]) if not pd.isna(row.iloc[7]) else 0.0,
-                "current_price": float(row.iloc[8]) if df.shape[1] > 8 and not pd.isna(row.iloc[8]) else None,
+                "operation": op_val,
+                "op_price_eur": clean_money_value(row.iloc[7]),
+                "current_price": clean_money_value(row.iloc[8]) if df.shape[1] > 8 else None,
                 "asset_type": asset_type
             }
             data.append(entry)
@@ -134,9 +211,11 @@ def parse_portfolio_excel(file_stream, debug=False):
         }
         
         if debug:
+            # Ensure debug info is also JSON safe
+            clean_columns = [str(c) for c in df.columns.tolist()]
             result["debug"] = {
-                "columns_found": df.columns.tolist(),
-                "asset_type_col_index": type_col_idx
+                "columns_found": clean_columns,
+                "asset_type_col_index": int(type_col_idx)
             }
             
         return result
@@ -147,12 +226,11 @@ def parse_portfolio_excel(file_stream, debug=False):
         logger.error(traceback.format_exc())
         return {"error": f"Parse Error: {str(e)}"}
 
-def calculate_delta(excel_data, db_holdings, ignore_missing=True):
+def calculate_delta(excel_data, db_holdings):
     # db_holdings structure: {isin: {"qty": float, "metadata": dict}} OR {isin: float} (legacy fallback)
     # [SIMPLIFIED LOGIC]
     # 1. If column 'Operation' is "Acquisto"/"Vendita" -> Qty is TRANSACTION AMOUNT (Delta).
     # 2. If 'Operation' is NOT present -> Price Update Only. Ignore Qty.
-    # 3. No "Missing Asset" checks. (ignore_missing is effectively always True).
     
     delta_actions = []
     
@@ -184,10 +262,12 @@ def calculate_delta(excel_data, db_holdings, ignore_missing=True):
         action_type = None
         is_price_only = False
         
+        op_price = row.get('op_price_eur')
+        
         if is_explicit_buy:
-            if excel_qty is None:
-                 log_ingestion_item(isin, "ERROR_MISSING_QTY", "Buy Op but No Qty")
-                 delta_actions.append({"isin": isin, "type": "ERROR_QTY_MISMATCH", "quantity_change": 0, "current_db_qty": db_qty, "new_total_qty": db_qty, "details": "Operazione Acquisto senza quantità."})
+            if excel_qty is None or not op_price:
+                 log_ingestion_item(isin, "ERROR_INCOMPLETE_OP", "Buy Op missing Qty or Price")
+                 delta_actions.append({"isin": isin, "type": "ERROR_INCOMPLETE_OP", "quantity_change": 0, "current_db_qty": db_qty, "new_total_qty": db_qty, "details": "Operazione Acquisto incompleta (Manca Qta o Prezzo)."})
                  continue
                  
             diff = excel_qty
@@ -195,9 +275,9 @@ def calculate_delta(excel_data, db_holdings, ignore_missing=True):
             action_type = "Acquisto"
             
         elif is_explicit_sell:
-            if excel_qty is None:
-                 log_ingestion_item(isin, "ERROR_MISSING_QTY", "Sell Op but No Qty")
-                 delta_actions.append({"isin": isin, "type": "ERROR_QTY_MISMATCH", "quantity_change": 0, "current_db_qty": db_qty, "new_total_qty": db_qty, "details": "Operazione Vendita senza quantità."})
+            if excel_qty is None or not op_price:
+                 log_ingestion_item(isin, "ERROR_INCOMPLETE_OP", "Sell Op missing Qty or Price")
+                 delta_actions.append({"isin": isin, "type": "ERROR_INCOMPLETE_OP", "quantity_change": 0, "current_db_qty": db_qty, "new_total_qty": db_qty, "details": "Operazione Vendita incompleta (Manca Qta o Prezzo)."})
                  continue
 
             # Validate: Cannot sell more than owned
@@ -214,7 +294,28 @@ def calculate_delta(excel_data, db_holdings, ignore_missing=True):
                 continue
             
             diff = -excel_qty
-            new_total_qty = db_qty - excel_qty
+            
+            # [USER REQUEST] Avoid fictitious positive stocks due to rounding
+            # If remaining qty (db_qty - excel_qty) is negligible (< 0.01), clear it.
+            # "prendi il numero inferiore tra 0 e questa differenza"
+            remainder = db_qty - excel_qty
+            if abs(remainder) < 0.01:
+                # If remainder is 0.005 -> min(0, 0.005) = 0. New Total = 0.
+                # If remainder is -0.005 -> min(0, -0.005) = -0.005. New Total = -0.005.
+                adjusted_remainder = min(0.0, abs(remainder))
+                
+                # We must adjust 'diff' so that db_qty + diff = adjusted_remainder
+                # diff = adjusted_remainder - db_qty
+                
+                new_total_qty = adjusted_remainder
+                diff = new_total_qty - db_qty
+                
+                # If we forced remainder to 0, it means we sold EVERYTHING.
+                if new_total_qty == 0:
+                     action_type = "Vendita Totale (Auto-fix)"
+            else:
+                 new_total_qty = db_qty - excel_qty
+            
             action_type = "Vendita"
             
         else:

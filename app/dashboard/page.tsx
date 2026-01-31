@@ -18,12 +18,20 @@ export default function DashboardPage() {
 
     const [summary, setSummary] = useState<any>(null);
     const [history, setHistory] = useState<any>([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false); // Changed default to false to prevent infinite spin on logic gap
     const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
     const [filteredSummary, setFilteredSummary] = useState<any>(null); // State for filtered subset
     const [portfolioName, setPortfolioName] = useState("");
 
     const [initialSettings, setInitialSettings] = useState<any>(null);
+
+    const [mwrT1, setMwrT1] = useState(30); // Effective T1 for API
+    const [mwrT2, setMwrT2] = useState(365); // Effective T2 for API
+
+    const [inputT1, setInputT1] = useState("30"); // UI Input State
+    const [inputT2, setInputT2] = useState("365"); // UI Input State
+
+    const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
 
     // Debounced update function
     const updateSettings = async (newSettings: any) => {
@@ -44,12 +52,85 @@ export default function DashboardPage() {
         }
     };
 
+    // [PERSISTENCE] Fetch Settings SEPARATELY on load/portfolio change
+    useEffect(() => {
+        if (!selectedPortfolioId) return;
+
+        // Reset loading state for settings
+        setIsSettingsLoaded(false);
+
+        const fetchSettings = async () => {
+            // Check cache first for settings?
+            if (dashboardCache[selectedPortfolioId]?.settings) {
+                const s = dashboardCache[selectedPortfolioId].settings;
+                if (s) {
+                    if (s.mwr_t1) {
+                        setMwrT1(s.mwr_t1);
+                        setInputT1(s.mwr_t1.toString());
+                    }
+                    if (s.mwr_t2) {
+                        setMwrT2(s.mwr_t2);
+                        setInputT2(s.mwr_t2.toString());
+                    }
+                    setInitialSettings(s);
+                }
+                setIsSettingsLoaded(true);
+                return;
+            }
+
+            try {
+                const res = await axios.get(`/api/portfolio/${selectedPortfolioId}`);
+                const s = res.data.settings || {};
+                if (s.mwr_t1) {
+                    setMwrT1(s.mwr_t1);
+                    setInputT1(s.mwr_t1.toString());
+                }
+                if (s.mwr_t2) {
+                    setMwrT2(s.mwr_t2);
+                    setInputT2(s.mwr_t2.toString());
+                }
+                setInitialSettings(s);
+            } catch (e) {
+                console.error("Settings fetch error", e);
+            } finally {
+                setIsSettingsLoaded(true);
+            }
+        };
+        fetchSettings();
+    }, [selectedPortfolioId]);
+
+    // [PERSISTENCE] Auto-Save Settings on Change (Debounced)
+    const handleCommitSettings = () => {
+        const t1 = parseInt(inputT1) || 30;
+        const t2 = parseInt(inputT2) || 365;
+
+        console.log("[DEBUG] Committing settings:", { prevT1: mwrT1, newT1: t1, prevT2: mwrT2, newT2: t2 });
+
+        // Only update if changed
+        if (t1 !== mwrT1 || t2 !== mwrT2) {
+            setMwrT1(t1);
+            setMwrT2(t2);
+            // Update initialSettings locally to keep sync for cache
+            setInitialSettings((prev: any) => ({ ...prev, mwr_t1: t1, mwr_t2: t2 }));
+            // Save immediately on commit
+            updateSettings({ mwr_t1: t1, mwr_t2: t2 });
+        }
+    };
+
     useEffect(() => {
         async function fetchData() {
+            console.log("[DEBUG] fetchData triggered", { selectedPortfolioId, mwrT1, mwrT2, isSettingsLoaded });
+
             if (!selectedPortfolioId) {
                 setLoading(false);
                 setSummary(null);
                 setHistory([]);
+                return;
+            }
+
+            // Wait for settings to load to avoid fetching with defaults then reloading
+            if (!isSettingsLoaded) {
+                setLoading(true); // Show loading while waiting for settings
                 return;
             }
 
@@ -64,62 +145,85 @@ export default function DashboardPage() {
                 }
             }
 
+            // Check Cache - SKIP if MWR params changed (simplification: just refetch for now if we change params, 
+            // but for initial load cache is fine if we assume defaults. 
+            // Better: invalidate cache if T1/T2 change? 
+            // For now, let's allow fetching fresh if we interact with params.
+            // But here is the initial load.
             // Check Cache
+            // We must now ensure T1/T2 from cache matches current requested T1/T2
             if (dashboardCache[selectedPortfolioId]) {
                 const cached = dashboardCache[selectedPortfolioId];
-                setSummary(cached.summary);
-                setHistory(cached.history);
-                setInitialSettings(cached.settings);
 
-                if (cached.name) {
-                    setPortfolioName(cached.name);
-                } else if (portfolioCache[selectedPortfolioId]) {
-                    setPortfolioName(portfolioCache[selectedPortfolioId].name);
-                }
+                // Compare cached T1/T2 with current state
+                // If stored in cache settings or similar
+                const cachedT1 = cached.requestParams?.mwrT1;
+                const cachedT2 = cached.requestParams?.mwrT2;
 
-                // Restore selected assets logic
-                if (cached.history?.series) {
-                    const allIsins = new Set<string>(cached.history.series.map((s: any) => s.isin));
+                // If params match (or cache is old/generic but we accept it for first load), use it.
+                // But better to be strict if we want T1/T2 updates to work.
+                if (cachedT1 === mwrT1 && cachedT2 === mwrT2) {
+                    setSummary(cached.summary);
+                    setHistory(cached.history);
+                    setInitialSettings(cached.settings);
 
-                    // Use saved selection if available, intersect with current available assets to be safe
-                    if (initialSelection) {
-                        const validSelection = new Set<string>();
-                        initialSelection.forEach(isin => {
-                            if (allIsins.has(isin)) validSelection.add(isin);
-                        });
-                        // If intersection is empty (e.g. all selected assets deleted), fallback to all? 
-                        // Or just empty? User might have deselected all.
-                        // Let's rely on saved state unless it's completely alien.
-                        // Actually, if user deselected everything, validSelection is empty. That's fine.
-                        // But if initialSelection was valid but assets changed, we want to keep valid ones.
-                        setSelectedAssets(validSelection);
-                    } else {
-                        // Default to ALL selected
-                        setSelectedAssets(allIsins);
+                    if (cached.name) {
+                        setPortfolioName(cached.name);
+                    } else if (portfolioCache[selectedPortfolioId]) {
+                        setPortfolioName(portfolioCache[selectedPortfolioId].name);
                     }
-                }
 
-                setLoading(false);
-                return;
+                    // Restore selected assets logic
+                    if (cached.history?.series) {
+                        const allIsins = new Set<string>(cached.history.series.map((s: any) => s.isin));
+
+                        if (initialSelection) {
+                            const validSelection = new Set<string>();
+                            initialSelection.forEach(isin => {
+                                if (allIsins.has(isin)) validSelection.add(isin);
+                            });
+                            setSelectedAssets(validSelection);
+                        } else {
+                            setSelectedAssets(allIsins);
+                        }
+                    }
+
+                    setLoading(false);
+                    return;
+                }
+                // If mismatch, proceed to fetch
             }
 
+            // If mismatch, proceed to fetch
+
             setLoading(true);
+            console.log("[DEBUG] Starting API fetch...", { mwrT1, mwrT2 });
             try {
-                const [resSummary, resHistory, resDetails] = await Promise.all([
-                    axios.get(`/api/dashboard/summary?portfolio_id=${selectedPortfolioId}`),
-                    axios.get(`/api/dashboard/history?portfolio_id=${selectedPortfolioId}`),
-                    axios.get(`/api/portfolio/${selectedPortfolioId}`)
+                // Remove redundant settings fetch to optimize
+                const [resSummary, resHistory] = await Promise.all([
+                    axios.get(`/api/dashboard/summary?portfolio_id=${selectedPortfolioId}&mwr_t1=${mwrT1}&mwr_t2=${mwrT2}`),
+                    axios.get(`/api/dashboard/history?portfolio_id=${selectedPortfolioId}&mwr_t1=${mwrT1}&mwr_t2=${mwrT2}`)
                 ]);
 
                 const dataSummary = resSummary.data;
                 const dataHistory = resHistory.data;
-                const portfolioDetails = resDetails.data;
-                const settings = portfolioDetails.settings || {};
+                // Settings already loaded
+                // e.g. setInitialSettings(settings) - likely redundant but harmless if we want to ensure sync
+
+                // Fetch name if missing (or use Cache/Context)
+                if (!portfolioName) {
+                    // Quick fetch for name if needed, or rely on portfolioCache
+                    // We can optimistically set name from portfolioCache if available
+                    if (portfolioCache[selectedPortfolioId]) {
+                        setPortfolioName(portfolioCache[selectedPortfolioId].name);
+                    } else {
+                        // Fallback fetch
+                        axios.get(`/api/portfolio/${selectedPortfolioId}`).then(res => setPortfolioName(res.data.name));
+                    }
+                }
 
                 setSummary(dataSummary);
                 setHistory(dataHistory);
-                setPortfolioName(portfolioDetails.name);
-                setInitialSettings(settings);
 
                 if (dataHistory.series) {
                     const allIsins = new Set<string>(dataHistory.series.map((s: any) => s.isin));
@@ -138,8 +242,9 @@ export default function DashboardPage() {
                 setDashboardCache(selectedPortfolioId, {
                     summary: dataSummary,
                     history: dataHistory,
-                    settings: settings,
-                    name: portfolioDetails.name
+                    settings: initialSettings,
+                    name: portfolioName, // Use current state or cached
+                    requestParams: { mwrT1, mwrT2 }
                 });
 
             } catch (e) {
@@ -150,7 +255,7 @@ export default function DashboardPage() {
         }
 
         fetchData();
-    }, [selectedPortfolioId]);
+    }, [selectedPortfolioId, mwrT1, mwrT2, isSettingsLoaded]); // Refetch when T1/T2 change OR settings loaded
 
     // [PERSISTENCE] Save selection on change
     useEffect(() => {
@@ -171,7 +276,16 @@ export default function DashboardPage() {
 
         const totalAssetsCount = history.series.length;
         const selectedCount = selectedAssets.size;
-        const isSubset = selectedCount > 0 && selectedCount < totalAssetsCount;
+
+        // CASE 1: No assets selected -> Show Nothing (Empty Chart)
+        if (selectedCount === 0) {
+            return {
+                series: [],
+                portfolio: history.portfolio.map((d: any) => ({ ...d, value: 0, market_value: 0, pnl: 0 }))
+            };
+        }
+
+        const isSubset = selectedCount < totalAssetsCount;
 
         if (!isSubset) {
             return history;
@@ -186,6 +300,7 @@ export default function DashboardPage() {
         } else {
             // Fallback: Compute Synthetic Portfolio (Sum of Market Values) locally
             // This ensures 'Controvalore' chart is correct immediately
+            // But for MWR, we can't easily sum. We just show empty or sum.
             const dateMap = new Map<string, { date: string, value: number, market_value: number, pnl: number }>();
 
             filteredSeries.forEach((s: any) => {
@@ -216,9 +331,23 @@ export default function DashboardPage() {
         const totalAssetsCount = history.series.length;
         const selectedCount = selectedAssets.size;
 
-        if (selectedCount === 0 || selectedCount === totalAssetsCount) {
+        if (selectedCount === totalAssetsCount) {
             setFilteredSummary(null);
             setSubsetHistory(null);
+            return;
+        }
+
+        if (selectedCount === 0) {
+            // Manually set zeroed summary
+            setFilteredSummary({
+                total_value: 0,
+                total_invested: 0,
+                pl_value: 0,
+                pl_percent: 0,
+                xirr: 0,
+                allocation: []
+            });
+            setSubsetHistory({ series: [], portfolio: [] });
             return;
         }
 
@@ -229,8 +358,8 @@ export default function DashboardPage() {
             try {
                 const assetsParam = Array.from(selectedAssets).join(',');
                 const [resSum, resHist] = await Promise.all([
-                    axios.get(`/api/dashboard/summary?portfolio_id=${selectedPortfolioId}&assets=${assetsParam}`),
-                    axios.get(`/api/dashboard/history?portfolio_id=${selectedPortfolioId}&assets=${assetsParam}`)
+                    axios.get(`/api/dashboard/summary?portfolio_id=${selectedPortfolioId}&assets=${assetsParam}&mwr_t1=${mwrT1}&mwr_t2=${mwrT2}`),
+                    axios.get(`/api/dashboard/history?portfolio_id=${selectedPortfolioId}&assets=${assetsParam}&mwr_t1=${mwrT1}&mwr_t2=${mwrT2}`)
                 ]);
                 setFilteredSummary(resSum.data);
                 setSubsetHistory(resHist.data);
@@ -242,7 +371,7 @@ export default function DashboardPage() {
         const timeoutId = setTimeout(fetchFiltered, 500); // 500ms debounce
         return () => clearTimeout(timeoutId);
 
-    }, [selectedAssets, selectedPortfolioId, history]);
+    }, [selectedAssets, selectedPortfolioId, history, mwrT1, mwrT2]); // Added mwr params
 
 
     if (loading) {
@@ -258,10 +387,47 @@ export default function DashboardPage() {
         );
     }
 
+    // UI Helpers
+    const getMwrLabel = (type: string) => {
+        switch (type) {
+            case "SIMPLE": return "Simple Return (< T1)";
+            case "PERIOD": return "Period Value (< T2)";
+            case "ANNUAL": return "XIRR Annualizzato";
+            default: return "MWR";
+        }
+    };
+
     return (
 
         <div className="flex flex-1 flex-col h-full bg-background/50 p-6 overflow-y-auto">
-            <PanelHeader title={`Dashboard - ${portfolioName || 'Loading...'}`} />
+            <PanelHeader title={`Dashboard - ${portfolioName || 'Loading...'}`}>
+                <div className="flex items-center gap-2 text-xs">
+                    <div className="flex items-center gap-1 bg-background/50 border border-white/10 rounded px-2 py-1">
+                        <span className="text-muted-foreground whitespace-nowrap">T1 (Simple)</span>
+                        <input
+                            type="number"
+                            className="w-12 h-6 bg-transparent border-none text-center focus:ring-0 appearance-none"
+                            value={inputT1}
+                            onChange={(e) => setInputT1(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleCommitSettings(); }}
+                            onBlur={handleCommitSettings}
+                        />
+                        <span className="text-muted-foreground">gg</span>
+                    </div>
+                    <div className="flex items-center gap-1 bg-background/50 border border-white/10 rounded px-2 py-1">
+                        <span className="text-muted-foreground whitespace-nowrap">T2 (Period)</span>
+                        <input
+                            type="number"
+                            className="w-12 h-6 bg-transparent border-none text-center focus:ring-0 appearance-none"
+                            value={inputT2}
+                            onChange={(e) => setInputT2(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleCommitSettings(); }}
+                            onBlur={handleCommitSettings}
+                        />
+                        <span className="text-muted-foreground">gg</span>
+                    </div>
+                </div>
+            </PanelHeader>
 
             <div className="flex flex-col gap-3">
                 <div className="grid gap-3" style={{ gridTemplateColumns: "minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 1.6fr)" }}>
@@ -297,7 +463,7 @@ export default function DashboardPage() {
                                 {summary.xirr}%
                             </div>
                             <p className="text-xs text-muted-foreground">
-                                XIRR Annualizzato
+                                {getMwrLabel(summary.mwr_type)}
                             </p>
                             {filteredSummary && (
                                 <div className="mt-2 pt-2 border-t border-white/10">
@@ -305,7 +471,7 @@ export default function DashboardPage() {
                                         {filteredSummary.xirr}%
                                     </div>
                                     <p className="text-[10px] text-muted-foreground/70">
-                                        Selezione
+                                        {getMwrLabel(filteredSummary.mwr_type || summary.mwr_type)}
                                     </p>
                                 </div>
                             )}
@@ -516,6 +682,7 @@ export default function DashboardPage() {
                             initialSettings={initialSettings}
                             onSettingsChange={updateSettings}
                             portfolioName={portfolioName}
+                            className="h-[450px]"
                         />
                     </div>
                 </div>

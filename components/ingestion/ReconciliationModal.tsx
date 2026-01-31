@@ -109,6 +109,7 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
       case 'INCONSISTENT_NEW_ISIN': return <Badge variant="destructive">Errore Dati</Badge>;
       case 'ERROR_QTY_MISMATCH_NO_OP': return <Badge variant="destructive">Discrepanza Qta</Badge>;
       case 'ERROR_NEGATIVE_QTY': return <Badge variant="destructive">Saldo Negativo</Badge>;
+      case 'ERROR_INCOMPLETE_OP': return <Badge variant="destructive">Dati Op. Mancanti</Badge>;
       default: return <Badge variant="outline">{item.type}</Badge>;
     }
   };

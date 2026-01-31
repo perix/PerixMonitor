@@ -8,9 +8,11 @@ logger = logging.getLogger("perix_monitor")
 def save_price_snapshot(isin, price, date=None, source="Manual Upload"):
     """
     Upserts a price record for an ISIN.
+    Returns True if successful, False otherwise.
     """
     if not price or price <= 0:
-        return
+        logger.warning(f"SAVE PRICE SKIPPED: Invalid price {price} for {isin}")
+        return False
 
     if not date:
         date = datetime.now().strftime("%Y-%m-%d")
@@ -25,47 +27,107 @@ def save_price_snapshot(isin, price, date=None, source="Manual Upload"):
     try:
         supabase = get_supabase_client()
         # Upsert based on (isin, date, source) constraint 
-        # Note: on_conflict requires the constraint name or columns
         res = supabase.table('asset_prices').upsert(data, on_conflict='isin, date, source').execute()
-        logger.debug(f"Saved price for {isin}: {price}")
+        logger.debug(f"SAVE PRICE SUCCESS: {isin} = {price}€ ({date}) [{source}]")
+        return True
     except Exception as e:
-        logger.error(f"Failed to copy price for {isin}: {e}")
-        # If table doesn't exist, this will log an error.
+        logger.error(f"SAVE PRICE FAIL: {isin} -> {e}")
+        return False
 
-def get_latest_price(isin):
+def get_price_history(isin):
     """
-    Fetches the most recent price for an ISIN from the DB.
+    Fetches all historical prices for an ISIN, merging:
+    1. 'asset_prices' (Manual/Market Data)
+    2. 'transactions' (Implicit Prices from Buys/Sells)
+    
+    Returns list of dicts: [{'date': 'YYYY-MM-DD', 'price': float, 'source': str}, ...]
+    sorted by date ascending.
     """
     try:
         supabase = get_supabase_client()
-        # Order by date descending, limit 1
-        res = supabase.table('asset_prices').select("price, date, source")\
+        
+        # 1. Fetch Explicit Prices
+        res_prices = supabase.table('asset_prices').select("price, date, source")\
             .eq('isin', isin)\
-            .order('date', desc=True)\
-            .limit(1)\
+            .order('date', desc=False)\
             .execute()
         
-        if res.data and len(res.data) > 0:
-            return res.data[0]
+        prices_list = res_prices.data if res_prices.data else []
+        
+        # 2. Fetch Transaction Prices (Implicit)
+        # We only care about transactions that have a valid price_eur
+        res_trans = supabase.table('transactions').select("price_eur, date, type, assets!inner(isin)")\
+            .eq('assets.isin', isin)\
+            .neq('price_eur', 0)\
+            .order('date', desc=False)\
+            .execute()
+            
+        if res_trans.data:
+            for t in res_trans.data:
+                # Add transaction prices as 'Transaction' source
+                # Ensure date format consistency
+                d_str = t['date']
+                if 'T' in d_str: d_str = d_str.split('T')[0]
+                
+                prices_list.append({
+                    "price": float(t['price_eur']),
+                    "date": d_str,
+                    "source": f"Transaction ({t['type']})"
+                })
+        
+        if not prices_list:
+            return []
+
+        # 3. Merge and Sort
+        # Convert to DF for easy sorting/deduplication
+        df = pd.DataFrame(prices_list)
+        df['date'] = pd.to_datetime(df['date'], format='mixed', dayfirst=False) # ISO format expected
+        
+        # Sort by date
+        df = df.sort_values(by='date')
+        
+        # Deduplicate same day? 
+        # Strategy: If multiple prices on same day, prefer 'Manual Upload' or 'Yahoo', else take latest.
+        # For simplicity, we just keep the last one committed (or average? No, last is better for EOD).
+        # But wait, transactions might happen intraday. Asset prices usually EOD.
+        # Let's keep all for history, but get_interpolated wil handle dedup.
+        
+        # Re-convert to list of dicts
+        # date back to string
+        result = []
+        for _, row in df.iterrows():
+            result.append({
+                "date": row['date'].strftime('%Y-%m-%d'),
+                "price": row['price'],
+                "source": row.get('source', 'Unknown')
+            })
+            
+        return result
+
+    except Exception as e:
+        logger.error(f"Failed to get unified history for {isin}: {e}")
+        return []
+
+def get_latest_price(isin):
+    """
+    Fetches the most recent price for an ISIN.
+    Uses the unified history (Prices + Transactions) to determine the absolute latest value.
+    """
+    try:
+        # Get full history (it's fast enough for single asset, or we could optimize query)
+        # Optimizing query for unified latest is hard in Supabase-Py without SQL function.
+        # Let's fetch history and take last.
+        
+        history = get_price_history(isin)
+        
+        if history:
+            # Assuming history is sorted by date ascending from get_price_history
+            return history[-1]
+            
         return None
     except Exception as e:
         logger.error(f"Failed to get latest price for {isin}: {e}")
         return None
-
-def get_price_history(isin):
-    """
-    Fetches all historical prices for an ISIN.
-    """
-    try:
-        supabase = get_supabase_client()
-        res = supabase.table('asset_prices').select("price, date")\
-            .eq('isin', isin)\
-            .order('date', desc=False)\
-            .execute()
-        return res.data if res.data else []
-    except Exception as e:
-        logger.error(f"Failed to get history for {isin}: {e}")
-        return []
 
 def get_interpolated_price_history(isin, min_date=None, max_date=None):
     """
@@ -75,7 +137,7 @@ def get_interpolated_price_history(isin, min_date=None, max_date=None):
     This implements the "Time Bucket" + "LOCF" strategy in Python (Pandas) 
     to robustly handle irregular/episodic price ingestion.
     """
-    raw_history = get_price_history(isin)
+    raw_history = get_price_history(isin) # Now Unified!
     
     if not raw_history:
         return {}
@@ -84,9 +146,17 @@ def get_interpolated_price_history(isin, min_date=None, max_date=None):
         # Convert to DataFrame
         df = pd.DataFrame(raw_history)
         df['date'] = pd.to_datetime(df['date'])
-        df = df.set_index('date').sort_index()
+        
+        # Sort just in case
+        df = df.sort_values(by='date')
+        
+        df = df.set_index('date')
 
-        # Handle duplicates if any (take last)
+        # Handle duplicates: keep the last entry for the day
+        # (e.g. if we have Transaction + Manual, usually Manual is EOD so it might be better, 
+        # or implies later update. Sort is stable, so order in list matters. 
+        # In get_price_history we sorted by date. If same date, unpredictable unless we sort by source priority.
+        # Let's assume last is best.)
         df = df[~df.index.duplicated(keep='last')]
         
         # Determine strict range
@@ -103,22 +173,16 @@ def get_interpolated_price_history(isin, min_date=None, max_date=None):
         full_idx = pd.date_range(start=start, end=end, freq='D')
         
         # Reindex and forward fill (LOCF)
-        # 'method' deprecated in reindex, use ffill() after
         df_interp = df.reindex(full_idx)
         df_interp['price'] = df_interp['price'].ffill()
 
-        # If starts with NaNs (because min_date < first price), backfill or leave 0/NaN?
-        # Standard LOCF implies we don't look into the future, so keep NaN or fill with 0.
-        # But if we want to smooth graph start, we might backfill cost? 
-        # dashboard.py handles 0 price by checking.
+        # If starts with NaNs (because min_date < first price), fill with 0
         df_interp['price'] = df_interp['price'].fillna(0)
 
         # Convert back to dict {str: float}
-        # index is Timestamp, map to str
         result = df_interp['price'].to_dict()
         return {k.strftime('%Y-%m-%d'): v for k, v in result.items()}
 
     except Exception as e:
         logger.error(f"Interpolation error for {isin}: {e}")
-        # Fallback to sparse map
-        return {row['date']: row['price'] for row in raw_history}
+        return {}

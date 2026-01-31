@@ -53,34 +53,31 @@ export const PortfolioSelector: React.FC<PortfolioSelectorProps> = ({ selectedPo
         }
         setUserId(user.id);
 
-        // Fetch Portfolios
-        const { data, error } = await supabase
-            .from('portfolios')
-            .select('*')
-            .order('created_at', { ascending: false });
+        // Fetch Portfolios via API (Backend Service Role)
+        try {
+            const response = await axios.get(`/api/portfolios?user_id=${user.id}`);
+            const data = response.data;
+            // setPortfolios etc. (Handled below if I reassign 'data')
 
-        if (error) {
-            console.error("Error fetching portfolios:", error);
-        } else {
+            // Re-use existing logic variable 'data'
             setPortfolios(data || []);
 
             // Validation Logic: Ensure selectedPortfolioId exists in the new list
             if (data && data.length > 0) {
-                const isValid = selectedPortfolioId && data.some(p => p.id === selectedPortfolioId);
+                const isValid = selectedPortfolioId && data.some((p: Portfolio) => p.id === selectedPortfolioId);
 
                 if (!isValid) {
-                    // Current selection is invalid (e.g. deleted DB), switch to first available
                     onSelect(data[0].id);
                 } else if (!selectedPortfolioId) {
-                    // No selection, default to first
                     onSelect(data[0].id);
                 }
             } else {
-                // No portfolios available, clear selection
-                if (selectedPortfolioId) {
-                    onSelect("");
-                }
+                if (selectedPortfolioId) onSelect("");
             }
+
+        } catch (error) {
+            console.error("Error fetching portfolios:", error);
+            setPortfolios([]);
         }
         setLoading(false);
     };

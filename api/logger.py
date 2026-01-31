@@ -20,6 +20,7 @@ ch.setFormatter(formatter)
 logger.addHandler(ch)
 
 # File Handler (Optional via Flag)
+# We support dynamic configuration, so ENABLE_FILE_LOGGING acts as global state.
 if ENABLE_FILE_LOGGING:
     # Ensure directory exists if not in /tmp
     log_dir = os.path.dirname(LOG_FILE_PATH)
@@ -34,6 +35,45 @@ if ENABLE_FILE_LOGGING:
     file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     fh.setFormatter(file_formatter)
     logger.addHandler(fh)
+
+def configure_file_logging(enabled: bool):
+    """
+    Dynamically enable or disable file logging.
+    Used by API to sync with user preferences.
+    """
+    global ENABLE_FILE_LOGGING
+    
+    # If state is same, do nothing (unless we want to enforce handler presence)
+    # But let's check handler presence to be sure.
+    
+    file_handler = None
+    for h in logger.handlers:
+        if isinstance(h, logging.FileHandler):
+            file_handler = h
+            break
+    
+    if enabled:
+        ENABLE_FILE_LOGGING = True
+        if not file_handler:
+            try:
+                log_dir = os.path.dirname(LOG_FILE_PATH)
+                if log_dir and not os.path.exists(log_dir):
+                    os.makedirs(log_dir)
+
+                fh = logging.FileHandler(LOG_FILE_PATH)
+                fh.setLevel(logging.DEBUG)
+                file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+                fh.setFormatter(file_formatter)
+                logger.addHandler(fh)
+                logger.info(f"File logging ENABLED dynamically (Config Update).")
+            except Exception as e:
+                logger.error(f"Failed to enable file logging: {e}")
+    else:
+        ENABLE_FILE_LOGGING = False
+        if file_handler:
+            logger.info(f"File logging DISABLED dynamically (Config Update).")
+            file_handler.close()
+            logger.removeHandler(file_handler)
 
 def log_ingestion_start(filename):
     logger.info(f"STARTED Ingestion for file: {filename}")

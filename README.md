@@ -77,7 +77,32 @@ Se una riga **NON** contiene alcuna operazione:
 -   **Errore**: Se la quantità è **presente ma diversa** da quella in DB (e.g. file dice 100, DB ha 50), il sistema genera un errore di discrepanza (`ERROR_QTY_MISMATCH_NO_OP`). Questo segnala una probabile operazione mancante.
 -   **Risultato**: L'ingestion viene bloccata per quella riga. L'utente deve correggere il file aggiungendo l'operazione mancante o correggendo la quantità.
  
-### 3. Nessuna Riconciliazione "State-Based"
-Il sistema non cerca più di riconciliare lo "stato totale" del portafoglio basandosi sul contenuto del file.
--   Gli asset presenti nel database ma assenti nel file Excel vengono semplicemente ignorati (nessun errore "Missing").
--   Questo permette caricamenti parziali, storici ordini o aggiornamenti mirati senza dover sempre caricare l'intero portafoglio.
+### 3. Logica Semplificata (Transaction-Only)
+Il sistema **NON** effettua più una riconciliazione "State-Based" (confronto saldo totale).
+-   Non verifica se un asset presente nel DB manca nel file Excel.
+-   Non calcola automaticamente delta per allineare le quantità totali.
+-   Si basa **esclusivamente** sulle operazioni esplicite dichiarate nel file.
+
+### Regole di Coerenza (Strict Checks)
+Per le operazioni dichiarate (**Acquisto** o **Vendita**), il sistema applica regole rigide:
+1.  **Quantità Obbligatoria**: La cella *Quantità* non può essere vuota.
+2.  **Prezzo Operazione Obbligatorio**: La cella *Prezzo Operazione* (Colonna H) deve essere presente.
+Se manca uno di questi dati, l'operazione viene segnalata come **Incompleta** (`ERROR_INCOMPLETE_OP`) e l'ingestione viene bloccata per quella riga.
+ 
+### 4. Riconciliazione (Preview)
+Prima di salvare qualsiasi modifica, il sistema mostra una `Preview` delle azioni:
+-   **Transazioni**: Acquisti/Vendite rilevati.
+-   **Aggiornamenti Prezzi**: Nuovi prezzi per asset esistenti.
+-   **Aggiornamenti Anagrafica**: Cambi di Tipologia o Descrizione.
+-   **Errori**: Discrepanze o dati mancanti che impediscono il salvataggio.
+Solo confermando la preview i dati vengono scritti nel database.
+
+## Changelog GUI / Funzionalità (31/01/2026)
+
+### Dashboard & Grafici
+- **Layout Fluido**: I grafici ora si adattano dinamicamente all'altezza dei contenitori (flexbox), garantendo un perfetto allineamento con i pannelli laterali (es. dettaglio asset).
+- **Asse X Lineare**: L'asse temporale è ora basato su scala lineare (timestamp). Le date sono spaziate in modo proporzionale al tempo reale, eliminando distorsioni visive in caso di dati mancanti.
+- **Formattazione Data**: Le etichette dell'asse X sono formattate come `dd/mm/yy` e ruotate di 45° per migliorare la leggibilità.
+- **Statistiche Dinamiche (Windowed)**: 
+  - Nel pannello di dettaglio asset, i valori di **Profitto/Perdita** e **MWR** si aggiornano in tempo reale in base alla finestra temporale selezionata tramite lo slider.
+  - Il calcolo utilizza un'approssimazione *Modified Dietz* per il periodo visibile (o il valore preciso backend se si parte dall'inizio).

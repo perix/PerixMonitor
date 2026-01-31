@@ -165,6 +165,33 @@ Il sistema adotta un approccio "Read-Preview-Write" per evitare contaminazione d
 - **Memorizzazione**: Dati salvati nella tabella `dividends` con riferimento all'asset e al portafoglio.
 - **Utilizzo**: Partecipano al calcolo del MWRR (XIRR) come flussi di cassa (positivi o negativi).
 
+### Metodologia di Calcolo MWR (Money Weighted Return)
+Il sistema utilizza l'algoritmo **XIRR (Extended Internal Rate of Return)** per calcolare la performance reale, tenendo conto dei tempi e degli importi di ogni flusso di cassa (acquisti, vendite, dividendi).
+
+#### Logica a Soglie (T1 & T2)
+Per evitare risultati fuorvianti su periodi brevi, il sistema applica una logica a 3 livelli basata sulla durata dell'investimento:
+
+| Soglia | Durata (Giorni) | Metodo di Calcolo | Motivo |
+|--------|----------------|-------------------|--------|
+| **TIER 1** | `< T1` (default 30gg) | **Simple Return** `(Valore - Costo) / Costo` | L'annualizzazione su pochi giorni proietta tassi irreali (es. +1% in 2gg = +500% annuo). |
+| **TIER 2** | `T1 <= d < T2` (default 365gg) | **Period XIRR** (De-annualizzato) | Calcola l'XIRR ma mostra il rendimento effettivo *del periodo* (non annualizzato). |
+| **TIER 3** | `>= T2` (365gg+) | **Annualized XIRR** | Mostra il rendimento composto medio annuo (CAGR), standard per investimenti a lungo termine. |
+
+#### Calcolo Grafico MWR (Time-Series)
+Il grafico dell'andamento MWR non è uno storico salvato, ma viene **ricalcolato dinamicamente** per ogni punto temporale:
+
+1.  **MWR Singolo Asset**:
+    - Il sistema genera dei "Checkpoint" temporali (es. ogni mese).
+    - Per ogni checkpoint, simula una **Vendita Fittizia** di tutte le quote possedute in quel momento.
+    - Il **Prezzo di Vendita** usato è determinato dalla logica **LOCF** (Last Observation Carried Forward): se per quella data manca un prezzo ufficiale, si usa l'ultimo prezzo noto precedente (es. transazione o upload manuale).
+    - **Formula**: `XIRR(Flussi Passati + [Vendita Fittizia])`.
+
+2.  **MWR Portafoglio**:
+    - **IMPORTANTE**: L'MWR del portafoglio **NON è la media ponderata** degli MWR dei singoli asset.
+    - È un calcolo XIRR unico su **tutti i flussi di cassa aggregati** del portafoglio.
+    - Esempio: Un portafoglio con un asset in guadagno (che ho appena comprato) e uno in perdita (che ho da anni) avrà un MWR che riflette il *peso temporale* del capitale investito nell'asset più vecchio.
+    - Questo metodo (Real MWR) è l'unico che rappresenta fedelmente l'esperienza dell'investitore.
+
 ### Gestione Ciclo di Vita Asset (Active vs Historical)
 - **Asset Attivi**:
     - Sono gli strumenti con quantità > 0 nel portafoglio attuale.

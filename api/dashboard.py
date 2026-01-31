@@ -104,10 +104,9 @@ def register_dashboard_routes(app):
                     if price_data:
                         current_price = float(price_data['price'])
                     
-                    # Fallback to cost if price is 0 (fetch failed)
                     if current_price == 0:
-                         # logger.warning(f"Price 0 for {isin}, using Cost Basis")
-                         current_price = data['cost'] / data['qty'] if data['qty'] else 0
+                        # logger.warning(f"Price 0 for {isin}, Valued at 0")
+                        current_price = 0
                     
                     # TODO: Fetch Sector from Assets table if needed
                         
@@ -127,17 +126,15 @@ def register_dashboard_routes(app):
                     "price": current_price
                 })
 
-            # 4. XIRR Calculation
-            # Add current value as a "fake sell" today
-            if current_total_value > 0:
-                cash_flows.append({
-                    "date": datetime.now(),
-                    "amount": current_total_value
-                })
+            # 4. XIRR Calculation (Tiered)
+            mwr_t1 = int(request.args.get('mwr_t1', 30))
+            mwr_t2 = int(request.args.get('mwr_t2', 365))
+
+            # Need to pass current_total_value separately as the "final" value
+            # cash_flows here contains only historical flows, not the final "fake sell"
+            from finance import get_tiered_mwr
             
-            computed_xirr = xirr(cash_flows)
-            if computed_xirr is None:
-                computed_xirr = 0
+            mwr_value, mwr_type = get_tiered_mwr(cash_flows, current_total_value, t1=mwr_t1, t2=mwr_t2)
 
             # 5. Fetch Colors
             # Optimization: Fetch all colors for this portfolio in one go
@@ -178,7 +175,8 @@ def register_dashboard_routes(app):
                 "total_invested": round(total_invested, 2),
                 "pl_value": round(pl_value, 2),
                 "pl_percent": round(pl_percent, 2),
-                "xirr": round(computed_xirr * 100, 2), # Percentage
+                "xirr": mwr_value,
+                "mwr_type": mwr_type, # Provide context to frontend
                 "allocation": sorted(allocation_data, key=lambda x: x['value'], reverse=True)
             })
 
@@ -304,8 +302,12 @@ def register_dashboard_routes(app):
                 mwr_series = []
                 current_cash_flows = []
                 transaction_idx = 0
-                current_qty = 0
+                current_qty = 0.0
                 net_invested_for_pnl = 0.0
+                
+                # Track Average Cost for Price Fallback
+                current_avg_cost = 0.0
+                
                 last_xirr_guess = 0.1 # Initial Guess
                 
                 for cp in check_points:
@@ -318,16 +320,23 @@ def register_dashboard_routes(app):
                         if t_date > cp:
                             break
                         
-                        qty = t['quantity']
-                        price = t['price_eur']
+                        qty = float(t['quantity'])
+                        price = float(t['price_eur'])
                         val = qty * price
                         is_buy = t['type'] == 'BUY'
                         
                         if is_buy:
+                            # Update Average Cost (Weighted Average)
+                            total_cost = (current_qty * current_avg_cost) + val
+                            new_total_qty = current_qty + qty
+                            if new_total_qty > 0:
+                                current_avg_cost = total_cost / new_total_qty
+                            
                             current_qty += qty
                             current_cash_flows.append({"date": t_date, "amount": -val})
                             net_invested_for_pnl += val
                         else:
+                            # Sell doesn't change Average Cost per share, just reduces total cost basis
                             current_qty -= qty
                             current_cash_flows.append({"date": t_date, "amount": val})
                             net_invested_for_pnl -= val
@@ -340,6 +349,9 @@ def register_dashboard_routes(app):
                         # The map is dense thanks to LOCF
                         price_at_cp = price_map.get(cp_str, 0)
                         
+                        if price_at_cp == 0 and current_avg_cost > 0:
+                             price_at_cp = 0
+                        
                         if price_at_cp == 0: continue
 
                         # Add current value as inflow
@@ -351,13 +363,33 @@ def register_dashboard_routes(app):
                         # Prepare flow for XIRR
                         calc_flows = current_cash_flows + [{"date": cp, "amount": current_val}]
                         
+                        # Duration
+                        first_d = current_cash_flows[0]['date'] if current_cash_flows else cp
+                        dur_days = (cp - first_d).days
+                        
+                        mwr_t1 = int(request.args.get('mwr_t1', 30))
+                        mwr_t2 = int(request.args.get('mwr_t2', 365))
+
                         try:
                             val = xirr(calc_flows, guess=last_xirr_guess)
                             if val is not None:
                                 last_xirr_guess = val # Update guess for next step
+                                
+                                # Apply Tiered
+                                final_val = val
+                                if dur_days < mwr_t1:
+                                     net_in = sum(-f['amount'] for f in current_cash_flows)
+                                     if net_in > 0:
+                                         final_val = (current_val - net_in) / net_in
+                                     else:
+                                         final_val = 0
+                                elif dur_days < mwr_t2:
+                                    from finance import deannualize_xirr
+                                    final_val = deannualize_xirr(val, dur_days)
+
                                 mwr_series.append({
                                     "date": cp_str,
-                                    "value": round(val * 100, 2),
+                                    "value": round(final_val * 100, 2),
                                     "pnl": round(pnl_at_cp, 2),
                                     "market_value": round(current_val, 2)
                                 })
@@ -407,7 +439,10 @@ def register_dashboard_routes(app):
             # Portfolio Loops
             current_port_cash_flows = []
             transaction_idx_p = 0
-            current_port_holdings = {} # isin -> qty
+            
+            # Map ISIN -> {qty, avg_cost}
+            current_port_holdings_map = {} 
+            
             last_port_xirr = 0.1
 
             for cp in check_points:
@@ -421,42 +456,82 @@ def register_dashboard_routes(app):
                         break
                     
                     isin = t['assets']['isin']
-                    qty = t['quantity']
-                    price = t['price_eur']
+                    qty = float(t['quantity'])
+                    price = float(t['price_eur'])
+                    val = qty * price
                     is_buy = t['type'] == 'BUY'
                     
-                    if isin not in current_port_holdings: current_port_holdings[isin] = 0
-                    current_port_holdings[isin] += (qty if is_buy else -qty)
+                    if isin not in current_port_holdings_map: 
+                        current_port_holdings_map[isin] = {"qty": 0.0, "avg_cost": 0.0}
                     
-                    # Portfolio External Flow: Buy = Outflow from Pocket, Sell = Inflow to Pocket
-                    # Wait, logic check:
-                    # If I put 100 EUR into Portfolio to buy Asset A -> Flow is -100.
-                    # Asset A value is now 100. XIRR is 0. Correct.
+                    curr_h = current_port_holdings_map[isin]
+                    
                     if is_buy:
-                         current_port_cash_flows.append({"date": t_date, "amount": -(qty * price)})
+                        # Update Avg Cost
+                        total_cost_h = (curr_h['qty'] * curr_h['avg_cost']) + val
+                        new_qty_h = curr_h['qty'] + qty
+                        if new_qty_h > 0:
+                            curr_h['avg_cost'] = total_cost_h / new_qty_h
+                        
+                        curr_h['qty'] += qty
+                        current_port_cash_flows.append({"date": t_date, "amount": -val})
                     else:
-                         current_port_cash_flows.append({"date": t_date, "amount": (qty * price)})
+                        curr_h['qty'] -= qty
+                        current_port_cash_flows.append({"date": t_date, "amount": val})
                     
                     transaction_idx_p += 1
 
                 # 2. Calculate Portfolio Current Value
                 port_value_at_cp = 0
-                for isin, qty in current_port_holdings.items():
+                for isin, data in current_port_holdings_map.items():
+                    qty = data['qty']
                     if qty <= 0.0001: continue
                     
                     # Efficient O(1) Lookup
                     price = global_price_map.get(isin, {}).get(cp_str, 0)
+                    
+                    # FALLBACK Replaced: Use 0 if price is missing
+                    if price == 0 and data['avg_cost'] > 0:
+                         price = 0
+
                     port_value_at_cp += (qty * price)
                 
                 if port_value_at_cp > 0:
                      calc_flows = current_port_cash_flows + [{"date": cp, "amount": port_value_at_cp}]
+                     
+                     # Calculate duration at this checkpoint
+                     start_d = current_port_cash_flows[0]['date'] if current_port_cash_flows else cp
+                     dur_days = (cp - start_d).days
+                     
+                     mwr_t1 = int(request.args.get('mwr_t1', 30))
+                     mwr_t2 = int(request.args.get('mwr_t2', 365))
+
                      try:
+                         # Calculate Annualized XIRR first
                          val = xirr(calc_flows, guess=last_port_xirr)
+                         
                          if val is not None:
                              last_port_xirr = val
+                             
+                             # Apply Tiered logic
+                             final_mwr = val
+                             
+                             if dur_days < mwr_t1:
+                                 # Simple Return approximation for chart consistency
+                                 # (Value - NetIn) / NetIn
+                                 net_in = sum(-f['amount'] for f in current_port_cash_flows)
+                                 if net_in > 0:
+                                     final_mwr = (port_value_at_cp - net_in) / net_in
+                                 else:
+                                     final_mwr = 0
+                             elif dur_days < mwr_t2:
+                                 # Period Return
+                                 from finance import deannualize_xirr
+                                 final_mwr = deannualize_xirr(val, dur_days)
+                             
                              portfolio_series.append({
                                  "date": cp_str,
-                                 "value": round(val * 100, 2),
+                                 "value": round(final_mwr * 100, 2),
                                  "market_value": round(port_value_at_cp, 2)
                              })
                      except: pass

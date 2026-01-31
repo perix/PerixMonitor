@@ -6,8 +6,9 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 export interface DashboardData {
     summary: any;
     history: any;
-    settings: { timeWindow?: number; yAxisScale?: number } | null;
+    settings: { timeWindow?: number; yAxisScale?: number; mwr_t1?: number; mwr_t2?: number } | null;
     name?: string;
+    requestParams?: { mwrT1: number; mwrT2: number };
     timestamp: number;
 }
 
