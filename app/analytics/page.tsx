@@ -53,7 +53,7 @@ interface AnalysisData {
 }
 
 export default function AnalyticsPage() {
-    const { selectedPortfolioId } = usePortfolio();
+    const { selectedPortfolioId, analysisCache, setAnalysisCache } = usePortfolio();
     const [data, setData] = useState<AnalysisData | null>(null);
     const [loading, setLoading] = useState(false);
     const [selectedSlice, setSelectedSlice] = useState<ComponentData | null>(null);
@@ -64,11 +64,30 @@ export default function AnalyticsPage() {
             return;
         }
 
+        // Check Cache
+        if (analysisCache[selectedPortfolioId]) {
+            setData(analysisCache[selectedPortfolioId]);
+
+            // [PERSISTENCE] Restore selection (logic duplicated for cache hit)
+            const savedSelectionName = localStorage.getItem(`analysis_selection_${selectedPortfolioId}`);
+            if (savedSelectionName && analysisCache[selectedPortfolioId].components) {
+                const found = analysisCache[selectedPortfolioId].components.find((c: any) => c.name === savedSelectionName);
+                if (found) {
+                    setSelectedSlice(found);
+                }
+            }
+            // If we have cache, we don't need to fetch
+            return;
+        }
+
         const fetchData = async () => {
             setLoading(true);
             try {
                 const res = await axios.get(`/api/analysis/allocation?portfolio_id=${selectedPortfolioId}`);
                 setData(res.data);
+
+                // Save to Cache
+                setAnalysisCache(selectedPortfolioId, res.data);
 
                 // [PERSISTENCE] Restore selection
                 const savedSelectionName = localStorage.getItem(`analysis_selection_${selectedPortfolioId}`);

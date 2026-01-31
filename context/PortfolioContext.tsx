@@ -26,6 +26,14 @@ interface PortfolioContextType {
     portfolioCache: Record<string, PortfolioData>;
     setDashboardCache: (portfolioId: string, data: Omit<DashboardData, 'timestamp'>) => void;
     setPortfolioCache: (portfolioId: string, data: Omit<PortfolioData, 'timestamp'>) => void;
+
+    // New Caches
+    analysisCache: Record<string, any>;
+    setAnalysisCache: (portfolioId: string, data: any) => void;
+
+    assetHistoryCache: Record<string, Record<string, any>>;
+    setAssetHistoryCache: (portfolioId: string, assetIsin: string, data: any) => void;
+
     invalidateCache: (portfolioId: string) => void;
     clearCache: () => void;
 }
@@ -38,6 +46,8 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
     // Caches
     const [dashboardCache, setDashboardCacheState] = useState<Record<string, DashboardData>>({});
     const [portfolioCache, setPortfolioCacheState] = useState<Record<string, PortfolioData>>({});
+    const [analysisCache, setAnalysisCacheState] = useState<Record<string, any>>({});
+    const [assetHistoryCache, setAssetHistoryCacheState] = useState<Record<string, Record<string, any>>>({});
 
     // Initial load from local storage - wrapped in useEffect to avoid Hydration Mismatch
     useEffect(() => {
@@ -71,6 +81,23 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
         }));
     };
 
+    const setAnalysisCache = (portfolioId: string, data: any) => {
+        setAnalysisCacheState(prev => ({
+            ...prev,
+            [portfolioId]: data
+        }));
+    };
+
+    const setAssetHistoryCache = (portfolioId: string, assetIsin: string, data: any) => {
+        setAssetHistoryCacheState(prev => ({
+            ...prev,
+            [portfolioId]: {
+                ...(prev[portfolioId] || {}),
+                [assetIsin]: data
+            }
+        }));
+    };
+
     const invalidateCache = (portfolioId: string) => {
         setDashboardCacheState(prev => {
             const next = { ...prev };
@@ -82,11 +109,23 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
             delete next[portfolioId];
             return next;
         });
+        setAnalysisCacheState(prev => {
+            const next = { ...prev };
+            delete next[portfolioId];
+            return next;
+        });
+        setAssetHistoryCacheState(prev => {
+            const next = { ...prev };
+            delete next[portfolioId];
+            return next;
+        });
     };
 
     const clearCache = () => {
         setDashboardCacheState({});
         setPortfolioCacheState({});
+        setAnalysisCacheState({});
+        setAssetHistoryCacheState({});
     };
 
     return (
@@ -97,6 +136,10 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
             portfolioCache,
             setDashboardCache,
             setPortfolioCache,
+            analysisCache,
+            setAnalysisCache,
+            assetHistoryCache,
+            setAssetHistoryCache,
             invalidateCache,
             clearCache
         }}>

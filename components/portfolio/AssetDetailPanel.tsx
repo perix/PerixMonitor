@@ -207,7 +207,7 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
         );
     }
 
-    const { selectedPortfolioId } = usePortfolio();
+    const { selectedPortfolioId, assetHistoryCache, setAssetHistoryCache } = usePortfolio();
     const [history, setHistory] = useState<any>(null);
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [visibleStats, setVisibleStats] = useState<{ pnl: number; mwr: number } | null>(null);
@@ -220,11 +220,22 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
             return;
         }
 
+        // Check Cache
+        if (assetHistoryCache && assetHistoryCache[selectedPortfolioId] && assetHistoryCache[selectedPortfolioId][asset.isin]) {
+            setHistory(assetHistoryCache[selectedPortfolioId][asset.isin]);
+            setVisibleStats(null); // Reset stats on switch even if cached
+            return;
+        }
+
         const fetchHistory = async () => {
             setLoadingHistory(true);
             try {
                 const res = await axios.get(`/api/dashboard/history?portfolio_id=${selectedPortfolioId}&assets=${asset.isin}`);
                 setHistory(res.data);
+
+                // Update Cache
+                setAssetHistoryCache(selectedPortfolioId, asset.isin, res.data);
+
             } catch (e) {
                 console.error("Failed to fetch asset history", e);
             } finally {
@@ -234,7 +245,7 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
 
         const timeoutId = setTimeout(fetchHistory, 100);
         return () => clearTimeout(timeoutId);
-    }, [asset.isin, selectedPortfolioId]);
+    }, [asset?.isin, selectedPortfolioId]); // safer dependency chain
 
     const handleVisibleStatsChange = useCallback((stats: { pnl: number; mwr: number }) => {
         // Prevent unnecessary state updates if values are same (though object identity differs)
