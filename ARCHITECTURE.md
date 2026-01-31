@@ -201,3 +201,19 @@ L'ambiente locale utilizza **Docker Desktop** e richiede l'avvio coordinato di t
 L'ambiente live accessibile via web.
 - **Frontend & Backend**: Deployed su Vercel (Next.js + Serverless Python).
 - **Database**: Supabase Cloud.
+
+## 7. Vincoli di Progetto (Free Tier)
+Il progetto è strettamente vincolato all'utilizzo dei piani **Free** di Vercel e Supabase. Le scelte architetturali riflettono questi limiti:
+
+1.  **Vercel (Hobby Plan)**:
+    - **Serverless Function Timeout**: Max 10 secondi (default) o fino a 60s per funzioni. L'ingestione di file Excel molto grandi (> 5MB) potrebbe fallire se l'elaborazione Python supera questo limite.
+    - **Back-end Strategy**: Ottimizzazione del codice Python (`pandas`) per processare i dati rapidamente ed evitare timeout.
+
+2.  **Supabase (Free Plan)**:
+    - **Database Size**: Limite di 500MB. I file binari (PDF/Excel) non vengono salvati nel database. Vengono salvati solo i metadati e le transazioni estratte.
+    - **Compute**: Risorse CPU condivise. Le query complesse devono essere ottimizzate e indicizzate.
+    - **No Pro Features**: Non si utilizzano feature a pagamento come PITR (Point in Time Recovery) o Log retention estesa.
+
+3.  **Strategia "Zero Cost"**:
+    - **Nessun Redis/Cache esterno a pagamento**: Il caching avviene in memoria lato client (React Context) o tramite ottimizzazioni SQL, senza aggiungere servizi esterni a pagamento.
+    - **OpenAI**: Unico costo vivo accettato (pay-per-use), ma opzionale. Il sistema funziona anche senza arricchimento AI.

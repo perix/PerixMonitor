@@ -42,10 +42,24 @@ Questa guida spiega come configurare l'applicazione per il deployment su Vercel,
 - Naviga all'URL del tuo progetto (es. `perix-monitor.vercel.app`).
 - Le chiamate verso `/api/*` verranno gestite automaticamente da Vercel utilizzando `api/index.py` come Serverless Function (grazie a `vercel.json`).
 
-## Nota sui Costi (Free Tier)
-- **Vercel Free**: Ha limiti sulle Serverless Function (dimensione, tempo di esecuzione 10s default). Le operazioni lunghe del backend (es. analisi pesanti) potrebbero andare in timeout.
-- **Supabase Free**: Database fino a 500MB.
-- **OpenAI**: Non ha free tier per le API, paghi a consumo.
+## Nota sui Costi e Limiti (Free Tier)
+Il progetto è ottimizzato per restare nei piani gratuiti ("Hobby") a tempo indeterminato.
+
+- **Vercel Free (Hobby)**:
+  - **Serverless Function Duration**: Max **10 secondi** per default (estendibile a 60s in alcuni casi, ma non garantito).
+  - **Rischio**: L'analisi di file Excel enormi o calcoli XIRR su migliaia di transazioni potrebbero andare in timeout.
+  - **Funzioni Serverless**: Max 12 funzioni (qui ne usiamo 1 monolitica `api/index.py` che va bene).
+
+- **Supabase Free**:
+  - **Database Size**: Max **500MB**. Monitorare la dimensione se si caricano molti dati testuali/metadata.
+  - **Egress**: Max 2GB banda in uscita (sufficiente per uso personale).
+  - **Pause**: Il database viene messo in pausa dopo 7 giorni di inattività (riattivabile dal pannello Supabase).
+
+- **Mitigazioni nel Codice**:
+  - L'app usa il caching lato client per ridurre le chiamate al server.
+  - I calcoli pesanti sono fatti in Python ma ottimizzati; in futuro si sposteranno sempre più aggregazioni su SQL per evitare timeout.
+
+- **OpenAI**: Non ha free tier. È l'unico costo variabile (pochi centesimi al mese per uso personale). L'app funziona anche se la chiave non è configurata (le descrizioni asset non verranno arricchite).
 
 ---
 

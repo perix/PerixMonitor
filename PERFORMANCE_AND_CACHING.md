@@ -43,15 +43,13 @@ Invece di calcolare sommatorie e KPI ogni volta partendo dai dati raw, si posson
     - Dividendi totali per anno.
 - **Vantaggio**: Le query di dashboard diventano istantanee (`SELECT * FROM dashboard_summary_mv WHERE id=...`).
 
-#### 2. Redis per Caching Semplice
-Per dati costosi da calcolare che cambiano raramente (es. Performance YTD o grafici storici complessi):
-- **Implementazione**: Inserire un'istanza Redis (es. Upstash per serverless) tra Flask e Supabase.
+#### 2. Caching (Vincolo Free Tier)
+Dato il vincolo "Zero Cost/Free Tier", l'uso di Redis gestito (solitamente a pagamento o con limiti stretti) è **sconsigliato** a meno che non si utilizzi un tier gratuito (es. Upstash Free).
+- **Alternativa Preferita (SQL Optimization)**: Sfruttare la potenza di PostgreSQL (già incluso in Supabase Free) per fare il "lavoro sporco".
 - **Logica**:
-    1.  Request arriva a Flask.
-    2.  Check Redis: esiste chiave `portfolio_123_history`?
-    3.  Se SI -> Ritorna JSON (5ms).
-    4.  Se NO -> Calcola, salva in Redis con TTL (es. 1 ora), ritorna JSON.
-- **Vantaggio**: Riduce drasticamente il carico cpu su Flask.
+    - Evitare di tirare fuori 50.000 righe e sommarle in Python (lento + memoria Vercel).
+    - Fare `SELECT SUM(amount) FROM transactions` (Veloce + carico sul DB).
+- **Materialized Views**: Sono disponibili nel piano Free di Supabase e sono la soluzione migliore per "cacheare" risultati complessi a costo zero.
 
 ### B. Ottimizzazione Frontend
 
@@ -73,15 +71,15 @@ Implementare una cache persistente lato client (browser) più robusta del sempli
 
 ## 4. Tabella Riassuntiva Scenario Evolutivo
 
-| Metrica | Scenario Attuale (< 1k transazioni) | Scenario Medio (10k - 50k) | Scenario Enterprise (> 100k) |
+| Metrica | Scenario Attuale (< 1k transazioni) | Scenario Medio (10k - 50k) | Scenario "High Volume" (Free Tier) |
 | :--- | :--- | :--- | :--- |
-| **Storage DB** | Standard Tables | Indici ottimizzati | Partitioning per anno |
-| **Backend Logic** | Pandas on-the-fly | Caching (Redis) | Pre-aggregazione (ETL/Materialized Views) |
-| **Frontend State** | React Context | React Query | React Query + IndexedDB |
-| **Rendering Grafici** | Punti Reali | Downsampling leggero | Aggregazione Aggressiva (LTTB algo) |
+| **Storage DB** | Standard Tables | Indici ottimizzati | Archiviazione vecchi dati (Cold Storage) |
+| **Backend Logic** | Pandas on-the-fly | SQL Aggregations | Materialized Views (Postgres) |
+| **Frontend State** | React Context | TanStack Query | TanStack Query + IndexedDB |
+| **Rendering Grafici** | Punti Reali | Downsampling leggero | Aggregazione Server-Side (SQL) |
 
-## 5. Raccomandazione Immediata (Next Steps)
+## 5. Raccomandazione Immediata (Next Steps - Free Tier Compatible)
 
-Non è necessario introdurre Redis o complessità eccessiva oggi. L'azione più efficace a costo zero è:
-1.  **Adottare TanStack Query** (ex React Query) al posto del Context artigianale nel frontend. Gestisce caching, background refetching e deduping delle richieste "out of the box".
-2.  **Spostare aggregazioni semplici su SQL**: Invece di scaricare tutte le transazioni in Python per sommarle, fare `SELECT SUM(amount) ...` direttamente in SQL.
+L'azione più efficace a costo zero è:
+1.  **Spostare aggregazioni su SQL**: Smettere di scaricare tutte le transazioni in Python per le somme semplici. Usare query SQL dirette (es. `SUM`, `AVG`) per alleggerire la memoria delle Serverless Functions di Vercel (limite 1GB/10s).
+2.  **Adottare TanStack Query**: Migliorare la gestione della cache lato client (gratis) per evitare chiamate ripetute al server.
