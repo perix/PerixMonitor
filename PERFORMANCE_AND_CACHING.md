@@ -84,11 +84,14 @@ Poiché l'ingestione dei prezzi è irregolare (settimanale/episodica), i grafici
 ### Strategia Attuale
 - Il frontend collega i punti disponibili. Se i punti sono distanti (es. 1 settimana), si vede una linea retta.
 
-### Strategia Evolutiva (Consigliata)
-Per ottenere grafici "giornalieri" precisi anche con dati settimanali, si consiglia di spostare la logica di **Interpolazione su SQL** (Time Bucket Pattern):
-- **Cosa fare**: Creare una query che genera una serie temporale giornaliera continua (tramite `generate_series`).
-- **Come riempire i buchi**: Usare funzioni SQL come `locf()` (Last Observation Carried Forward) per proiettare l'ultimo prezzo noto sui giorni vuoti.
-- **Vantaggio**: Il frontend riceve sempre una serie pulita e continua, indipendentemente dalla frequenza di caricamento dell'Excel, garantendo massima fluidità visiva.
+### Strategia Evolutiva Implementata (Python + Pandas)
+Per garantire una fluidità del 100% nei grafici anche con dati sparsi e senza accesso DDL diretto (Create Function):
+- **Implementazione**: È stata inserita la funzione `get_interpolated_price_history` nel Backend.
+- **Logica**:
+    1.  Scarica lo storico grezzo dal DB.
+    2.  Usa `pandas` per reindicizzare la serie su base giornaliera (`date_range`, `reindex`).
+    3.  Applica `ffill()` (Forward Fill) per propagare l'ultimo prezzo noto nei giorni vuoti (Logic LOCF).
+- **Risultato**: `dashboard.py` ora esegue lookup O(1) invece di ricerche sequenziali O(N), migliorando drasticamente la velocità di calcolo dello storico e eliminando i "buchi" visivi.
 
 ## 5. Raccomandazione Immediata (Next Steps - Free Tier Compatible)
 

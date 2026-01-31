@@ -5,7 +5,7 @@ import numpy as np
 from datetime import datetime, timedelta
 from supabase_client import get_supabase_client
 from finance import xirr
-from price_manager import get_price_history
+from price_manager import get_price_history, get_interpolated_price_history
 from logger import logger
 import traceback
 
@@ -284,10 +284,9 @@ def register_dashboard_routes(app):
                 sample_t = next((t for t in transactions if t['assets']['isin'] == isin), None)
                 asset_name = get_asset_name(sample_t) if sample_t else isin
                 
-                # Fetch Price History for this Asset
-                price_hist = get_price_history(isin) 
-                price_map = {p['date']: p['price'] for p in price_hist}
-                sorted_price_dates = sorted(price_map.keys())
+                # OPTIMIZATION: Use LOCF Interpolated history
+                # This returns a dense dict { '2023-01-01': 100 }
+                price_map = get_interpolated_price_history(isin, min_date=start_date, max_date=end_date)
                 
                 # Filter transactions for this asset
                 asset_trans = [t for t in transactions if t['assets']['isin'] == isin]
@@ -327,17 +326,10 @@ def register_dashboard_routes(app):
                             
                     # 2. Valuation at CP
                     if current_qty > 0.0001:
-                        # Find price efficiently
-                        choice_date = None
-                        # Optimization: since checkpoints advance, we can search forward from last found date?
-                        # For simplicity and robustness, simple search is fine for <1000 items
-                        # Or bisect logic could be added here.
-                        for d in reversed(sorted_price_dates):
-                             if d <= cp_str:
-                                 choice_date = d
-                                 break
+                        # Find price efficiently using map (O(1))
+                        # The map is dense thanks to LOCF
+                        price_at_cp = price_map.get(cp_str, 0)
                         
-                        price_at_cp = price_map.get(choice_date, 0) if choice_date else 0
                         if price_at_cp == 0: continue
 
                         # Add current value as inflow
@@ -397,10 +389,10 @@ def register_dashboard_routes(app):
             # Pre-build Global Price Map
             global_price_map = {} 
             for isin in all_isins:
-                 ph = get_price_history(isin)
-                 global_price_map[isin] = {p['date']: p['price'] for p in ph}
+                 # Interpolated map for all assets
+                 global_price_map[isin] = get_interpolated_price_history(isin, min_date=start_date, max_date=end_date)
             
-            sorted_global_dates = {isin: sorted(global_price_map[isin].keys()) for isin in all_isins}
+            # No need for sorted dates anymore, we have map lookup
 
             # Portfolio Loops
             current_port_cash_flows = []
@@ -442,16 +434,8 @@ def register_dashboard_routes(app):
                 for isin, qty in current_port_holdings.items():
                     if qty <= 0.0001: continue
                     
-                    prices = global_price_map.get(isin, {})
-                    dates = sorted_global_dates.get(isin, [])
-                    
-                    best_date = None
-                    for d in reversed(dates):
-                        if d <= cp_str:
-                            best_date = d
-                            break
-                    
-                    price = prices.get(best_date, 0) if best_date else 0
+                    # Efficient O(1) Lookup
+                    price = global_price_map.get(isin, {}).get(cp_str, 0)
                     port_value_at_cp += (qty * price)
                 
                 if port_value_at_cp > 0:

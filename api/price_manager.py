@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+import pandas as pd
 from supabase_client import get_supabase_client
 
 logger = logging.getLogger("perix_monitor")
@@ -65,3 +66,59 @@ def get_price_history(isin):
     except Exception as e:
         logger.error(f"Failed to get history for {isin}: {e}")
         return []
+
+def get_interpolated_price_history(isin, min_date=None, max_date=None):
+    """
+    Fetches historical prices and interpolates missing days using LOCF (Last Observation Carried Forward).
+    Returns a dictionary {date_str: price}.
+    
+    This implements the "Time Bucket" + "LOCF" strategy in Python (Pandas) 
+    to robustly handle irregular/episodic price ingestion.
+    """
+    raw_history = get_price_history(isin)
+    
+    if not raw_history:
+        return {}
+
+    try:
+        # Convert to DataFrame
+        df = pd.DataFrame(raw_history)
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.set_index('date').sort_index()
+
+        # Handle duplicates if any (take last)
+        df = df[~df.index.duplicated(keep='last')]
+        
+        # Determine strict range
+        start = min_date if min_date else df.index.min()
+        if not max_date:
+            max_date = datetime.now()
+            
+        end = max_date
+
+        if start > end:
+            return {}
+
+        # Create full daily range
+        full_idx = pd.date_range(start=start, end=end, freq='D')
+        
+        # Reindex and forward fill (LOCF)
+        # 'method' deprecated in reindex, use ffill() after
+        df_interp = df.reindex(full_idx)
+        df_interp['price'] = df_interp['price'].ffill()
+
+        # If starts with NaNs (because min_date < first price), backfill or leave 0/NaN?
+        # Standard LOCF implies we don't look into the future, so keep NaN or fill with 0.
+        # But if we want to smooth graph start, we might backfill cost? 
+        # dashboard.py handles 0 price by checking.
+        df_interp['price'] = df_interp['price'].fillna(0)
+
+        # Convert back to dict {str: float}
+        # index is Timestamp, map to str
+        result = df_interp['price'].to_dict()
+        return {k.strftime('%Y-%m-%d'): v for k, v in result.items()}
+
+    except Exception as e:
+        logger.error(f"Interpolation error for {isin}: {e}")
+        # Fallback to sparse map
+        return {row['date']: row['price'] for row in raw_history}
