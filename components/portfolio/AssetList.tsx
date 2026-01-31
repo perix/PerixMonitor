@@ -35,7 +35,7 @@ export function AssetList({ assets, selectedIsin, onSelect }: AssetListProps) {
     return (
         <Card className="h-full flex flex-col bg-card/80 backdrop-blur-xl border-white/40 shadow-sm relative">
             <CardHeader className="px-4 py-3 border-b border-white/40 shrink-0">
-                <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                <CardTitle className="text-xl font-bold text-muted-foreground uppercase tracking-wider">
                     Asset ({assets.length})
                 </CardTitle>
             </CardHeader>

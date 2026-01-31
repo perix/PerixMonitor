@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PerixMonitor
 
-## Getting Started
+PerixMonitor è un'applicazione web avanzata per il tracciamento del patrimonio personale (Wealth Tracker), progettata specificamente per residenti fiscali italiani. 
+Il sistema permette l'ingestione intelligente di file Excel bancari, la riconciliazione automatica delle transazioni e il calcolo delle performance finanziarie (MWRR/XIRR) senza dipendere da API esterne costose.
 
-First, run the development server:
+## Caratteristiche Principali
 
+- **Safe Ingestion**: Protocollo "Read-Preview-Write" per importare file Excel senza corrompere il database.
+- **Calcolo Performance**: Motore XIRR/MWRR ottimizzato per calcolare il rendimento reale ponderato per i flussi di cassa.
+- **Privacy First**: I dati risiedono sul tuo database Supabase privato.
+- **Dual Server Architecture**: Frontend Next.js reattivo + Backend Python per calcoli finanziari complessi.
+
+## Prerequisiti
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (per il database locale)
+- [Python 3.9+](https://www.python.org/)
+- [Node.js 18+](https://nodejs.org/)
+- [Supabase CLI](https://supabase.com/docs/guides/cli)
+
+## Guida all'Avvio (Sviluppo Locale)
+
+L'applicazione richiede l'avvio coordinato di 3 componenti in terminali separati:
+
+### 1. Database & infrastruttura
+Avvia Supabase locale (database, auth, storage):
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+supabase start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Backend (Python API)
+Gestisce la logica di business e i calcoli finanziari.
+```bash
+# Attiva virtual environment (Windows)
+.\.venv\Scripts\activate
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+# Installa dipendenze (se necessario)
+pip install -r requirements.txt
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Avvia il server (Porta 5328)
+python api/index.py
+```
 
-## Learn More
+### 3. Frontend (Next.js)
+Interfaccia utente.
+```bash
+# Avvia il server di sviluppo (Porta 3500)
+npm run dev
+```
+> **Nota**: Il frontend è configurato sulla porta 3500 per evitare conflitti. Apri [http://localhost:3500](http://localhost:3500).
 
-To learn more about Next.js, take a look at the following resources:
+## Documentazione
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- [Architettura del Sistema](ARCHITECTURE_v0.2.0.md)
+- [Guida al Deployment](App_Deployment_Guide.md)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Struttura del Progetto
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `/api`: Backend Python Flask.
+- `/app` & `/components`: Frontend Next.js (App Router).
+- `/supabase`: Configurazioni database e migrazioni.

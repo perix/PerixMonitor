@@ -1,6 +1,6 @@
 import numpy as np
 
-def xirr(transactions):
+def xirr(transactions, guess=0.1):
     """
     Calculate XIRR (Extended Internal Rate of Return) for a list of transactions.
     
@@ -27,7 +27,7 @@ def xirr(transactions):
     years = np.array([(d - min_date).days / 365.0 for d in dates])
     
     # Newton-Raphson method
-    rate = 0.1
+    rate = guess
     max_iter = 100
     tol = 1e-6
     

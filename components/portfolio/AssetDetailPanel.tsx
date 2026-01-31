@@ -209,7 +209,7 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
             {/* Top Panel: Main Asset Info */}
             <Card className="bg-card/80 backdrop-blur-xl border-white/40 shrink-0 min-w-0">
                 <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                    <CardTitle className="text-xl font-bold text-muted-foreground uppercase tracking-wider">
                         INFORMAZIONI ASSET
                     </CardTitle>
                 </CardHeader>

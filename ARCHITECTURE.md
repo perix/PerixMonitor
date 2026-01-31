@@ -1,4 +1,4 @@
-# PerixMonitor - Architettura e Stato Corrente (v0.2.0)
+# PerixMonitor - Architettura e Stato Corrente (V1.0)
 
 ## 1. Panoramica
 PerixMonitor è un'applicazione web per il tracciamento del patrimonio personale (Wealth Tracker) ottimizzata per residenti fiscali italiani. 
@@ -129,11 +129,13 @@ Il sistema adotta un approccio "Read-Preview-Write" per evitare contaminazione d
 
 2.  **Phase 2: Preview & Reconciliation**
     - Il Frontend mostra all'utente cosa sta per succedere (transazioni mancanti, cedole rilevate).
+    - Il sistema permette di riconciliare i nomi asset e le tipologie asset per uniformità.
     - L'utente deve confermare esplicitamente.
 
 3.  **Phase 3: Sync (Transactional Write)**
     - Solo alla conferma, il frontend invia il payload approvato all'API `/api/sync`.
     - Il backend esegue le scritture nel DB (Transazioni, Prezzi, Snapshot, Dividendi) in modo atomico o sequenziale sicuro.
+    - Il backend esegue update/backfill di asset type e description se forniti nel payload di sync.
 
 ## 4. Strategie di Dati
 
@@ -157,7 +159,7 @@ Il sistema adotta un approccio "Read-Preview-Write" per evitare contaminazione d
 - **Memorizzazione**: Dati salvati nella tabella `dividends` con riferimento all'asset e al portafoglio.
 - **Utilizzo**: Partecipano al calcolo del MWRR (XIRR) come flussi di cassa (positivi o negativi).
 
-## 5. Stato Attuale (v0.2.0)
+## 5. Stato Attuale (V1.0)
 
 ### Funzionalità Completate
 - [x] **Safe Ingestion**: Implementato protocollo Read-Preview-Write.
@@ -165,28 +167,22 @@ Il sistema adotta un approccio "Read-Preview-Write" per evitare contaminazione d
 - [x] **Manual Prices**: Salvataggio storico prezzi da Excel.
 - [x] **UI/UX**: Integrazione modali di conferma e feedback visivi.
 - [x] **Performance**: Caching client-side per navigazione istantanea.
+- [x] **Dashboard 2.0 & UI Enhancements**:
+    - **Asset Filtering**: Lista "Asset Attivi" con checkbox per filtrare il grafico MWR.
+    - **Asset Type**: Visualizzazione corretta categorie asset (ETF, Bond, Azioni).
+    - **Dual Axis**: Grafico a doppio asse per performance asset vs portafoglio.
+    - **Time Window**: Range Slider bi-direzionale per zoomare su specifici periodi temporali.
+    - **Persistent Colors**: Assegnazione colori univoci e persistenti per Asset nel database.
+    - **Resizable Layout**: Layout a pannelli ridimensionabile.
 
-### Prossimi Passi (Roadmap)
-- [ ] **MWRR Engine**: Aggiornare il calcolo XIRR per includere i dividendi.
-- [ ] **Asset History Fill**: Popolare `asset_metrics_history` durante la sync per abilitare grafici per singolo asset.
-### Dashboard 2.0 & UI Enhancements
-- [x] **Asset Filtering**: Lista "Asset Attivi" con checkbox per filtrare il grafico MWR.
-- [x] **Time Window**: Range Slider bi-direzionale per zoomare su specifici periodi temporali.
-- [x] **Persistent Colors**: Assegnazione colori univoci e persistenti per Asset nel database (`portfolio_asset_settings`).
-- [x] **Resizable Layout**: Layout a pannelli ridimensionabile con persistenza della posizione (LocalStorage) e miglior gestione larghezze minime.
-- [x] **Y-Axis Controls**: Slider verticale per scalare l'asse Y e toggle per griglie (Major/Minor).
-
-### Ingestion Logic Refinement
-- [x] **Price decoupling**: Salvataggio prezzi storici (Colonna I) anche per asset con quantità zero (Watchlist).
-- [x] **Button Logic**: Fix abilitazione bottone "Conferma" su upload di soli prezzi.
-
-### Prossimi Passi (Roadmap)
-- [ ] **MWRR Engine**: Aggiornare il calcolo XIRR per includere i dividendi.
-- [ ] **Asset History Fill**: Popolare `asset_metrics_history` durante la sync per abilitare grafici per singolo asset.
+### Prossimi Passi (Roadmap Future V1.1+)
+- [ ] **MWRR Engine Refinement**: Aggiornare il calcolo XIRR per includere i dividendi in modo più granulare.
+- [ ] **Asset History Fill**: Popolare `asset_metrics_history` in modo asincrono.
+- [ ] **Performance Optimization**: Valutare migrazione aggregazioni su DB (Materialized Views) o Caching Layer (Redis) se il volume dati cresce > 50k transazioni.
 
 ## 6. Ambiente di Test e Produzione
 
-Il progetto è configurato per supportare due ambienti distinti, garantendo la possibilità di testare in locale prima del deploy:
+Il progetto è configurato per supportare due ambienti distinti:
 
 ### 1. Locale (Sviluppo & Test)
 L'ambiente locale utilizza **Docker Desktop** e richiede l'avvio coordinato di tre componenti in terminali separati.
@@ -194,33 +190,14 @@ L'ambiente locale utilizza **Docker Desktop** e richiede l'avvio coordinato di t
 #### Procedura di Avvio (Step-by-Step)
 
 1.  **Tab 1: Infrastructure (Supabase)**
-    - Assicurati che Docker Desktop sia aperto.
-    - Esegui: `supabase start`
-    - *Nota*: Questo avvia il database, l'autenticazione e lo storage.
-
+    - `supabase start`
 2.  **Tab 2: Backend (Python API)**
-    - Attiva il virtual environment (se non già attivo): `.\.venv\Scripts\activate`
-    - Installa le dipendenze: `pip install -r requirements.txt`
-    - Esegui: `python api/index.py`
-    - *Porta*: **5328**
-    - *Scopo*: Gestisce i calcoli finanziari (XIRR), l'analisi Excel e la logica di business. Deve rimanere attivo affinché il frontend possa funzionare.
-
+    - Attiva venv: `.\.venv\Scripts\activate`
+    - `python api/index.py` (Porta 5328)
 3.  **Tab 3: Frontend (Next.js)**
-    - Esegui: `npm run dev`
-    - *Porta*: **3500** (URL: `http://localhost:3500`)
-    - *Scopo*: Interfaccia utente interattiva.
-
-#### Troubleshooting Locale
-- **Errore `ECONNREFUSED 127.0.0.1:5328`**: Il server Backend Python non è attivo o si è interrotto. Controlla il Tab 2.
-- **Porta Occupata (EACCES)**: Se ricevi errori sulla porta 3000 o 3010, il comando `npm run dev` è già configurato per usare la **3500**.
-- **Errore Database**: Se `supabase start` fallisce, prova a eseguire `supabase stop` prima di riavviare.
-- **Variabili d'ambiente**: Localmente vengono lette dal file `.env.local`.
+    - `npm run dev` (Porta 3500)
 
 ### 2. Produzione (Vercel)
 L'ambiente live accessibile via web.
-
-- **Database**: Project Supabase ospitato su Cloud (Piano Free).
-- **Backend**: Le API Python vengono convertite in **Serverless Functions** su Vercel.
-- **Frontend**: Compilato e servito dalla CDN di Vercel.
-- **Configurazione**: Le variabili d'ambiente sono gestite tramite la dashboard di Vercel (Project Settings > Environment Variables).
-
+- **Frontend & Backend**: Deployed su Vercel (Next.js + Serverless Python).
+- **Database**: Supabase Cloud.

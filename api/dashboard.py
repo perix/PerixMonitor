@@ -284,29 +284,31 @@ def register_dashboard_routes(app):
                 sample_t = next((t for t in transactions if t['assets']['isin'] == isin), None)
                 asset_name = get_asset_name(sample_t) if sample_t else isin
                 
-                # ... (price history fetch remains) ...
-                
+                # Fetch Price History for this Asset
                 price_hist = get_price_history(isin) 
                 price_map = {p['date']: p['price'] for p in price_hist}
                 sorted_price_dates = sorted(price_map.keys())
                 
+                # Filter transactions for this asset
                 asset_trans = [t for t in transactions if t['assets']['isin'] == isin]
                 
                 mwr_series = []
+                current_cash_flows = []
+                transaction_idx = 0
+                current_qty = 0
+                net_invested_for_pnl = 0.0
+                last_xirr_guess = 0.1 # Initial Guess
                 
                 for cp in check_points:
                     cp_str = cp.strftime('%Y-%m-%d')
                     
-                    # 1. Cashflows up to cp
-                    cash_flows = []
-                    current_qty = 0
-                    net_invested_at_cp = 0.0 # Track net invested for P&L
-                    
-                    for t in asset_trans:
+                    # 1. Add new cashflows up to cp (Cumulative)
+                    while transaction_idx < len(asset_trans):
+                        t = asset_trans[transaction_idx]
                         t_date = datetime.fromisoformat(t['date']).replace(tzinfo=None)
                         if t_date > cp:
                             break
-                            
+                        
                         qty = t['quantity']
                         price = t['price_eur']
                         val = qty * price
@@ -314,38 +316,43 @@ def register_dashboard_routes(app):
                         
                         if is_buy:
                             current_qty += qty
-                            cash_flows.append({"date": t_date, "amount": -val})
-                            net_invested_at_cp += val
+                            current_cash_flows.append({"date": t_date, "amount": -val})
+                            net_invested_for_pnl += val
                         else:
                             current_qty -= qty
-                            cash_flows.append({"date": t_date, "amount": val})
-                            net_invested_at_cp -= val
-                            
-                    if current_qty > 0.0001:
-                        # ... (Price finding logic remains) ...
-                        price_at_cp = 0
-                        best_date = None
-                        for d in sorted_price_dates:
-                            if d <= cp_str:
-                                best_date = d
-                            else:
-                                break
+                            current_cash_flows.append({"date": t_date, "amount": val})
+                            net_invested_for_pnl -= val
                         
-                        if best_date:
-                            price_at_cp = price_map[best_date]
-                        else:
-                            continue
+                        transaction_idx += 1
+                            
+                    # 2. Valuation at CP
+                    if current_qty > 0.0001:
+                        # Find price efficiently
+                        choice_date = None
+                        # Optimization: since checkpoints advance, we can search forward from last found date?
+                        # For simplicity and robustness, simple search is fine for <1000 items
+                        # Or bisect logic could be added here.
+                        for d in reversed(sorted_price_dates):
+                             if d <= cp_str:
+                                 choice_date = d
+                                 break
+                        
+                        price_at_cp = price_map.get(choice_date, 0) if choice_date else 0
+                        if price_at_cp == 0: continue
 
                         # Add current value as inflow
                         current_val = current_qty * price_at_cp
-                        cash_flows.append({"date": cp, "amount": current_val})
                         
                         # Calculate Metrics
-                        pnl_at_cp = current_val - net_invested_at_cp
+                        pnl_at_cp = current_val - net_invested_for_pnl
+                        
+                        # Prepare flow for XIRR
+                        calc_flows = current_cash_flows + [{"date": cp, "amount": current_val}]
                         
                         try:
-                            val = xirr(cash_flows)
+                            val = xirr(calc_flows, guess=last_xirr_guess)
                             if val is not None:
+                                last_xirr_guess = val # Update guess for next step
                                 mwr_series.append({
                                     "date": cp_str,
                                     "value": round(val * 100, 2),
@@ -355,20 +362,15 @@ def register_dashboard_routes(app):
                         except:
                             pass
 
-
-                            
                 if mwr_series:
                     # Get Asset ID for color looking
-                    # we can find it from transactions
                     sample_t = next((t for t in transactions if t['assets']['isin'] == isin), None)
                     asset_id = sample_t['assets']['id'] if sample_t else None
                     
-                    # Fetch color
+                    # Fetch color (simple single lookup per asset is fine)
                     color = "#888888"
                     if asset_id:
                          try:
-                             # Optimization: we could look up in color_map if we built it, 
-                             # but for now independent fetch is safe-ish or we can improve later.
                              res_c = supabase.table('portfolio_asset_settings').select('color').eq('portfolio_id', portfolio_id).eq('asset_id', asset_id).execute()
                              if res_c.data:
                                  color = res_c.data[0]['color']
@@ -376,14 +378,10 @@ def register_dashboard_routes(app):
 
                     # Extract Asset Type
                     asset_type = sample_t['assets'].get('asset_class') or "Altro"
-                    
-                    # Fallback to metadata if asset_class is null/empty for some reason
                     if (not asset_type or asset_type == "Altro") and sample_t['assets'].get('metadata'):
                         meta = sample_t['assets']['metadata']
                         if isinstance(meta, dict):
                             asset_type = meta.get('assetType', "Altro")
-                    
-                    # logger.info(f"DEBUG TYPE for {isin}: {asset_type}")
 
                     assets_history.append({
                         "isin": isin,
@@ -394,135 +392,74 @@ def register_dashboard_routes(app):
                     })
 
             # 4. Calculate Portfolio MWR History (Weighted)
-            # Actually easier to re-run xirr on aggregated cashflows
             portfolio_series = []
             
-            for cp in check_points:
-                cp_str = cp.strftime('%Y-%m-%d')
-                
-                # 1. All cashflows up to cp
-                # 2. Total Portfolio Value at cp
-                
-                cash_flows = []
-                # Re-calculate holdings at cp
-                holdings_at_cp = {} # isin -> qty
-                
-                for t in transactions:
-                    t_date = datetime.fromisoformat(t['date']).replace(tzinfo=None)
-                    if t_date > cp:
-                        break
-                    
-                    asset_isin = t['assets']['isin']
-                    qty = t['quantity']
-                    price = t['price_eur']
-                    is_buy = t['type'] == 'BUY'
-                    
-                    holdings_at_cp[asset_isin] = holdings_at_cp.get(asset_isin, 0) + (qty if is_buy else -qty)
-                    
-                    # Cashflow is strictly external money in/out?
-                    # No, strict portfolio MWR is based on external flows.
-                    # Buying an asset with cash from portfolio is internal.
-                    # BUT our transactions table usually tracks "Asset Buy/Sell".
-                    # We assume "Cash" is not tracked as an asset with value. 
-                    # So Buys are Inflows (from wallet), Sells are Outflows (to wallet).
-                    if is_buy:
-                         cash_flows.append({"date": t_date, "amount": -(qty * price)})
-                    else:
-                         cash_flows.append({"date": t_date, "amount": (qty * price)})
-
-                # Calculate Current Value of Portfolio at CP
-                total_val_at_cp = 0
-                for isin, qty in holdings_at_cp.items():
-                    if qty < 0.0001: continue
-                    
-                    # Fetch price
-                    # (Optimized: we could have pre-fetched all prices)
-                    # Use get_price_history logic or reuse maps
-                    # TODO: optimize. For now, we rely on individual asset logic or fetch here.
-                    # Re-fetching each time is slow.
-                    # Let's use the price_hist derived above if possible.
-                    # Constraint: We didn't save price_hist for all assets in a global map properly above.
-                    # Optimization: create global price map {isin: {date: price}} earlier
-                    pass 
-                
-                # ... To keep it simple given complexity limits ...
-                # We will approximate Portfolio MWR by just aggregating the individual asset values if feasible,
-                # OR we implement valid portfolio-level fetching.
-                
-                # Let's use a simpler approach for visual Graph:
-                # Just return the Assets MWR Series.
-                # And Compute one "Total" series which is slightly harder.
-                # I will Skip Total MWR calculation loop here to avoid timeout/complexity 
-                # and assume I can add it later or client aggregates it? 
-                # No, XIRR doesn't aggregate linearly.
-                
-                # Let's try to do it right for Portfolio:
-                # We need Total Value at CP.
-                # Total Value = Sum(Qty * Price) for all assets
-                pass
-            
-            t3 = datetime.now()
-            logger.info(f"[DASHBOARD_HISTORY] Asset calculations done in {(t3 - t2).total_seconds():.2f}s")
-
-            # REDOING PORTFOLIO LOOP EFFICIENTLY
-            # 1. Build Global Price Map
-            global_price_map = {} # isin -> {date_str: price}
+            # Pre-build Global Price Map
+            global_price_map = {} 
             for isin in all_isins:
                  ph = get_price_history(isin)
                  global_price_map[isin] = {p['date']: p['price'] for p in ph}
-                 
+            
             sorted_global_dates = {isin: sorted(global_price_map[isin].keys()) for isin in all_isins}
 
-            t4 = datetime.now()
-            logger.info(f"[DASHBOARD_HISTORY] Global price map built in {(t4 - t3).total_seconds():.2f}s")
+            # Portfolio Loops
+            current_port_cash_flows = []
+            transaction_idx_p = 0
+            current_port_holdings = {} # isin -> qty
+            last_port_xirr = 0.1
 
-            # 2. Loop checkpoints for portfolio
             for cp in check_points:
                 cp_str = cp.strftime('%Y-%m-%d')
-                cash_flows = []
-                holdings_at_cp = {}
                 
-                # Cashflows
-                for t in transactions:
+                # 1. Update Cashflows & Holdings
+                while transaction_idx_p < len(transactions): # transactions is already sorted by date
+                    t = transactions[transaction_idx_p]
                     t_date = datetime.fromisoformat(t['date']).replace(tzinfo=None)
                     if t_date > cp:
-                        break # sorted by date
+                        break
                     
                     isin = t['assets']['isin']
                     qty = t['quantity']
                     price = t['price_eur']
                     is_buy = t['type'] == 'BUY'
                     
-                    if isin not in holdings_at_cp: holdings_at_cp[isin] = 0
-                    holdings_at_cp[isin] += (qty if is_buy else -qty)
+                    if isin not in current_port_holdings: current_port_holdings[isin] = 0
+                    current_port_holdings[isin] += (qty if is_buy else -qty)
                     
-                    cash_flows.append({"date": t_date, "amount": -(qty*price) if is_buy else (qty*price)})
+                    # Portfolio External Flow: Buy = Outflow from Pocket, Sell = Inflow to Pocket
+                    # Wait, logic check:
+                    # If I put 100 EUR into Portfolio to buy Asset A -> Flow is -100.
+                    # Asset A value is now 100. XIRR is 0. Correct.
+                    if is_buy:
+                         current_port_cash_flows.append({"date": t_date, "amount": -(qty * price)})
+                    else:
+                         current_port_cash_flows.append({"date": t_date, "amount": (qty * price)})
+                    
+                    transaction_idx_p += 1
 
-                # Current Value
+                # 2. Calculate Portfolio Current Value
                 port_value_at_cp = 0
-                for isin, qty in holdings_at_cp.items():
+                for isin, qty in current_port_holdings.items():
                     if qty <= 0.0001: continue
                     
-                    # Find price
                     prices = global_price_map.get(isin, {})
                     dates = sorted_global_dates.get(isin, [])
                     
                     best_date = None
-                    # Optimization: bisect or simple walk. Simple walk is fast enough for <1000 dates
-                    for d in reversed(dates): # search backwards from latest
+                    for d in reversed(dates):
                         if d <= cp_str:
                             best_date = d
                             break
                     
                     price = prices.get(best_date, 0) if best_date else 0
-                    # Fallback ?? current cost logic? skip for now
                     port_value_at_cp += (qty * price)
                 
                 if port_value_at_cp > 0:
-                     cash_flows.append({"date": cp, "amount": port_value_at_cp})
+                     calc_flows = current_port_cash_flows + [{"date": cp, "amount": port_value_at_cp}]
                      try:
-                         val = xirr(cash_flows)
+                         val = xirr(calc_flows, guess=last_port_xirr)
                          if val is not None:
+                             last_port_xirr = val
                              portfolio_series.append({
                                  "date": cp_str,
                                  "value": round(val * 100, 2),
@@ -531,8 +468,7 @@ def register_dashboard_routes(app):
                      except: pass
             
             t_final = datetime.now()
-            logger.info(f"[DASHBOARD_HISTORY] Portfolio loop done in {(t_final - t4).total_seconds():.2f}s")
-            logger.info(f"[DASHBOARD_HISTORY] Total Request Time: {(t_final - t0).total_seconds():.2f}s")
+            logger.info(f"[DASHBOARD_HISTORY] Completed in {(t_final - t0).total_seconds():.2f}s")
             
             return jsonify({
                 "series": assets_history,
