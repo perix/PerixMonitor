@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResponsiveContainer, Tooltip, Legend, LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine } from 'recharts';
+import { formatSwissMoney, formatSwissNumber } from "@/lib/utils";
 
 
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#a855f7', '#ec4899', '#6366f1', '#14b8a6'];
@@ -362,11 +363,11 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
         }
 
         const label = viewMode === 'value'
-            ? `€${(value / 1000).toLocaleString('it-IT', { maximumFractionDigits: 0 })}k`
+            ? `€${formatSwissNumber(value / 1000, 0)}k`
             : (isPositive ? `+${value}%` : `${value}%`);
 
         const valStr = viewMode === 'value'
-            ? `€${value.toLocaleString('it-IT', { maximumFractionDigits: 0 })}`
+            ? `€${formatSwissMoney(value, 0)}`
             : label;
 
         return (
@@ -464,7 +465,7 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                     */}
                     <div className="flex flex-col items-center justify-between pr-3 py-2" style={{ height: '450px' }}>
                         <span className="text-xs text-muted-foreground writing-mode-vertical">
-                            {viewMode === 'value' ? `€${yRange[1]}` : `${yRange[1]}%`}
+                            {viewMode === 'value' ? `€${formatSwissNumber(yRange[1], 0)}` : `${yRange[1]}%`}
                         </span>
                         <RangeSlider
                             min={yMinLimit}
@@ -477,7 +478,7 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                             disabledLower={viewMode === 'value'}
                         />
                         <span className="text-xs text-muted-foreground writing-mode-vertical">
-                            {viewMode === 'value' ? `€${yRange[0]}` : `${yRange[0]}%`}
+                            {viewMode === 'value' ? `€${formatSwissNumber(yRange[0], 0)}` : `${yRange[0]}%`}
                         </span>
                     </div>
 
@@ -588,7 +589,7 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                         ticks={rightAxisTicks} // Fixed ticks
                                         tick={({ x, y, payload }) => (
                                             <text x={x} y={y} dy={4} fill="#818cf8" fontSize={12} textAnchor="start" fontWeight="bold">
-                                                {`€${payload.value.toLocaleString('it-IT')}`}
+                                                {`€${formatSwissNumber(payload.value)}`}
                                             </text>
                                         )}
                                     />
@@ -599,9 +600,9 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                     itemStyle={{ padding: 0 }}
                                     formatter={(value: number, name: string, props: any) => {
                                         const pnl = props.payload[`${name}_pnl`];
-                                        const pnlStr = pnl !== undefined ? ` \n(P&L: ${pnl > 0 ? '+' : ''}${pnl.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })})` : '';
+                                        const pnlStr = pnl !== undefined ? ` \n(P&L: ${pnl > 0 ? '+' : ''}€${formatSwissMoney(pnl)})` : '';
                                         const valStr = viewMode === 'value'
-                                            ? `€${value.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                            ? `€${formatSwissMoney(value)}`
                                             : `${value.toFixed(2)}%`;
                                         return [`${valStr}${pnlStr}`, name];
                                     }}

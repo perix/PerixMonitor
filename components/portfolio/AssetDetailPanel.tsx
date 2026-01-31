@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { TrendingUp, TrendingDown, Euro, Database, Activity, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { formatSwissMoney, formatSwissNumber } from "@/lib/utils";
 
 interface Asset {
     id: string;
@@ -230,7 +231,7 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                             {asset.latest_price && (
                                 <>
                                     <p className="text-2xl font-bold text-primary">
-                                        €{asset.latest_price.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        €{formatSwissMoney(asset.latest_price)}
                                     </p>
                                     {asset.price_date && (
                                         <p className="text-xs text-muted-foreground">
@@ -248,7 +249,7 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                             <div className="flex items-center gap-1">
                                 <TrendingUp className="h-4 w-4 text-muted-foreground shrink-0" />
                                 <span className="font-medium text-base truncate">
-                                    {asset.current_qty?.toLocaleString('it-IT', { maximumFractionDigits: 4 }) ?? '-'}
+                                    {formatSwissNumber(asset.current_qty, 4)}
                                 </span>
                             </div>
                         </div>
@@ -258,7 +259,7 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                             <div className="flex items-center gap-1">
                                 <Euro className="h-4 w-4 text-muted-foreground shrink-0" />
                                 <span className="font-medium text-base truncate">
-                                    {asset.current_value ? `€${asset.current_value.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+                                    {asset.current_value ? `€${formatSwissMoney(asset.current_value)}` : '-'}
                                 </span>
                             </div>
                         </div>
@@ -268,7 +269,7 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                             <div className="flex items-center gap-1">
                                 {isPnlPositive ? <ArrowUpRight className="h-4 w-4 text-green-500 shrink-0" /> : <ArrowDownRight className="h-4 w-4 text-red-500 shrink-0" />}
                                 <span className={`font-medium text-base truncate ${isPnlPositive ? 'text-green-500' : 'text-red-500'}`}>
-                                    {asset.pnl_value ? `€${asset.pnl_value.toLocaleString('it-IT', { minimumFractionDigits: 2 })}` : '-'}
+                                    {asset.pnl_value ? `€${formatSwissMoney(asset.pnl_value)}` : '-'}
                                 </span>
                             </div>
                         </div>
@@ -278,7 +279,7 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                             <div className="flex items-center gap-1">
                                 <Activity className={`h-4 w-4 shrink-0 ${isMwrPositive ? 'text-green-500' : 'text-red-500'}`} />
                                 <span className={`font-medium text-base truncate ${isMwrPositive ? 'text-green-500' : 'text-red-500'}`}>
-                                    {asset.mwr ? `${asset.mwr.toFixed(2)}%` : '-'}
+                                    {asset.mwr ? `${formatSwissNumber(asset.mwr, 2)}%` : '-'}
                                 </span>
                             </div>
                         </div>

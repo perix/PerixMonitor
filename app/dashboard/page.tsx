@@ -5,6 +5,7 @@ import { PanelHeader } from "@/components/layout/PanelHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { ArrowUpRight, Euro, Wallet, Activity, Loader2 } from "lucide-react";
+import { formatSwissMoney } from "@/lib/utils";
 import { useEffect, useState, useMemo } from "react";
 import axios from "axios";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -196,14 +197,14 @@ export default function DashboardPage() {
                             <Euro className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold">€{summary.total_value?.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div className="text-2xl font-bold">€{formatSwissMoney(summary.total_value)}</div>
                             <p className="text-xs text-muted-foreground">
                                 {summary.pl_percent >= 0 ? '+' : ''}{summary.pl_percent}% P&L
                             </p>
                             {filteredSummary && (
                                 <div className="mt-2 pt-2 border-t border-white/10">
                                     <div className="text-sm font-semibold text-muted-foreground">
-                                        €{filteredSummary.total_value?.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        €{formatSwissMoney(filteredSummary.total_value)}
                                     </div>
                                     <p className="text-[10px] text-muted-foreground/70">
                                         Selezione
@@ -243,7 +244,7 @@ export default function DashboardPage() {
                         </CardHeader>
                         <CardContent>
                             <div className={`text-2xl font-bold ${summary.pl_value >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                €{summary.pl_value?.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                €{formatSwissMoney(summary.pl_value)}
                             </div>
                             <p className="text-xs text-muted-foreground">
                                 Rispetto al capitale investito
@@ -251,7 +252,7 @@ export default function DashboardPage() {
                             {filteredSummary && (
                                 <div className="mt-2 pt-2 border-t border-white/10">
                                     <div className={`text-sm font-semibold ${filteredSummary.pl_value >= 0 ? 'text-green-500/80' : 'text-red-500/80'}`}>
-                                        €{filteredSummary.pl_value?.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        €{formatSwissMoney(filteredSummary.pl_value)}
                                     </div>
                                     <p className="text-[10px] text-muted-foreground/70">
                                         Selezione

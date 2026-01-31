@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Loader2 } from "lucide-react";
+import { formatSwissMoney } from "@/lib/utils";
 
 interface AssetDetailModalProps {
     isin: string | null;
@@ -159,7 +160,7 @@ export function AssetDetailModal({ isin, open, onOpenChange }: AssetDetailModalP
                                         <div className="flex justify-between">
                                             <span className="text-neutral-400">Ultimo Prezzo</span>
                                             <span className="font-bold text-green-400">
-                                                {data.ultimo_prezzo_chiusura.prezzo} {data.ultimo_prezzo_chiusura.valuta}
+                                                {formatSwissMoney(data.ultimo_prezzo_chiusura.prezzo)} {data.ultimo_prezzo_chiusura.valuta}
                                             </span>
                                         </div>
                                         <div className="flex justify-between">

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Search, Info } from "lucide-react";
 import { AssetDetailModal } from './AssetDetailModal';
+import { formatSwissMoney, formatSwissNumber } from "@/lib/utils";
 
 interface Holding {
     name: string;
@@ -71,13 +72,13 @@ export function HoldingsTable({ data }: HoldingsTableProps) {
                                     </Badge>
                                 </TableCell>
                                 <TableCell className="text-right text-neutral-300">
-                                    {holding.quantity.toLocaleString('it-IT')}
+                                    {formatSwissNumber(holding.quantity, 0)}
                                 </TableCell>
                                 <TableCell className="text-right text-neutral-300">
-                                    € {holding.price.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    € {formatSwissMoney(holding.price)}
                                 </TableCell>
                                 <TableCell className="text-right font-semibold text-white">
-                                    € {holding.value.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    € {formatSwissMoney(holding.value)}
                                 </TableCell>
                                 <TableCell className="text-right">
                                     <Button

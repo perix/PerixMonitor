@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Loader2, TrendingUp, TrendingDown, DollarSign, PieChart as PieChartIcon, Activity } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { formatSwissMoney } from "@/lib/utils";
 
 // Palette for specific components requested by user
 const COMPONENT_COLORS: Record<string, string> = {
@@ -170,7 +171,7 @@ export default function AnalyticsPage() {
                                             </div>
                                             <div className="text-right flex-shrink-0 text-xs text-muted-foreground">
                                                 <span className="font-mono text-white mr-1">
-                                                    €{asset.value.toLocaleString('it-CH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                                    €{formatSwissMoney(asset.value)}
                                                 </span>
                                                 <span>({asset.percent_of_component}%)</span>
                                             </div>
@@ -210,7 +211,7 @@ export default function AnalyticsPage() {
                                         <div className="space-y-1">
                                             <p className="text-xs text-muted-foreground uppercase">Controvalore</p>
                                             <div className="text-2xl font-bold text-white">
-                                                €{selectedSlice.value.toLocaleString('it-CH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                                €{formatSwissMoney(selectedSlice.value)}
                                             </div>
 
                                         </div>
@@ -226,12 +227,12 @@ export default function AnalyticsPage() {
                                     <div className="space-y-3 pt-2">
                                         <div className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/5">
                                             <span className="text-sm text-slate-400">Investito Netto</span>
-                                            <span className="font-mono text-sm font-medium">€{selectedSlice.invested.toLocaleString('it-CH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                                            <span className="font-mono text-sm font-medium">€{formatSwissMoney(selectedSlice.invested)}</span>
                                         </div>
                                         <div className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/5">
                                             <span className="text-sm text-slate-400">P&L Assoluto</span>
                                             <span className={`font-mono text-sm font-bold ${selectedSlice.pl_value >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                                {selectedSlice.pl_value >= 0 ? '+' : ''}€{selectedSlice.pl_value.toLocaleString('it-CH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                                {selectedSlice.pl_value >= 0 ? '+' : ''}€{formatSwissMoney(selectedSlice.pl_value)}
                                             </span>
                                         </div>
                                         <div className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/5">

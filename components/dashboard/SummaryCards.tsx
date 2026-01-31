@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowUpRight, ArrowDownRight, DollarSign, Percent, TrendingUp } from "lucide-react";
+import { formatSwissMoney } from "@/lib/utils";
 
 interface DashboardSummary {
     total_value: number;
@@ -21,7 +22,7 @@ export function SummaryCards({ data }: { data: DashboardSummary }) {
                     <DollarSign className="h-4 w-4 text-slate-400" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold text-white">€ {data.total_value.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                    <div className="text-2xl font-bold text-white">€ {formatSwissMoney(data.total_value)}</div>
                     <p className="text-xs text-slate-400">Patrimonio attuale</p>
                 </CardContent>
             </Card>
@@ -32,7 +33,7 @@ export function SummaryCards({ data }: { data: DashboardSummary }) {
                     <DollarSign className="h-4 w-4 text-slate-400" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold text-white">€ {data.total_invested.toLocaleString('it-IT', { minimumFractionDigits: 2 })}</div>
+                    <div className="text-2xl font-bold text-white">€ {formatSwissMoney(data.total_invested)}</div>
                     <p className="text-xs text-slate-400">Capitale versato</p>
                 </CardContent>
             </Card>
@@ -48,10 +49,10 @@ export function SummaryCards({ data }: { data: DashboardSummary }) {
                 </CardHeader>
                 <CardContent>
                     <div className={`text-2xl font-bold ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                        {isPositive ? '+' : ''}€ {data.pl_value.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                        {isPositive ? '+' : ''}€ {formatSwissMoney(data.pl_value)}
                     </div>
                     <p className={`text-xs ${isPositive ? 'text-green-500/80' : 'text-red-500/80'}`}>
-                        {isPositive ? '+' : ''}{data.pl_percent.toLocaleString('it-IT', { minimumFractionDigits: 2 })}%
+                        {isPositive ? '+' : ''}{formatSwissMoney(data.pl_percent, 2)}%
                     </p>
                 </CardContent>
             </Card>
@@ -63,7 +64,7 @@ export function SummaryCards({ data }: { data: DashboardSummary }) {
                 </CardHeader>
                 <CardContent>
                     <div className={`text-2xl font-bold ${isXirrPositive ? 'text-blue-400' : 'text-orange-400'}`}>
-                        {data.xirr.toLocaleString('it-IT', { minimumFractionDigits: 2 })}%
+                        {formatSwissMoney(data.xirr, 2)}%
                     </div>
                     <p className="text-xs text-slate-400">Rendimento pesato</p>
                 </CardContent>

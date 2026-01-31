@@ -9,6 +9,7 @@ import axios from "axios";
 import { AssetList } from "@/components/portfolio/AssetList";
 import { AssetDetailPanel } from "@/components/portfolio/AssetDetailPanel";
 import { ResizablePortfolioLayout } from "@/components/portfolio/ResizablePortfolioLayout";
+import { formatSwissMoney } from "@/lib/utils";
 
 interface Asset {
     id: string;
@@ -189,7 +190,7 @@ export default function PortfolioPage() {
                             />
                             <span className="font-medium">€</span>
                             <span className="text-muted-foreground ml-2">
-                                (Totale {totalPortfolioValue.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € - liquidità {liquidityPercent.toFixed(0)}%)
+                                (Totale {formatSwissMoney(totalPortfolioValue)} € - liquidità {liquidityPercent.toFixed(0)}%)
                             </span>
                         </div>
                     </div>
