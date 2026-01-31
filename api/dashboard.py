@@ -208,6 +208,16 @@ def register_dashboard_routes(app):
                 return jsonify(history=[], assets=[])
                 
             transactions = res_trans.data
+
+            # Filter by specific assets if requested
+            assets_param = request.args.get('assets')
+            if assets_param:
+                selected_isins = set(assets_param.split(','))
+                transactions = [t for t in transactions if t['assets']['isin'] in selected_isins]
+            
+            if not transactions:
+                return jsonify(history=[], assets=[], portfolio=[])
+
             t1 = datetime.now()
             logger.info(f"[DASHBOARD_HISTORY] Transactions fetched: {len(transactions)} (Time: {(t1 - t0).total_seconds():.2f}s)")
             

@@ -50,15 +50,14 @@ export default function PortfolioPage() {
                 return;
             }
 
+            // [PERSISTENCE] Load saved selection
+            const savedIsin = localStorage.getItem(`portfolio_selection_${selectedPortfolioId}`);
+
             // Check Cache
             if (portfolioCache[selectedPortfolioId]) {
                 const cached = portfolioCache[selectedPortfolioId];
                 setAssets(cached.assets);
                 setPortfolioName(cached.name);
-                // We don't cache liquidity specifically in the portfolioCache type yet, 
-                // but we can fetch it or just rely on the fresh fetch below if we want to be safe.
-                // For now, let's always fetch settings to get the fresh liquidity.
-                // Ideally, we should update the cache structure to include settings/liquidity.
 
                 // Let's do a quick fetch for settings anyway to ensure liquidity is up to date
                 try {
@@ -69,8 +68,10 @@ export default function PortfolioPage() {
                     console.error("Failed to fetch latest liquidity", e);
                 }
 
-                // Auto-select first asset if available and none selected yet
-                if (cached.assets.length > 0 && !selectedIsin) {
+                // Selection Logic: Saved > First if none
+                if (savedIsin && cached.assets.some(a => a.isin === savedIsin)) {
+                    setSelectedIsin(savedIsin);
+                } else if (!selectedIsin && cached.assets.length > 0) {
                     setSelectedIsin(cached.assets[0].isin);
                 }
 
@@ -94,8 +95,10 @@ export default function PortfolioPage() {
                 setPortfolioName(fetchedName);
                 setLiquidity(Number(fetchedSettings.liquidity) || 0);
 
-                // Auto-select first asset if available
-                if (fetchedAssets.length > 0 && !selectedIsin) {
+                // Selection Logic
+                if (savedIsin && fetchedAssets.some((a: any) => a.isin === savedIsin)) {
+                    setSelectedIsin(savedIsin);
+                } else if (!selectedIsin && fetchedAssets.length > 0) {
                     setSelectedIsin(fetchedAssets[0].isin);
                 }
 
@@ -114,6 +117,13 @@ export default function PortfolioPage() {
 
         fetchAssets();
     }, [selectedPortfolioId]);
+
+    // [PERSISTENCE] Save selection
+    useEffect(() => {
+        if (selectedPortfolioId && selectedIsin) {
+            localStorage.setItem(`portfolio_selection_${selectedPortfolioId}`, selectedIsin);
+        }
+    }, [selectedIsin, selectedPortfolioId]);
 
     const handleLiquidityUpdate = async (newValue: string) => {
         if (!selectedPortfolioId) return;

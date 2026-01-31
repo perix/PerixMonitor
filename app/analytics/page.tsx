@@ -69,6 +69,16 @@ export default function AnalyticsPage() {
             try {
                 const res = await axios.get(`/api/analysis/allocation?portfolio_id=${selectedPortfolioId}`);
                 setData(res.data);
+
+                // [PERSISTENCE] Restore selection
+                const savedSelectionName = localStorage.getItem(`analysis_selection_${selectedPortfolioId}`);
+                if (savedSelectionName && res.data.components) {
+                    const found = res.data.components.find((c: any) => c.name === savedSelectionName);
+                    if (found) {
+                        setSelectedSlice(found);
+                    }
+                }
+
             } catch (error) {
                 console.error("Failed to fetch analysis data", error);
             } finally {
@@ -78,6 +88,20 @@ export default function AnalyticsPage() {
 
         fetchData();
     }, [selectedPortfolioId]);
+
+    // [PERSISTENCE] Save selection
+    useEffect(() => {
+        if (selectedPortfolioId && selectedSlice) {
+            localStorage.setItem(`analysis_selection_${selectedPortfolioId}`, selectedSlice.name);
+        } else if (selectedPortfolioId && selectedSlice === null && !loading && data) {
+            // Only clear if data is loaded (user deliberately deselected, if possible?)
+            // Actually, current UI allows clicking selected one to maybe deselect? Or clicking outside?
+            // If app logic allows 'null', we might want to save null (remove item).
+            // But let's check if 'null' is a valid user state or just init.
+            // If user selects 'null', we remove key.
+            localStorage.removeItem(`analysis_selection_${selectedPortfolioId}`);
+        }
+    }, [selectedSlice, selectedPortfolioId, loading, data]);
 
     // Prepare chart data with colors
     const chartData = useMemo(() => data?.components.map((c, i) => ({
@@ -143,6 +167,7 @@ export default function AnalyticsPage() {
                                 data={chartData}
                                 onSelect={(item) => setSelectedSlice(item as ComponentData)}
                                 colors={[]} // Not needed as we pass color in data
+                                selectedItemName={selectedSlice?.name}
                             />
                         </div>
                     </CardContent>

@@ -53,6 +53,17 @@ export default function DashboardPage() {
                 return;
             }
 
+            // [PERSISTENCE] Load saved selection
+            const savedSelection = localStorage.getItem(`dashboard_selection_${selectedPortfolioId}`);
+            let initialSelection: Set<string> | null = null;
+            if (savedSelection) {
+                try {
+                    initialSelection = new Set(JSON.parse(savedSelection));
+                } catch (e) {
+                    console.error("Failed to parse saved selection", e);
+                }
+            }
+
             // Check Cache
             if (dashboardCache[selectedPortfolioId]) {
                 const cached = dashboardCache[selectedPortfolioId];
@@ -60,21 +71,32 @@ export default function DashboardPage() {
                 setHistory(cached.history);
                 setInitialSettings(cached.settings);
 
-                // Restore name from cache
                 if (cached.name) {
                     setPortfolioName(cached.name);
                 } else if (portfolioCache[selectedPortfolioId]) {
-                    // Fallback to portfolio cache if available
                     setPortfolioName(portfolioCache[selectedPortfolioId].name);
                 }
 
-                // Restore selected assets logic if needed, or just default to all if not cached separately
-                // Ideally we might want to cache selectedAssets too, but for now re-init is fine
-                // or we can infer it. 
-                // Let's re-init selection based on history series for now to be safe.
+                // Restore selected assets logic
                 if (cached.history?.series) {
                     const allIsins = new Set<string>(cached.history.series.map((s: any) => s.isin));
-                    setSelectedAssets(allIsins);
+
+                    // Use saved selection if available, intersect with current available assets to be safe
+                    if (initialSelection) {
+                        const validSelection = new Set<string>();
+                        initialSelection.forEach(isin => {
+                            if (allIsins.has(isin)) validSelection.add(isin);
+                        });
+                        // If intersection is empty (e.g. all selected assets deleted), fallback to all? 
+                        // Or just empty? User might have deselected all.
+                        // Let's rely on saved state unless it's completely alien.
+                        // Actually, if user deselected everything, validSelection is empty. That's fine.
+                        // But if initialSelection was valid but assets changed, we want to keep valid ones.
+                        setSelectedAssets(validSelection);
+                    } else {
+                        // Default to ALL selected
+                        setSelectedAssets(allIsins);
+                    }
                 }
 
                 setLoading(false);
@@ -83,13 +105,6 @@ export default function DashboardPage() {
 
             setLoading(true);
             try {
-                // Fetch details to get settings (now included in /api/portfolio/:id)
-                // Note: The previous code didn't fetch details separately here, but we need settings.
-                // We can fetch details or just modify dashboard/summary to return settings?
-                // The implementation plan said modifying dashboard/summary OR fetch details.
-                // Let's make a separate call to details for clean separation or use the new patch route?
-                // Actually, let's fetch details briefly.
-
                 const [resSummary, resHistory, resDetails] = await Promise.all([
                     axios.get(`/api/dashboard/summary?portfolio_id=${selectedPortfolioId}`),
                     axios.get(`/api/dashboard/history?portfolio_id=${selectedPortfolioId}`),
@@ -104,16 +119,22 @@ export default function DashboardPage() {
                 setSummary(dataSummary);
                 setHistory(dataHistory);
                 setPortfolioName(portfolioDetails.name);
-
-                // Set initial settings if present
                 setInitialSettings(settings);
 
                 if (dataHistory.series) {
                     const allIsins = new Set<string>(dataHistory.series.map((s: any) => s.isin));
-                    setSelectedAssets(allIsins);
+
+                    if (initialSelection) {
+                        const validSelection = new Set<string>();
+                        initialSelection.forEach(isin => {
+                            if (allIsins.has(isin)) validSelection.add(isin);
+                        });
+                        setSelectedAssets(validSelection);
+                    } else {
+                        setSelectedAssets(allIsins);
+                    }
                 }
 
-                // Update Cache
                 setDashboardCache(selectedPortfolioId, {
                     summary: dataSummary,
                     history: dataHistory,
@@ -131,37 +152,90 @@ export default function DashboardPage() {
         fetchData();
     }, [selectedPortfolioId]);
 
+    // [PERSISTENCE] Save selection on change
+    useEffect(() => {
+        if (selectedPortfolioId && selectedAssets) {
+            // We only save if we have data loaded (to avoid saving empty set on initial render before fetch)
+            // But selectedAssets is init to empty set.
+            // We should check if history is loaded.
+            if (history?.series) {
+                localStorage.setItem(`dashboard_selection_${selectedPortfolioId}`, JSON.stringify(Array.from(selectedAssets)));
+            }
+        }
+    }, [selectedAssets, selectedPortfolioId, history]);
+
+    const [subsetHistory, setSubsetHistory] = useState<any>(null);
+
     const filteredHistory = useMemo(() => {
         if (!history || !history.series) return history;
+
+        const totalAssetsCount = history.series.length;
+        const selectedCount = selectedAssets.size;
+        const isSubset = selectedCount > 0 && selectedCount < totalAssetsCount;
+
+        if (!isSubset) {
+            return history;
+        }
+
+        const filteredSeries = history.series.filter((s: any) => selectedAssets.has(s.isin));
+
+        // Use fetched subset history portfolio if available
+        let portfolioLine = [];
+        if (subsetHistory && subsetHistory.portfolio) {
+            portfolioLine = subsetHistory.portfolio;
+        } else {
+            // Fallback: Compute Synthetic Portfolio (Sum of Market Values) locally
+            // This ensures 'Controvalore' chart is correct immediately
+            const dateMap = new Map<string, { date: string, value: number, market_value: number, pnl: number }>();
+
+            filteredSeries.forEach((s: any) => {
+                s.data.forEach((d: any) => {
+                    if (!dateMap.has(d.date)) {
+                        dateMap.set(d.date, { date: d.date, value: 0, market_value: 0, pnl: 0 });
+                    }
+                    const entry = dateMap.get(d.date)!;
+                    entry.market_value += (d.market_value || 0);
+                    entry.pnl += (d.pnl || 0);
+                });
+            });
+
+            portfolioLine = Array.from(dateMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+        }
+
         return {
             ...history,
-            series: history.series.filter((s: any) => selectedAssets.has(s.isin))
+            series: filteredSeries,
+            portfolio: portfolioLine
         };
-    }, [history, selectedAssets]);
+    }, [history, selectedAssets, subsetHistory]);
 
-    // Effect to fetch filtered summary when selection changes
+    // Effect to fetch filtered summary and history when selection changes
     useEffect(() => {
         if (!selectedPortfolioId || !history?.series) return;
-
-        // If all selected or none selected (initial/reset), logic might vary but usually we want to know
-        // IF selectedAssets.size != history.series.length, we fetch.
-        // If they are equal, filteredSummary CAN be same as summary (optimization).
 
         const totalAssetsCount = history.series.length;
         const selectedCount = selectedAssets.size;
 
         if (selectedCount === 0 || selectedCount === totalAssetsCount) {
-            setFilteredSummary(null); // No special filter active (or all active)
+            setFilteredSummary(null);
+            setSubsetHistory(null);
             return;
         }
+
+        // Reset subset history to rely on synthetic calculation while fetching
+        setSubsetHistory(null);
 
         const fetchFiltered = async () => {
             try {
                 const assetsParam = Array.from(selectedAssets).join(',');
-                const res = await axios.get(`/api/dashboard/summary?portfolio_id=${selectedPortfolioId}&assets=${assetsParam}`);
-                setFilteredSummary(res.data);
+                const [resSum, resHist] = await Promise.all([
+                    axios.get(`/api/dashboard/summary?portfolio_id=${selectedPortfolioId}&assets=${assetsParam}`),
+                    axios.get(`/api/dashboard/history?portfolio_id=${selectedPortfolioId}&assets=${assetsParam}`)
+                ]);
+                setFilteredSummary(resSum.data);
+                setSubsetHistory(resHist.data);
             } catch (e) {
-                console.error("Error fetching filtered summary", e);
+                console.error("Error fetching filtered data", e);
             }
         };
 

@@ -123,8 +123,10 @@ Il sistema adotta un approccio "Read-Preview-Write" per evitare contaminazione d
 1.  **Phase 1: Ingest (Read-Only)**
     - L'utente carica il file. L'API `/api/ingest` lo legge.
     - Il sistema RILEVA il tipo file:
-        - **Portfolio File (9 Colonne)**: Calcola le differenze (Delta) e estrae i PREZZI CORRENTI (Colonna I).
-        - **Dividend File (3 Colonne)**: Rileva automaticamente pattern [ISIN, Valore, Data] per importazione cedole.
+        - **Portfolio Full/Partial Sync**:
+            -   Supporta "Partial Updates" (file con sole vendite): ignora asset mancanti senza venderli.
+            -   Supporta "Strict Sync" per discrepanze: Segnala errore se la quantità cambia senza operazione esplicita.
+        -   **Dividend File**: Rileva automaticamente pattern [ISIN, Valore, Data] per importazione cedole.
     - **Nessun dato viene salvato nel DB**. L'API restituisce un JSON con le proposte di modifica (`delta`, `prices_to_save`, `snapshot_proposal`).
 
 2.  **Phase 2: Preview & Reconciliation**

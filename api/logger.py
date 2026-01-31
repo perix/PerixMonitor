@@ -45,8 +45,10 @@ def log_ingestion_item(isin, status, details):
     if ENABLE_FILE_LOGGING:
         logger.debug(f"INGESTION ROW: ISIN={isin} STATUS={status} DETAILS={details}")
 
-def log_ingestion_summary(total_rows, delta_count, missing_count):
+def log_ingestion_summary(total_rows, delta_count, missing_count, extra=None):
     logger.info(f"COMPLETED Ingestion. Total={total_rows}, Updates={delta_count}, Missing={missing_count}")
+    if extra:
+        logger.info(f"SUMMARY EXTRA: {extra}")
 
 def log_final_state(all_isins):
     """

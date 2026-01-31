@@ -94,7 +94,11 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
 
   const missingCount = delta.filter(d => d.type === 'MISSING_FROM_UPLOAD').length;
   const resolvedMissingCount = Object.keys(resolutions).filter(k => resolutions[k].date && resolutions[k].price).length;
-  const canSubmit = (missingCount === 0 || resolvedMissingCount === missingCount);
+
+  // [NEW] Block submission if there are ANY functional errors
+  const errorCount = delta.filter(d => d.type.startsWith('ERROR') || d.type === 'INCONSISTENT_NEW_ISIN').length;
+
+  const canSubmit = errorCount === 0 && (missingCount === 0 || resolvedMissingCount === missingCount);
 
   const getBadges = (item: DeltaItem) => {
     switch (item.type) {
@@ -102,7 +106,9 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
       case 'Vendita': return <Badge variant="destructive" className="bg-red-500/20 text-red-400 border-red-500/30">Vendita</Badge>;
       case 'METADATA_UPDATE': return <Badge variant="secondary" className="bg-blue-500/15 text-blue-400 border-blue-500/30">Aggiornamento</Badge>;
       case 'MISSING_FROM_UPLOAD': return <Badge variant="outline" className="bg-orange-500/10 text-orange-400 border-orange-500/30">Non in file</Badge>;
-      case 'INCONSISTENT_NEW_ISIN': return <Badge variant="destructive">Errore</Badge>;
+      case 'INCONSISTENT_NEW_ISIN': return <Badge variant="destructive">Errore Dati</Badge>;
+      case 'ERROR_QTY_MISMATCH_NO_OP': return <Badge variant="destructive">Discrepanza Qta</Badge>;
+      case 'ERROR_NEGATIVE_QTY': return <Badge variant="destructive">Saldo Negativo</Badge>;
       default: return <Badge variant="outline">{item.type}</Badge>;
     }
   };
@@ -110,8 +116,8 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       {/* Expanded Width to max-w-7xl, lighter styling */}
-      <DialogContent className="w-[98vw] max-w-full h-[90vh] flex flex-col p-0 gap-0 bg-[#0A0A0A] border-white/10 text-gray-200">
-        <DialogHeader className="p-6 pb-4 border-b border-white/10 shrink-0">
+      <DialogContent className="w-[98vw] max-w-full h-[90vh] flex flex-col p-0 gap-0 bg-[#0A0A0A] border-white/40 text-gray-200">
+        <DialogHeader className="p-6 pb-4 border-b border-white/20 shrink-0">
           <DialogTitle className="text-xl font-medium text-white flex items-center gap-2">
             Riconciliazione Portafoglio
           </DialogTitle>
@@ -131,10 +137,10 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
                 <Wallet className="w-5 h-5" />
                 <h3 className="font-semibold">Cedole e Dividendi Rilevati</h3>
               </div>
-              <div className="rounded-md border border-white/10 bg-white/5 overflow-hidden">
+              <div className="rounded-md border border-white/20 bg-white/5 overflow-hidden">
                 <Table>
-                  <TableHeader className="bg-white/5 border-b border-white/10">
-                    <TableRow className="hover:bg-transparent border-white/10">
+                  <TableHeader className="bg-white/5 border-b border-white/20">
+                    <TableRow className="hover:bg-transparent border-white/20">
                       <TableHead className="text-gray-400">ISIN</TableHead>
                       <TableHead className="text-gray-400 text-right">Data</TableHead>
                       <TableHead className="text-gray-400 text-right">Importo</TableHead>
@@ -142,7 +148,7 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
                   </TableHeader>
                   <TableBody>
                     {dividends.map((div, idx) => (
-                      <TableRow key={idx} className="border-white/5 hover:bg-white/5">
+                      <TableRow key={idx} className="border-white/10 hover:bg-white/5">
                         <TableCell className="font-mono text-gray-300">{div.isin}</TableCell>
                         <TableCell className="text-right text-gray-300">{div.date}</TableCell>
                         <TableCell className="text-right font-medium text-emerald-400">
@@ -160,10 +166,10 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
           {hasDelta && (
             <div className="space-y-3">
               <h3 className="font-semibold text-gray-200">Variazioni Portafoglio</h3>
-              <div className="rounded-md border border-white/10 bg-white/5 overflow-hidden">
+              <div className="rounded-md border border-white/20 bg-white/5 overflow-hidden">
                 <Table>
-                  <TableHeader className="bg-white/5 border-b border-white/10">
-                    <TableRow className="hover:bg-transparent border-white/10">
+                  <TableHeader className="bg-white/5 border-b border-white/20">
+                    <TableRow className="hover:bg-transparent border-white/20">
                       <TableHead className="min-w-[200px] text-gray-400">Asset / Descrizione</TableHead>
                       <TableHead className="w-[100px] text-gray-400">Azione</TableHead>
                       <TableHead className="text-right text-gray-400">Quantità</TableHead>
@@ -176,7 +182,7 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
                       const isMissing = item.type === 'MISSING_FROM_UPLOAD';
 
                       return (
-                        <TableRow key={idx} className={`border-white/5 hover:bg-white/5 ${isMissing ? 'bg-orange-500/5' : ''}`}>
+                        <TableRow key={idx} className={`border-white/10 hover:bg-white/5 ${isMissing ? 'bg-orange-500/5' : ''}`}>
                           <TableCell>
                             <div>
                               <div className="text-sm font-medium text-gray-200">{item.excel_description || item.isin}</div>
@@ -224,14 +230,14 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
 
           {/* PRICE UPDATES (Compact) */}
           {hasPrices && (
-            <div className="p-4 bg-white/5 rounded-lg border border-white/10">
+            <div className="p-4 bg-white/5 rounded-lg border border-white/20">
               <div className="flex items-center gap-2 mb-3">
                 <Info className="w-4 h-4 text-blue-400" />
                 <h3 className="text-sm font-semibold text-gray-300">Aggiornamenti Prezzi ({prices.length})</h3>
               </div>
               <div className="flex flex-wrap gap-2">
                 {prices.slice(0, 12).map((p, i) => (
-                  <div key={i} className="text-xs px-2 py-1 rounded bg-black/40 border border-white/10 text-gray-400 font-mono">
+                  <div key={i} className="text-xs px-2 py-1 rounded bg-black/40 border border-white/20 text-gray-400 font-mono">
                     {p.isin}: <span className="text-gray-200">{p.price?.toFixed(2)}€</span>
                   </div>
                 ))}
@@ -248,8 +254,8 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
 
         </div>
 
-        <DialogFooter className="p-6 pt-4 border-t border-white/10 bg-white/5 shrink-0">
-          <Button variant="outline" onClick={onClose} disabled={isSubmitting} className="border-white/10 text-gray-300 hover:bg-white/10 hover:text-white">Annulla</Button>
+        <DialogFooter className="p-6 pt-4 border-t border-white/20 bg-white/5 shrink-0">
+          <Button variant="outline" onClick={onClose} disabled={isSubmitting} className="border-white/20 text-gray-300 hover:bg-white/10 hover:text-white">Annulla</Button>
           <Button onClick={handleSubmit} disabled={!canSubmit || isSubmitting} className="bg-indigo-600 hover:bg-indigo-500 text-white border-0">
             {isSubmitting ? 'Sincronizzazione...' : hasDividends ? 'Conferma Importazione' : 'Conferma e Sincronizza'}
           </Button>

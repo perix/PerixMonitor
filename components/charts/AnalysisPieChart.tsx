@@ -61,9 +61,10 @@ interface AnalysisPieChartProps {
     data: DataItem[];
     onSelect: (item: DataItem | null) => void;
     colors: string[]; // Pass explicit colors matched to data index or use data.color
+    selectedItemName?: string;
 }
 
-export function AnalysisPieChart({ data, onSelect, colors }: AnalysisPieChartProps) {
+export function AnalysisPieChart({ data, onSelect, colors, selectedItemName }: AnalysisPieChartProps) {
     // Select largest slice by default
     const [activeIndex, setActiveIndex] = React.useState(0);
 
@@ -75,10 +76,19 @@ export function AnalysisPieChart({ data, onSelect, colors }: AnalysisPieChartPro
     };
 
     React.useEffect(() => {
-        if (data.length > 0) {
+        if (selectedItemName) {
+            const index = data.findIndex(item => item.name === selectedItemName);
+            if (index !== -1) {
+                setActiveIndex(index);
+            }
+        }
+    }, [selectedItemName, data]);
+
+    React.useEffect(() => {
+        if (data.length > 0 && !selectedItemName) {
             onSelect(data[0]);
         }
-    }, [data]);
+    }, [data, selectedItemName]);
 
     return (
         <div className="w-full h-full flex justify-center items-center relative">

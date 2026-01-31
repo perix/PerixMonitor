@@ -1,7 +1,10 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime
-from logger import log_ingestion_start, log_ingestion_item, log_ingestion_summary, log_final_state, logger
+try:
+    from .logger import log_ingestion_start, log_ingestion_item, log_ingestion_summary, log_final_state, logger
+except ImportError:
+    from logger import log_ingestion_start, log_ingestion_item, log_ingestion_summary, log_final_state, logger
 
 def parse_portfolio_excel(file_stream, debug=False):
     # Expected columns for Portfolio: A-I (9 columns)
@@ -66,7 +69,8 @@ def parse_portfolio_excel(file_stream, debug=False):
             
             isin = str(row.iloc[1]).strip()
             # ... (parsing logic) ...
-            qty = float(row.iloc[2]) if not pd.isna(row.iloc[2]) else 0.0
+            # Qty can be None (Price Update only) or float
+            qty = float(row.iloc[2]) if not pd.isna(row.iloc[2]) else None
             
             # log_ingestion_item(isin, "PARSED", f"Row {idx+2}: Qty={qty} Op={row.iloc[6]}") # Silent in normal mode
 
@@ -143,16 +147,18 @@ def parse_portfolio_excel(file_stream, debug=False):
         logger.error(traceback.format_exc())
         return {"error": f"Parse Error: {str(e)}"}
 
-def calculate_delta(excel_data, db_holdings, ignore_missing=False):
+def calculate_delta(excel_data, db_holdings, ignore_missing=True):
     # db_holdings structure: {isin: {"qty": float, "metadata": dict}} OR {isin: float} (legacy fallback)
+    # [SIMPLIFIED LOGIC]
+    # 1. If column 'Operation' is "Acquisto"/"Vendita" -> Qty is TRANSACTION AMOUNT (Delta).
+    # 2. If 'Operation' is NOT present -> Price Update Only. Ignore Qty.
+    # 3. No "Missing Asset" checks. (ignore_missing is effectively always True).
     
     delta_actions = []
-    processed_isins = set()
     
     for row in excel_data:
         isin = row['isin']
-        excel_qty = row['quantity']
-        processed_isins.add(isin)
+        excel_qty = row['quantity'] # In this new logic, this is POTENTIALLY the transaction amount.
         
         # Unpack DB info safely
         db_entry = db_holdings.get(isin)
@@ -166,79 +172,115 @@ def calculate_delta(excel_data, db_holdings, ignore_missing=False):
         elif isinstance(db_entry, (int, float)):
              db_qty = float(db_entry)
         
-        diff = excel_qty - db_qty
+        # Check Operation
+        op_declared = row.get('operation')
+        op_str = str(op_declared).strip().lower() if op_declared else ""
+        is_explicit_buy = (op_str == 'acquisto' or op_str == 'buy')
+        is_explicit_sell = (op_str == 'vendita' or op_str == 'sell')
         
-        # [NEW] Check for Metadata difference (Asset Type)
-        excel_type = row.get('asset_type')
-        type_changed = False
-        if excel_type and excel_type != db_type:
-            type_changed = True
-            log_ingestion_item(isin, "META_DIFF", f"Type change: DB='{db_type}' -> Excel='{excel_type}'")
+        # Logic Branching
+        diff = 0.0
+        new_total_qty = db_qty
+        action_type = None
+        is_price_only = False
+        
+        if is_explicit_buy:
+            if excel_qty is None:
+                 log_ingestion_item(isin, "ERROR_MISSING_QTY", "Buy Op but No Qty")
+                 delta_actions.append({"isin": isin, "type": "ERROR_QTY_MISMATCH", "quantity_change": 0, "current_db_qty": db_qty, "new_total_qty": db_qty, "details": "Operazione Acquisto senza quantità."})
+                 continue
+                 
+            diff = excel_qty
+            new_total_qty = db_qty + excel_qty
+            action_type = "Acquisto"
+            
+        elif is_explicit_sell:
+            if excel_qty is None:
+                 log_ingestion_item(isin, "ERROR_MISSING_QTY", "Sell Op but No Qty")
+                 delta_actions.append({"isin": isin, "type": "ERROR_QTY_MISMATCH", "quantity_change": 0, "current_db_qty": db_qty, "new_total_qty": db_qty, "details": "Operazione Vendita senza quantità."})
+                 continue
 
-        if abs(diff) < 1e-6:
-            if type_changed:
-                 # Special Action: Quantity didn't change, but Type did.
-                 # We send a "metadata only" update.
-                 log_ingestion_item(isin, "DELTA_META", f"Updating Type to {excel_type}")
+            # Validate: Cannot sell more than owned
+            if excel_qty > db_qty + 1e-6: # Tolerance
+                log_ingestion_item(isin, "ERROR_NEGATIVE_QTY", f"Attempt to sell {excel_qty} > Owned {db_qty}")
+                delta_actions.append({
+                    "isin": isin,
+                    "type": "ERROR_NEGATIVE_QTY",
+                    "quantity_change": excel_qty,
+                    "current_db_qty": db_qty,
+                    "new_total_qty": db_qty - excel_qty,
+                    "details": f"Tentativo di vendita ({excel_qty}) superiore alla quantità posseduta ({db_qty})."
+                })
+                continue
+            
+            diff = -excel_qty
+            new_total_qty = db_qty - excel_qty
+            action_type = "Vendita"
+            
+        else:
+            # No Operation -> Price Update Only
+            # [STRICT CHECK] If Quantity differs from DB, it's an error.
+            # User might have forgotten to add "Acquisto"/"Vendita".
+            # EXCEPTION: If excel_qty is NONE (Empty cell), we IGNORE IT. It is NOT a mismatch.
+            
+            if excel_qty is not None:
+                diff = excel_qty - db_qty
+                if abs(diff) > 1e-6:
+                    log_ingestion_item(isin, "ERROR_MISMATCH_NO_OP", f"Qty mismatch {db_qty}->{excel_qty} but no Op.")
+                    delta_actions.append({
+                        "isin": isin,
+                        "type": "ERROR_QTY_MISMATCH_NO_OP",
+                        "quantity_change": diff,
+                        "current_db_qty": db_qty,
+                        "new_total_qty": excel_qty,
+                        "details": "Quantità diversa dal DB ma nessuna operazione specificata. Verificare se manca Acquisto/Vendita."
+                    })
+                    continue
+
+            # If Qty matches (or is None), treat as Price Update.
+            is_price_only = True
+            log_ingestion_item(isin, "PRICE_UPDATE", "No Op declared. Treating as Price Update only.")
+
+        # Metadata Check (Asset Type)
+        excel_type = row.get('asset_type')
+        if excel_type and excel_type != db_type:
+             log_ingestion_item(isin, "META_DIFF", f"Type change: DB='{db_type}' -> Excel='{excel_type}'")
+             # We always include metadata update if changed, even for Price Updates
+             # If it's Price Only, we generate a specific METADATA_UPDATE action if type changed
+             if is_price_only:
                  delta_actions.append({
                     "isin": isin,
-                    "type": "METADATA_UPDATE", # Frontend needs to handle this (or ignore it being red/green and just show it)
+                    "type": "METADATA_UPDATE",
                     "quantity_change": 0,
                     "current_db_qty": db_qty,
-                    "new_total_qty": excel_qty,
+                    "new_total_qty": db_qty,
                     "asset_type_proposal": excel_type,
                     "excel_description": row.get('description'),
                     "details": "Aggiornamento Anagrafica (Tipologia)"
                  })
-            else:
-                log_ingestion_item(isin, "SKIP", "No qty change")
-            continue 
-
-        # [MODIFIED] Check for "Price Only" update strategy
-        # If Excel Qty is 0 (implied empty) and DB Qty > 0, traditionally this means SELL EVERYTHING.
-        # But user wants to support "Price Update" only rows.
-        # So we ONLY sell if "Vendita" (case insensitive) is explicitly declared.
-        op_declared = row.get('operation')
-        is_explicit_sell = op_declared and str(op_declared).strip().lower() == 'vendita'
         
-        # If explicit sell, we proceed to create negative delta even if diff matches 
-        # (Wait, if diff matches sell, we are good. logic below handles it.)
+        if is_price_only:
+            continue # No transaction to record
 
-        if excel_qty == 0 and db_qty > 0 and not is_explicit_sell:
-             log_ingestion_item(isin, "SKIP", f"Qty=0 but not explicit 'Vendita'. Treating as Price Update only.")
-             continue
-            
-        # strict check for NEW ISINS (not in DB)
-        # User Rule: "Se un ISIN non è presente in DB ma è presente nell'excel 
-        # ma senza che l'operazione di acquisto sia esplicitata e ci sia una data e un prezzo... deve essere saltato."
-        is_new_isin = (db_qty == 0)
-        
-        op_declared = row.get('operation')
+        # Add Transaction Action
         op_price = row.get('op_price_eur')
         op_date = row.get('date')
         
-        # We consider it "Explicit Buy" if Operation is 'Acquisto' (case insensitive), Price > 0, and Date is set
-        is_explicit_buy = (
-            op_declared and str(op_declared).lower().strip() == 'acquisto' and 
-            op_price and op_price > 0 and 
-            op_date is not None
-        )
+        # New ISIN Check for Buying
+        if db_qty == 0 and action_type == "Acquisto":
+             # Ensure we have price and date for new asset
+             if not (op_price and op_price > 0 and op_date):
+                 log_ingestion_item(isin, "INCONSISTENT_NEW_ISIN", "New ISIN buy missing price/date")
+                 delta_actions.append({
+                    "isin": isin,
+                    "type": "INCONSISTENT_NEW_ISIN",
+                    "quantity_change": excel_qty, 
+                    "current_db_qty": 0,
+                    "new_total_qty": excel_qty,
+                    "details": "Mancano dati operazione (Data/Prezzo) per nuovo titolo."
+                 })
+                 continue
 
-        if is_new_isin and not is_explicit_buy:
-             log_ingestion_item(isin, "INCONSISTENT", f"New ISIN {isin} has missing buy details. Skipped.")
-             delta_actions.append({
-                "isin": isin,
-                "type": "INCONSISTENT_NEW_ISIN",
-                "quantity_change": diff, # Show what we found
-                "current_db_qty": db_qty,
-                "new_total_qty": excel_qty,
-                "details": "Mancano dati operazione (Data/Prezzo/Operazione)"
-             })
-             continue
-
-        action_type = "Acquisto" if diff > 0 else "Vendita"
-        log_ingestion_item(isin, "DELTA", f"{action_type} {abs(diff)} (Exc={excel_qty} DB={db_qty})")
-        
         action = {
             "isin": isin,
             "type": action_type,
@@ -246,38 +288,15 @@ def calculate_delta(excel_data, db_holdings, ignore_missing=False):
             "excel_operation_declared": op_declared,
             "excel_price": op_price,
             "excel_date": op_date,
-            "excel_description": row.get('description'),  # Asset name from Excel column A
-            "asset_type_proposal": row.get('asset_type'), # [NEW] Pass asset type proposal
+            "excel_description": row.get('description'), 
+            "asset_type_proposal": row.get('asset_type'),
             "current_db_qty": db_qty,
-            "new_total_qty": excel_qty
+            "new_total_qty": new_total_qty
         }
         delta_actions.append(action)
-        
-    for isin, val in db_holdings.items():
-        # Handle unpacking again for the "MISSING" loop
-        qty = 0.0
-        if isinstance(val, dict):
-             qty = val.get("qty", 0.0)
-        elif isinstance(val, (int, float)):
-             qty = float(val)
+        log_ingestion_item(isin, "DELTA", f"{action_type} {abs(diff)} (NewTotal={new_total_qty})")
 
-        if isin not in processed_isins and qty > 0:
-            if ignore_missing:
-                log_ingestion_item(isin, "SKIP_MISSING", "Ignored missing asset due to user flag.")
-                continue
-
-            log_ingestion_item(isin, "MISSING", f"In DB ({qty}) but not in Excel")
-            delta_actions.append({
-                "isin": isin,
-                "type": "MISSING_FROM_UPLOAD",
-                "quantity_change": qty,
-                "current_db_qty": qty,
-                "new_total_qty": 0 
-            })
-
-    log_ingestion_summary(len(excel_data), len(delta_actions), len([d for d in delta_actions if d['type'] == 'MISSING_FROM_UPLOAD']))
+    # [SIMPLIFIED LOGIC] No Missing Check Loop.
     
-    # Mock final state logging (in real app, this would query DB after sync)
-    # Here we log what the DB *should* look like assuming these applied
-    log_final_state([f"{row['isin']}: {row['quantity']}" for row in excel_data]) 
+    log_ingestion_summary(len(excel_data), len(delta_actions), 0)
     return delta_actions
