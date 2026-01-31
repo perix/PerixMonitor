@@ -163,6 +163,18 @@ Il sistema adotta un approccio "Read-Preview-Write" per evitare contaminazione d
 - **Memorizzazione**: Dati salvati nella tabella `dividends` con riferimento all'asset e al portafoglio.
 - **Utilizzo**: Partecipano al calcolo del MWRR (XIRR) come flussi di cassa (positivi o negativi).
 
+### Gestione Ciclo di Vita Asset (Active vs Historical)
+- **Asset Attivi**:
+    - Sono gli strumenti con quantità > 0 nel portafoglio attuale.
+    - Sono visibili nel grafico a torta "Allocation", contribuiscono al "Total Value" e vengono aggiornati con i prezzi correnti (manuali).
+    - Nella UI sono raggruppati in cima alla lista filtri.
+- **Asset Storici (Chiusi)**:
+    - Sono strumenti interamente venduti (quantità = 0).
+    - **Performance**: Continuano a contribuire al calcolo del XIRR globale (cash flows passati).
+    - **Visualizzazione**: Sono esclusi dall'Allocation corrente (valore nullo).
+    - **UI**: Compaiono in una sezione separata "Storici (Venduti)" per permettere l'analisi ex-post, ma sono distinti visivamente (grigio/italico) per non confondere la view corrente.
+    - **Prezzi**: Non richiedono aggiornamenti prezzi futuri.
+
 ## 5. Stato Attuale (V1.0)
 
 ### Funzionalità Completate

@@ -357,16 +357,15 @@ export default function DashboardPage() {
 
                                     {/* Assets List (Right) */}
                                     <div className="w-2/3 flex flex-col gap-1 pl-1">
-                                        <div className="text-[10px] font-semibold text-muted-foreground mb-1 uppercase tracking-wider">Asset</div>
-                                        {(history.series || [])
-                                            .slice()
-                                            .sort((a: any, b: any) => {
-                                                const typeA = a.type || "Altro";
-                                                const typeB = b.type || "Altro";
-                                                if (typeA !== typeB) return typeB.localeCompare(typeA);
-                                                return a.name.localeCompare(b.name);
-                                            })
-                                            .map((s: any, idx: number) => (
+                                        {/* Helper function to render list */}
+                                        {(() => {
+                                            const activeIsins = new Set(summary?.allocation?.map((a: any) => a.isin) || []);
+                                            const allSeries = (history.series || []);
+
+                                            const activeAssets = allSeries.filter((s: any) => activeIsins.has(s.isin));
+                                            const historicalAssets = allSeries.filter((s: any) => !activeIsins.has(s.isin));
+
+                                            const renderAssetRow = (s: any, idx: number) => (
                                                 <div key={s.isin} className="flex items-center space-x-2 py-0.5">
                                                     <Checkbox
                                                         id={`filter-${s.isin}`}
@@ -388,16 +387,40 @@ export default function DashboardPage() {
                                                     />
                                                     <label
                                                         htmlFor={`filter-${s.isin}`}
-                                                        className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer w-full text-left"
-                                                        title={`${s.name} (${s.isin})`}
-                                                        style={{ color: s.color || COLORS[idx % COLORS.length] }}
+                                                        className={`text-xs font-medium leading-none cursor-pointer w-full text-left ${activeIsins.has(s.isin) ? '' : 'text-muted-foreground italic'}`}
+                                                        title={`${s.name} (${s.isin}) ${!activeIsins.has(s.isin) ? '- Sold' : ''}`}
+                                                        style={{ color: activeIsins.has(s.isin) ? (s.color || COLORS[idx % COLORS.length]) : undefined }}
                                                     >
-                                                        <div className="truncate w-full">
-                                                            {s.name}
+                                                        <div className="truncate w-full flex justify-between">
+                                                            <span>{s.name}</span>
+                                                            {!activeIsins.has(s.isin) && <span className="text-[9px] opacity-70 ml-1 px-1 bg-white/10 rounded">STORICO</span>}
                                                         </div>
                                                     </label>
                                                 </div>
-                                            ))}
+                                            );
+
+                                            return (
+                                                <>
+                                                    {activeAssets.length > 0 && (
+                                                        <>
+                                                            <div className="text-[10px] font-semibold text-muted-foreground mb-1 uppercase tracking-wider sticky top-0 bg-background/95 backdrop-blur z-10">Attivi</div>
+                                                            {activeAssets
+                                                                .sort((a: any, b: any) => a.name.localeCompare(b.name))
+                                                                .map((s: any, i: number) => renderAssetRow(s, i))}
+                                                        </>
+                                                    )}
+
+                                                    {historicalAssets.length > 0 && (
+                                                        <>
+                                                            <div className="text-[10px] font-semibold text-muted-foreground mb-1 mt-2 uppercase tracking-wider sticky top-0 bg-background/95 backdrop-blur z-10">Storici (Venduti)</div>
+                                                            {historicalAssets
+                                                                .sort((a: any, b: any) => a.name.localeCompare(b.name))
+                                                                .map((s: any, i: number) => renderAssetRow(s, i + activeAssets.length))}
+                                                        </>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             </ScrollArea>
