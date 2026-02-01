@@ -1,4 +1,4 @@
-# PerixMonitor - Architettura e Stato Corrente (V1.0)
+# PerixMonitor - Architettura e Stato Corrente (V1.1)
 
 ## 1. Panoramica
 PerixMonitor è un'applicazione web per il tracciamento del patrimonio personale (Wealth Tracker) ottimizzata per residenti fiscali italiani. 
@@ -67,6 +67,7 @@ Per far funzionare PerixMonitor in locale, **entrambi i server devono essere att
 
 > [!IMPORTANT]
 > Se avvii solo il frontend senza il backend Python, vedrai errori del tipo `ECONNREFUSED 127.0.0.1:5328` perché il frontend non riesce a contattare l'API.
+> **Dev Test Note**: Per le chiamate LLM di test (lunga durata), il frontend contatta direttamente la porta 5328 per bypassare il timeout di 60s del proxy Next.js.
 
 #### Struttura dei File Backend
 
@@ -79,9 +80,9 @@ api/
 ├── ingest.py         # Parsing file Excel
 ├── finance.py        # Calcoli finanziari (XIRR)
 ├── price_manager.py  # Salvataggio storico prezzi
-├── llm_asset_info.py # Integrazione AI per info asset (OpenAI)
+├── llm_asset_info.py # Integrazione AI avanzata (GPT-5, Web Search, Reasoning)
 ├── supabase_client.py# Connessione al database
-└── logger.py         # Sistema di logging
+└── logger.py         # Sistema di audit e logging professionale
 ```
 
 #### Principali Endpoint API
@@ -103,7 +104,10 @@ api/
     - `pandas`: Parsing ed elaborazione dati Excel
     - `scipy`: Calcoli finanziari (XIRR ottimizzato)
     - `openai`: Integrazione con modelli AI per arricchimento dati asset
-- **Logging**: Sistema di logging su file (`perix_monitor.log`) con rotazione e stack trace completi
+- **Logging & Audit**: 
+    - Sistema di audit professionale (`log_audit`) per operazioni critiche (Sync, Ingestione, Reset).
+    - Logging a due livelli (INFO per Audit, DEBUG per dettagli tecnici).
+    - Supporto per file log (`perix_monitor.log`) attivabile dinamicamente da UI.
 
 ### Database
 - **Provider**: Supabase (PostgreSQL).
@@ -158,6 +162,15 @@ Il sistema adotta un approccio "Read-Preview-Write" per evitare contaminazione d
 - **Invalidation**: La cache viene invalidata automaticamente al caricamento di nuovi dati (Ingest) o alla modifica delle impostazioni.
 - **Persistence**: I dati rimangono in memoria per la sessione corrente (o fino al reload pagina), garantendo navigazione istantanea.
 
+### Integrazione AI Avanzata (v1.1)
+Il sistema utilizza modelli OpenAI di ultima generazione per l'arricchimento automatico dei metadati degli asset:
+- **Modelli Supportati**: Ottimizzato per `gpt-5-mini` e modelli `o-series` via **OpenAI Responses API**.
+- **Reasoning Effort**: Possibilità di configurare il livello di ragionamento del modello (`low`, `medium`, `high`) per analisi finanziarie più precise.
+- **Native Web Search**: Supporto per il tool nativo `web_search_preview` che permette all'LLM di navigare autonomamente in internet per trovare dati aggiornati.
+- **Configurazione Agnostica**: L'interfaccia utente si adatta automaticamente alle capacità del modello selezionato (mostra/nasconde parametri come Temperatura o Ragionamento).
+- **Tracciabilità**: Ogni interazione AI è loggata con dettagli su token utilizzati, motivo del completamento e parametri di invio.
+- **CORS Support**: Il backend abilita CORS per permettere chiamate dirette dal frontend in ambiente di sviluppo, risolvendo problemi di timeout su query AI complesse.
+
 ### Gestione Cedole, Dividendi e Spese
 - **Rilevamento File**: Identificazione automatica tramite intestazione colonna C ("Data Flusso") o struttura a 3 colonne.
 - **Formato Flessibile**: Supporta file con più di 3 colonne (le colonne extra vengono ignorate).
@@ -210,6 +223,8 @@ Il grafico dell'andamento MWR non è uno storico salvato, ma viene **ricalcolato
 - [x] **Safe Ingestion**: Implementato protocollo Read-Preview-Write.
 - [x] **Dividend Support**: Parsing file 3 colonne e tabella DB dedicata.
 - [x] **Manual Prices**: Salvataggio storico prezzi da Excel.
+- [x] **Integrazione AI Avanzata**: Supporto GPT-5, Web Search e Reasoning Effort.
+- [x] **Audit Logging**: Sistema di tracciamento professionale delle operazioni.
 - [x] **UI/UX**: Integrazione modali di conferma e feedback visivi.
 - [x] **Performance**: Caching client-side per navigazione istantanea.
 - [x] **Dashboard 2.0 & UI Enhancements**:

@@ -2,9 +2,9 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 try:
-    from .logger import log_ingestion_start, log_ingestion_item, log_ingestion_summary, log_final_state, logger
+    from .logger import log_ingestion_start, log_ingestion_summary, logger
 except ImportError:
-    from logger import log_ingestion_start, log_ingestion_item, log_ingestion_summary, log_final_state, logger
+    from logger import log_ingestion_start, log_ingestion_summary, logger
 
 def clean_money_value(val):
     """
@@ -133,7 +133,7 @@ def parse_portfolio_excel(file_stream, debug=False):
             # Qty can be None (Price Update only) or float
             qty = clean_money_value(row.iloc[2]) if not pd.isna(row.iloc[2]) else None
             
-            # log_ingestion_item(isin, "PARSED", f"Row {idx+2}: Qty={qty} Op={row.iloc[6]}") # Silent in normal mode
+            # logger.debug(f"PARSED Row {idx+2}: Qty={qty} Op={row.iloc[6]}") # Silent in normal mode
 
             # Handle NaT (Not a Time) converting to None
             # [NEW] Parse Asset Type dynamically by column name or fallback to index 9
@@ -266,7 +266,7 @@ def calculate_delta(excel_data, db_holdings):
         
         if is_explicit_buy:
             if excel_qty is None or not op_price:
-                 log_ingestion_item(isin, "ERROR_INCOMPLETE_OP", "Buy Op missing Qty or Price")
+                 if debug: logger.debug(f"INGEST ITEM {isin}: ERROR_INCOMPLETE_OP - Buy Op missing Qty or Price")
                  delta_actions.append({"isin": isin, "type": "ERROR_INCOMPLETE_OP", "quantity_change": 0, "current_db_qty": db_qty, "new_total_qty": db_qty, "details": "Operazione Acquisto incompleta (Manca Qta o Prezzo)."})
                  continue
                  
@@ -276,13 +276,13 @@ def calculate_delta(excel_data, db_holdings):
             
         elif is_explicit_sell:
             if excel_qty is None or not op_price:
-                 log_ingestion_item(isin, "ERROR_INCOMPLETE_OP", "Sell Op missing Qty or Price")
+                 if debug: logger.debug(f"INGEST ITEM {isin}: ERROR_INCOMPLETE_OP - Sell Op missing Qty or Price")
                  delta_actions.append({"isin": isin, "type": "ERROR_INCOMPLETE_OP", "quantity_change": 0, "current_db_qty": db_qty, "new_total_qty": db_qty, "details": "Operazione Vendita incompleta (Manca Qta o Prezzo)."})
                  continue
 
             # Validate: Cannot sell more than owned
             if excel_qty > db_qty + 1e-6: # Tolerance
-                log_ingestion_item(isin, "ERROR_NEGATIVE_QTY", f"Attempt to sell {excel_qty} > Owned {db_qty}")
+                if debug: logger.debug(f"INGEST ITEM {isin}: ERROR_NEGATIVE_QTY - Attempt to sell {excel_qty} > Owned {db_qty}")
                 delta_actions.append({
                     "isin": isin,
                     "type": "ERROR_NEGATIVE_QTY",
@@ -327,7 +327,7 @@ def calculate_delta(excel_data, db_holdings):
             if excel_qty is not None:
                 diff = excel_qty - db_qty
                 if abs(diff) > 1e-6:
-                    log_ingestion_item(isin, "ERROR_MISMATCH_NO_OP", f"Qty mismatch {db_qty}->{excel_qty} but no Op.")
+                    if debug: logger.debug(f"INGEST ITEM {isin}: ERROR_MISMATCH_NO_OP - Qty mismatch {db_qty}->{excel_qty} but no Op.")
                     delta_actions.append({
                         "isin": isin,
                         "type": "ERROR_QTY_MISMATCH_NO_OP",
@@ -340,12 +340,12 @@ def calculate_delta(excel_data, db_holdings):
 
             # If Qty matches (or is None), treat as Price Update.
             is_price_only = True
-            log_ingestion_item(isin, "PRICE_UPDATE", "No Op declared. Treating as Price Update only.")
+            if debug: logger.debug(f"INGEST ITEM {isin}: PRICE_UPDATE - No Op declared. Treating as Price Update only.")
 
         # Metadata Check (Asset Type)
         excel_type = row.get('asset_type')
         if excel_type and excel_type != db_type:
-             log_ingestion_item(isin, "META_DIFF", f"Type change: DB='{db_type}' -> Excel='{excel_type}'")
+             if debug: logger.debug(f"INGEST ITEM {isin}: META_DIFF - Type change: DB='{db_type}' -> Excel='{excel_type}'")
              # We always include metadata update if changed, even for Price Updates
              # If it's Price Only, we generate a specific METADATA_UPDATE action if type changed
              if is_price_only:
@@ -371,7 +371,7 @@ def calculate_delta(excel_data, db_holdings):
         if db_qty == 0 and action_type == "Acquisto":
              # Ensure we have price and date for new asset
              if not (op_price and op_price > 0 and op_date):
-                 log_ingestion_item(isin, "INCONSISTENT_NEW_ISIN", "New ISIN buy missing price/date")
+                 if debug: logger.debug(f"INGEST ITEM {isin}: INCONSISTENT_NEW_ISIN - New ISIN buy missing price/date")
                  delta_actions.append({
                     "isin": isin,
                     "type": "INCONSISTENT_NEW_ISIN",
@@ -395,7 +395,7 @@ def calculate_delta(excel_data, db_holdings):
             "new_total_qty": new_total_qty
         }
         delta_actions.append(action)
-        log_ingestion_item(isin, "DELTA", f"{action_type} {abs(diff)} (NewTotal={new_total_qty})")
+        if debug: logger.debug(f"INGEST ITEM {isin}: DELTA - {action_type} {abs(diff)} (NewTotal={new_total_qty})")
 
     # [SIMPLIFIED LOGIC] No Missing Check Loop.
     

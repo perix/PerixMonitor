@@ -36,6 +36,9 @@ register_assets_routes(app)
 register_portfolio_routes(app)
 register_analysis_routes(app)
 
+from flask_cors import CORS
+CORS(app, resources={r"/api/*": {"origins": "*"}}) # Enable CORS for all API routes
+
 import sys
 logger.info("Backend API Initialized")
 logger.info(f"debug_exec: {sys.executable}")
@@ -76,7 +79,7 @@ def check_debug_mode(portfolio_id):
 @app.route('/api/sync', methods=['POST'])
 def sync_transactions():
     try:
-        from logger import configure_file_logging
+        from logger import configure_file_logging, log_audit
         data = request.json
         changes = data.get('changes', [])
         portfolio_id = data.get('portfolio_id')
@@ -105,7 +108,7 @@ def sync_transactions():
                 # Update upload_date to NOW just to be precise on confirm
                 snapshot['upload_date'] = datetime.now().isoformat()
                 supabase.table('snapshots').insert(snapshot).execute()
-                if debug_mode: logger.info(f"SYNC: Snapshot records saved.")
+                if debug_mode: logger.debug(f"SYNC: Snapshot records saved.")
             except Exception as e:
                  logger.error(f"SYNC: Snapshot save failed: {e}")
 
@@ -135,7 +138,7 @@ def sync_transactions():
                      if valid_dividends:
                          # Upsert based on unique constraint (portfolio, asset, date)
                          supabase.table('dividends').upsert(valid_dividends, on_conflict='portfolio_id, asset_id, date').execute()
-                         if debug_mode: logger.info(f"SYNC: Saved {len(valid_dividends)} dividends.")
+                         if debug_mode: logger.debug(f"SYNC: Saved {len(valid_dividends)} dividends.")
             except Exception as e:
                  logger.error(f"SYNC: Dividend save failed: {e}")
 
@@ -163,9 +166,7 @@ def sync_transactions():
                         isin_to_type[item['isin']] = str(item['asset_type_proposal']).strip()
                 
                 if debug_mode:
-                    logger.info(f"SYNC DEBUG: Found {len(isin_to_type)} asset type proposals in payload.")
-                    if len(isin_to_type) > 0:
-                        logger.info(f"SYNC DEBUG: Sample Proposals: {list(isin_to_type.items())[:3]}")
+                    logger.debug(f"SYNC DEBUG: Found {len(isin_to_type)} asset type proposals in payload.")
                 
                 if isin_to_type:
                     # We need to fetch current metadata for these assets to merge
@@ -181,7 +182,7 @@ def sync_transactions():
                                 
                                 # Check if update is needed
                                 current_meta['assetType'] = new_type
-                                if debug_mode: logger.info(f"SYNC: Backfilling Asset Type for {isin} -> {new_type}")
+                                if debug_mode: logger.debug(f"SYNC: Backfilling Asset Type for {isin} -> {new_type}")
                                 # Update both metadata and asset_class column for consistency
                                 supabase.table('assets').update({
                                     "metadata": current_meta,
@@ -207,7 +208,7 @@ def sync_transactions():
                                      
                                      # Update if different and new name is valid
                                      if new_name and new_name != current_name and len(new_name) > 2:
-                                         if debug_mode: logger.info(f"SYNC: Updating Asset Name for {isin}: '{current_name}' -> '{new_name}'")
+                                         if debug_mode: logger.debug(f"SYNC: Updating Asset Name for {isin}: '{current_name}' -> '{new_name}'")
                                          supabase.table('assets').update({"name": new_name}).eq('id', row['id']).execute()
                 
                 # 3c. Identify and Create missing assets
@@ -241,7 +242,7 @@ def sync_transactions():
                     if res_new.data:
                         for row in res_new.data:
                             asset_map[row['isin']] = row['id']
-                            if debug_mode: logger.info(f"SYNC: Created asset {row['isin']} with name '{row['name']}'")
+                            if debug_mode: logger.debug(f"SYNC: Created asset {row['isin']} with name '{row['name']}'")
                             
                             # Assign color to new asset
                             try:
@@ -269,18 +270,18 @@ def sync_transactions():
                                                 "metadata": new_meta,
                                                 "metadata_text": None
                                             }).eq('id', row['id']).execute()
-                                            if debug_mode: logger.info(f"SYNC: Updated asset {row['isin']} with LLM JSON metadata")
+                                            if debug_mode: logger.debug(f"SYNC: Updated asset {row['isin']} with LLM JSON metadata")
                                         elif llm_result.get('response_type') == 'text':
                                             # Save text/markdown to metadata_text column
                                             supabase.table('assets').update({
                                                 "metadata": None,
                                                 "metadata_text": llm_result['data']
                                             }).eq('id', row['id']).execute()
-                                            if debug_mode: logger.info(f"SYNC: Updated asset {row['isin']} with LLM text/markdown metadata")
+                                            if debug_mode: logger.debug(f"SYNC: Updated asset {row['isin']} with LLM text/markdown metadata")
                                     except Exception as llm_err:
                                         logger.error(f"SYNC: Failed to save LLM metadata for {row['isin']}: {llm_err}")
                             else:
-                                if debug_mode: logger.info(f"SYNC: AI lookup disabled, skipping LLM metadata for {row['isin']}")
+                                if debug_mode: logger.debug(f"SYNC: AI lookup disabled, skipping LLM metadata for {row['isin']}")
                 
                 
                 for item in changes:
@@ -347,13 +348,14 @@ def sync_transactions():
                  except Exception as p_err:
                      logger.error(f"SYNC PRICE FAIL: {p['isin']} -> {p_err}")
             
-            if debug_mode: logger.info(f"SYNC: Saved {count_prices} price snapshots.")
+            if debug_mode: logger.debug(f"SYNC: Saved {count_prices} price snapshots.")
 
         if valid_transactions:
             res = supabase.table('transactions').insert(valid_transactions).execute()
-            if debug_mode: logger.info(f"SYNC SUCCESS: Inserted {len(valid_transactions)} transactions for portfolio {portfolio_id}.")
+            log_audit("SYNC_SUCCESS", f"Portfolio {portfolio_id}: {len(valid_transactions)} transactions, {len(prices)} prices.")
             return jsonify(message=f"Successfully synced. Prices: {len(prices)}. Trans: {len(valid_transactions)}"), 200
         else:
+            log_audit("SYNC_SUCCESS", f"Portfolio {portfolio_id}: {len(prices)} prices only.")
             return jsonify(message=f"Synced. Prices: {len(prices)}. No transactions."), 200
 
     except Exception as e:
@@ -365,6 +367,7 @@ def sync_transactions():
 
 @app.route('/api/reset', methods=['POST'])
 def reset_db_route():
+    from logger import log_audit
     logger.warning("RESET DB REQUEST RECEIVED")
     try:
         data = request.json
@@ -398,7 +401,7 @@ def reset_db_route():
         logger.info("RESET: Deleting ALL Portfolios...")
         supabase.table('portfolios').delete().neq('id', -1).execute()
 
-        logger.info(f"DB Reset: FULL WIPE COMPLETED (Virgin DB). User preserved.")
+        log_audit("RESET_DB", f"FULL WIPE COMPLETED for Portfolio {portfolio_id}")
         return jsonify(status="ok", message="Database completely wiped (Portfolios, Assets, Prices, History, Transactions)."), 200
             
     except Exception as e:
@@ -407,7 +410,7 @@ def reset_db_route():
 
 @app.route('/api/ingest', methods=['POST'])
 def ingest_excel():
-    from logger import clear_log_file, configure_file_logging
+    from logger import clear_log_file, configure_file_logging, log_ingestion_start, log_ingestion_summary, log_audit
     
     # [NEW] Configure logging based on user preference ASAP
     # We peek at portfolio_id to check settings (even if we validate it later)
@@ -434,6 +437,8 @@ def ingest_excel():
         # Check debug mode
         portfolio_id = request.form.get('portfolio_id')
         debug_mode = check_debug_mode(portfolio_id)
+        
+        log_ingestion_start(file.filename)
 
         parse_result = parse_portfolio_excel(file.stream, debug=debug_mode)
         
@@ -477,7 +482,7 @@ def ingest_excel():
                         if meta and not db_holdings[isin]["metadata"]:
                              db_holdings[isin]["metadata"] = meta
                 
-                if debug_mode: logger.info(f"Fetched holdings for {portfolio_id}: {len(db_holdings)} assets")
+                if debug_mode: logger.debug(f"Fetched holdings for {portfolio_id}: {len(db_holdings)} assets")
                 
             except Exception as e:
                 logger.error(f"INGEST: Failed to fetch DB holdings: {e}")
@@ -534,9 +539,12 @@ def ingest_excel():
             }
 
         # [DEBUG] Log the outgoing details
-        logger.info(f"INGEST DEBUG: Sending Response. Delta Len: {len(delta)}, Prices Len: {len(prices_to_save)}")
-        if len(delta) > 0:
-             logger.info(f"INGEST DEBUG: Delta Sample: {delta[0]}")
+        if debug_mode:
+            logger.debug(f"INGEST DEBUG: Sending Response. Delta Len: {len(delta)}, Prices Len: {len(prices_to_save)}")
+            if len(delta) > 0:
+                 logger.debug(f"INGEST DEBUG: Delta Sample: {delta[0]}")
+
+        log_ingestion_summary(len(parse_result['data']), len(delta), 0) # Missing count legacy
 
         return jsonify(
             type='PORTFOLIO',
@@ -583,6 +591,7 @@ def calculate_xirr_route():
 
 @app.route('/api/portfolios', methods=['GET', 'POST', 'OPTIONS'])
 def manage_portfolios():
+    from logger import log_audit
     try:
         if request.method == 'GET':
             user_id = request.args.get('user_id')
@@ -609,7 +618,7 @@ def manage_portfolios():
         
         if res.data:
             new_portfolio = res.data[0]
-            logger.info(f"PORTFOLIO CREATED: ID={new_portfolio['id']}, Name='{name}', User={user_id}")
+            log_audit("PORTFOLIO_CREATED", f"ID={new_portfolio['id']}, Name='{name}'")
             return jsonify(new_portfolio), 200
         else:
             logger.error(f"PORTFOLIO CREATE FAIL: Supabase returned no data")
@@ -621,6 +630,7 @@ def manage_portfolios():
 
 @app.route('/api/portfolios/<portfolio_id>', methods=['DELETE'])
 def delete_portfolio(portfolio_id):
+    from logger import log_audit
     try:
         supabase = get_supabase_client()
         
@@ -639,7 +649,7 @@ def delete_portfolio(portfolio_id):
         
         res = supabase.table('portfolios').delete().eq('id', portfolio_id).execute()
         
-        logger.info(f"PORTFOLIO DELETED: ID={portfolio_id}, Name='{p_name}'")
+        log_audit("PORTFOLIO_DELETED", f"ID={portfolio_id}, Name='{p_name}'")
         return jsonify(message="Portfolio deleted"), 200
 
     except Exception as e:
@@ -926,12 +936,13 @@ def test_llm_endpoint():
         template = load_descr_asset_template()
         if not template:
             return jsonify(error="Failed to load asset template"), 500
+            
+        supabase = get_supabase_client()
         
         # Use custom prompt or fetch from DB or use default
         if custom_prompt:
             prompt_template = custom_prompt
         else:
-            supabase = get_supabase_client()
             res = supabase.table('app_config').select('value').eq('key', 'llm_asset_prompt').single().execute()
             if res.data and res.data.get('value'):
                 prompt_template = res.data['value'].get('prompt', DEFAULT_LLM_PROMPT)
@@ -942,7 +953,7 @@ def test_llm_endpoint():
         asset_name = isin  # Default to ISIN if not found
         if '{nome_asset}' in prompt_template:
             try:
-                supabase = get_supabase_client()
+                # Re-using supabase client
                 asset_res = supabase.table('assets').select('name').eq('isin', isin).single().execute()
                 if asset_res.data and asset_res.data.get('name'):
                     asset_name = asset_res.data['name']
@@ -953,6 +964,24 @@ def test_llm_endpoint():
         # Build final prompt with all placeholders
         final_prompt = prompt_template.replace('{isin}', isin).replace('{template}', template).replace('{nome_asset}', asset_name)
         
+        # [NEW] Fetch Global AI Configuration
+        res_config = supabase.table('app_config').select('value').eq('key', 'openai_config').single().execute()
+        
+        # Default Config if missing
+        model_to_use = 'gpt-4o-mini'
+        temperature = 0.3
+        max_tokens = 4000
+        reasoning_effort = None
+        web_search_enabled = False
+        
+        if res_config.data and res_config.data.get('value'):
+            cfg = res_config.data['value']
+            model_to_use = cfg.get('model', 'gpt-4o-mini')
+            temperature = float(cfg.get('temperature', 0.3))
+            max_tokens = int(cfg.get('max_tokens', 4000))
+            reasoning_effort = cfg.get('reasoning_effort')
+            web_search_enabled = cfg.get('web_search_enabled', False)
+        
         # Get API key
         api_key = os.getenv('OPENAI_API_KEY')
         if not api_key:
@@ -961,29 +990,90 @@ def test_llm_endpoint():
         # Make LLM call
         client = openai.OpenAI(api_key=api_key)
         
+        # Prepare Parameters
+        api_params = {
+            "model": model_to_use,
+            "messages": [{"role": "user", "content": final_prompt}],
+        }
+        
+        # Check for Reasoning Models (o1, o3, gpt-5)
+        # Note: gpt-5 might support temperature, but reasoning models usually don't or have restrictions.
+        # Adhering to same logic as llm_asset_info.py
+        is_reasoning_model = model_to_use.startswith('gpt-5') or model_to_use.startswith('o1') or model_to_use.startswith('o3')
+
+        if is_reasoning_model and reasoning_effort and reasoning_effort.lower() != 'none':
+             api_params["reasoning_effort"] = reasoning_effort
+             api_params["max_completion_tokens"] = int(max_tokens)
+             # Temperature is typically NOT supported with reasoning_effort or o-series models strictly
+             # We skip temperature here.
+        else:
+             # Standard models
+             api_params["temperature"] = temperature
+             api_params["max_tokens"] = int(max_tokens)
+
         logger.info(f"DEV TEST LLM: Request for ISIN: {isin}")
-        logger.info(f"DEV TEST LLM: === FULL PROMPT START ===")
-        logger.info(final_prompt)
-        logger.info(f"DEV TEST LLM: === FULL PROMPT END ===")
+        logger.info(f"  > Model: {model_to_use}")
+        logger.info(f"  > Params: Reasoning={reasoning_effort if is_reasoning_model else 'N/A'}, WebSearch={web_search_enabled}")
         
-        response = client.chat.completions.create(
-            model='gpt-4o-mini',
-            messages=[{"role": "user", "content": final_prompt}],
-            temperature=0.3,
-            max_tokens=4000
-        )
-        
-        response_text = response.choices[0].message.content.strip()
+        if web_search_enabled:
+            # [NEW] Native Native Web Search via Responses API
+            logger.info("DEV TEST LLM: Using Native Responses API for Web Search")
+            try:
+                # Responses API uses 'input' instead of 'messages' and supports 'web_search_preview'
+                response = client.responses.create(
+                    model=model_to_use,
+                    tools=[{"type": "web_search_preview"}],
+                    input=[{"role": "user", "content": final_prompt}]
+                )
+                
+                # Handling response from new API
+                logger.info(f"DEV TEST LLM: Responses Object Keys: {dir(response)}")
+                
+                if hasattr(response, 'output_text'):
+                    response_text = response.output_text
+                    logger.info("DEV TEST LLM: Found 'output_text' attribute.")
+                elif hasattr(response, 'message'):
+                     response_text = response.message.content
+                     logger.info("DEV TEST LLM: Found 'message.content' attribute.")
+                else:
+                    response_text = str(response)
+                    logger.warning("DEV TEST LLM: Fallback to str(response).")
+                
+                # Log extraction result
+                preview = (response_text[:200] + '...') if response_text and len(response_text) > 200 else response_text
+                logger.info(f"DEV TEST LLM: Extracted Text Preview: {preview}")
+
+            except Exception as e:
+                logger.error(f"DEV TEST LLM: Responses API Failed: {e}")
+                return jsonify(error=f"Responses API Error: {str(e)}"), 500
+
+        else:
+            # Standard Chat Completion (No Search)
+            response = client.chat.completions.create(**api_params)
+            msg = response.choices[0].message
+            response_text = msg.content
+            
+            if response_text is None:
+                 if msg.tool_calls:
+                     tool_call = msg.tool_calls[0]
+                     response_text = f"[SYSTEM] Model invoked tool '{tool_call.function.name}'. (Execution skipped in Dev Test single-shot)"
+                 else:
+                     response_text = "[SYSTEM] No content returned."
+            
+            response_text = response_text.strip()
         
         # Try to parse as JSON for validation
         try:
-            if response_text.startswith('```'):
-                lines = response_text.split('\n')
-                start_idx = 1 if lines[0].startswith('```') else 0
+            # Helper to strip markdown code blocks if present
+            clean_text = response_text
+            if clean_text.startswith('```'):
+                lines = clean_text.split('\n')
+                # Check if first line is ```json or just ```
+                start_idx = 1 
                 end_idx = len(lines) - 1 if lines[-1].strip() == '```' else len(lines)
-                response_text = '\n'.join(lines[start_idx:end_idx])
+                clean_text = '\n'.join(lines[start_idx:end_idx])
             
-            parsed = json_module.loads(response_text)
+            parsed = json_module.loads(clean_text)
             is_valid_json = True
         except:
             parsed = None
@@ -994,7 +1084,12 @@ def test_llm_endpoint():
         return jsonify(
             response=response_text,
             is_valid_json=is_valid_json,
-            prompt_used=final_prompt
+            prompt_used=final_prompt,
+            config_used={
+                "model": model_to_use,
+                "reasoning_effort": reasoning_effort if is_reasoning_model else None,
+                "web_search": web_search_enabled
+            }
         ), 200
         
     except Exception as e:

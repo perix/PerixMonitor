@@ -5,52 +5,37 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 
-# Configure Logging
+# --- Configuration ---
 LOG_FILE_PATH = os.environ.get('LOG_FILE_PATH', '/tmp/perix_monitor.log')
 ENABLE_FILE_LOGGING = os.environ.get('ENABLE_FILE_LOGGING', 'False').lower() == 'true'
 
+# Create Custom Logger
 logger = logging.getLogger("perix_monitor")
 logger.setLevel(logging.DEBUG)
 
-# Console Handler
+# Console Handler (Standard Output)
 ch = logging.StreamHandler()
 ch.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
-# File Handler (Optional via Flag)
-# We support dynamic configuration, so ENABLE_FILE_LOGGING acts as global state.
-if ENABLE_FILE_LOGGING:
-    # Ensure directory exists if not in /tmp
-    log_dir = os.path.dirname(LOG_FILE_PATH)
-    if log_dir and not os.path.exists(log_dir):
-        try:
-            os.makedirs(log_dir)
-        except Exception as e:
-            print(f"Failed to create log dir: {e}")
+# --- File Logging Management ---
 
-    fh = logging.FileHandler(LOG_FILE_PATH)
-    fh.setLevel(logging.DEBUG) # Detail log in file
-    file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    fh.setFormatter(file_formatter)
-    logger.addHandler(fh)
+def _get_file_handler():
+    """Helper to find existing file handler."""
+    for h in logger.handlers:
+        if isinstance(h, logging.FileHandler):
+            return h
+    return None
 
 def configure_file_logging(enabled: bool):
     """
-    Dynamically enable or disable file logging.
-    Used by API to sync with user preferences.
+    Dynamically enable or disable file logging based on user config.
     """
     global ENABLE_FILE_LOGGING
     
-    # If state is same, do nothing (unless we want to enforce handler presence)
-    # But let's check handler presence to be sure.
-    
-    file_handler = None
-    for h in logger.handlers:
-        if isinstance(h, logging.FileHandler):
-            file_handler = h
-            break
+    file_handler = _get_file_handler()
     
     if enabled:
         ENABLE_FILE_LOGGING = True
@@ -60,44 +45,71 @@ def configure_file_logging(enabled: bool):
                 if log_dir and not os.path.exists(log_dir):
                     os.makedirs(log_dir)
 
-                fh = logging.FileHandler(LOG_FILE_PATH)
-                fh.setLevel(logging.DEBUG)
+                fh = logging.FileHandler(LOG_FILE_PATH, encoding='utf-8')
+                fh.setLevel(logging.DEBUG) # File gets everything (Audit + Debug)
                 file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
                 fh.setFormatter(file_formatter)
                 logger.addHandler(fh)
-                logger.info(f"File logging ENABLED dynamically (Config Update).")
+                logger.info(f"[SYSTEM] File logging ENABLED dynamically.")
             except Exception as e:
-                logger.error(f"Failed to enable file logging: {e}")
+                logger.error(f"[SYSTEM] Failed to enable file logging: {e}")
     else:
         ENABLE_FILE_LOGGING = False
         if file_handler:
-            logger.info(f"File logging DISABLED dynamically (Config Update).")
+            logger.info(f"[SYSTEM] File logging DISABLED dynamically.")
             file_handler.close()
             logger.removeHandler(file_handler)
 
-def log_ingestion_start(filename):
-    logger.info(f"STARTED Ingestion for file: {filename}")
+# Verify initial state
+if ENABLE_FILE_LOGGING:
+    configure_file_logging(True)
 
-def log_ingestion_item(isin, status, details):
+
+# --- Audit & Helper Functions ---
+
+def log_audit(event_type: str, details: str):
     """
-    Log every ISIN processing step during ingestion.
+    Log high-level audit events (INGESTION, SYNC, ADMIN actions).
+    These are printed to Console (INFO) and File (if enabled).
     """
-    if ENABLE_FILE_LOGGING:
-        logger.debug(f"INGESTION ROW: ISIN={isin} STATUS={status} DETAILS={details}")
+    msg = f"[AUDIT] {event_type.upper()} | {details}"
+    logger.info(msg)
+
+def log_ingestion_start(filename):
+    log_audit("INGEST_START", f"File: {filename}")
 
 def log_ingestion_summary(total_rows, delta_count, missing_count, extra=None):
-    logger.info(f"COMPLETED Ingestion. Total={total_rows}, Updates={delta_count}, Missing={missing_count}")
+    details = f"Rows processed: {total_rows}, Updates: {delta_count}, Missing: {missing_count}"
     if extra:
-        logger.info(f"SUMMARY EXTRA: {extra}")
+        details += f" | {extra}"
+    log_audit("INGEST_END", details)
 
-def log_final_state(all_isins):
+def clear_log_file():
     """
-    Log all ISINs stored in DB at the end of process.
+    Clear the log file content safely.
     """
-    if ENABLE_FILE_LOGGING:
-        logger.info("FINAL DB STATE DUMP:")
-        for item in all_isins:
-            logger.info(f"DB_DUMP: {item}")
+    if ENABLE_FILE_LOGGING and LOG_FILE_PATH:
+        try:
+            file_handler = _get_file_handler()
+            
+            # Temporarily close handler to release lock
+            if file_handler:
+                file_handler.close()
+                logger.removeHandler(file_handler)
+
+            # Truncate
+            with open(LOG_FILE_PATH, 'w', encoding='utf-8'):
+                pass
+            
+            # Restore handler
+            if file_handler:
+                configure_file_logging(True)
+                
+            log_audit("SYSTEM", "Log file cleared manually.")
+        except Exception as e:
+            logger.error(f"Failed to clear log file: {e}")
+
+# --- Email Notification ---
 
 def send_password_reset_email(recipient_email, new_password):
     """
@@ -125,16 +137,8 @@ def send_password_reset_email(recipient_email, new_password):
 
     if not all([smtp_host, smtp_port, smtp_user, smtp_pass]):
         logger.warning("SMTP not fully configured. Logging email content instead.")
-        logger.info(f"EMAIL SIMULATION to {recipient_email}:")
-        logger.info(f"Subject: {subject}")
-        logger.info(f"Body: {body}")
-        # Also print to stdout for visibility
-        print("="*60)
-        print(f"📧 EMAIL SIMULATION (SMTP non configurato)")
-        print(f"To: {recipient_email}")
-        print(f"Subject: {subject}")
-        print(f"Body: {body}")
-        print("="*60)
+        # We use simple logger info here, not Audit, to avoid spamming Audit log with body
+        logger.info(f"EMAIL SIMULATION to {recipient_email} | Subject: {subject}")
         return True
 
     try:
@@ -149,43 +153,9 @@ def send_password_reset_email(recipient_email, new_password):
         server.login(smtp_user, smtp_pass)
         server.send_message(msg)
         server.quit()
-        logger.info(f"Email successfully sent to {recipient_email}")
+        log_audit("EMAIL_SENT", f"Password reset email sent to {recipient_email}")
         return True
     except Exception as e:
         logger.error(f"Failed to send email to {recipient_email}: {e}")
         return False
 
-def clear_log_file():
-    """
-    Clear the log file content.
-    Handles Windows file locking by closing the handler temporarily.
-    """
-    if ENABLE_FILE_LOGGING and LOG_FILE_PATH:
-        try:
-            # 1. Find and close the FileHandler
-            file_handler = None
-            for h in logger.handlers:
-                if isinstance(h, logging.FileHandler):
-                    file_handler = h
-                    break
-            
-            if file_handler:
-                file_handler.close()
-                logger.removeHandler(file_handler)
-
-            # 2. Truncate the file
-            with open(LOG_FILE_PATH, 'w'):
-                pass
-            
-            # 3. Restore the FileHandler
-            if file_handler:
-                # Re-create handler to reopen the file
-                new_handler = logging.FileHandler(LOG_FILE_PATH)
-                new_handler.setLevel(logging.DEBUG)
-                new_handler.setFormatter(file_formatter)
-                logger.addHandler(new_handler)
-                
-            logger.info("Log file cleared successfully.")
-        except Exception as e:
-            # Fallback log to console if file log fails
-            print(f"Failed to clear log file: {e}")

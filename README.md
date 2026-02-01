@@ -106,3 +106,11 @@ Solo confermando la preview i dati vengono scritti nel database.
 - **Statistiche Dinamiche (Windowed)**: 
   - Nel pannello di dettaglio asset, i valori di **Profitto/Perdita** e **MWR** si aggiornano in tempo reale in base alla finestra temporale selezionata tramite lo slider.
   - Il calcolo utilizza un'approssimazione *Modified Dietz* per il periodo visibile (o il valore preciso backend se si parte dall'inizio).
+
+### Integrazione AI & Audit (01/02/2026)
+- **AI Avanzata (GPT-5)**: Supporto nativo per `gpt-5-mini` e modelli reasoning via **OpenAI Responses API**.
+- **Native Web Search**: Integrazione della ricerca web autonoma per arricchimento dati asset.
+- **UI Agnostica**: Pannello configurazione AI che si adatta dinamicamente alle capacità del modello.
+- **Supporto CORS & Long-running tasks**: Ottimizzazione del timeout (5 min) e bypass proxy per query AI complesse.
+- **Sistema di Audit**: Nuovo motore di logging professionale con attivazione dinamica dei log tecnici.
+- **Codebase Clean-up**: Consolidamento dipendenze e rimozione script legacy.

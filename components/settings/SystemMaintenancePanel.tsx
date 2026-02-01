@@ -200,7 +200,7 @@ export default function SystemMaintenancePanel() {
                         <CardDescription>Abilita o disabilita il logging su file</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="flex items-center justify-between p-4 rounded-lg border border-white/10 bg-secondary/20">
+                        <div className="flex items-center justify-between p-4 rounded-lg border border-white/20 bg-white/5">
                             <div className="space-y-1">
                                 <Label htmlFor="log-toggle" className="text-sm font-medium text-slate-200">File Logging</Label>
                                 <p className="text-xs text-slate-400">

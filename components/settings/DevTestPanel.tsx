@@ -125,9 +125,13 @@ export default function DevTestPanel() {
         setIsValidJson(null);
 
         try {
-            const res = await axios.post('/api/dev/test-llm', {
+            // [FIX] Use direct backend URL to bypass Next.js Proxy timeout (60s)
+            // for very long running tasks like Web Search (80s+)
+            const res = await axios.post('http://127.0.0.1:5328/api/dev/test-llm', {
                 isin: selectedIsin,
                 prompt: prompt // Send current (possibly modified) prompt
+            }, {
+                timeout: 300000 // 5 minutes timeout for slow web search models
             });
 
             setResponse(res.data.response || '');
@@ -201,7 +205,7 @@ export default function DevTestPanel() {
                             <p className="text-slate-400 text-sm">Nessun asset nel portfolio selezionato</p>
                         ) : (
                             <Select value={selectedIsin} onValueChange={setSelectedIsin}>
-                                <SelectTrigger className="w-full bg-secondary/20 border-white/10">
+                                <SelectTrigger className="w-full bg-white/5 border-white/20">
                                     <SelectValue placeholder="Seleziona un asset..." />
                                 </SelectTrigger>
                                 <SelectContent className="bg-slate-900 border-white/10">
@@ -269,7 +273,7 @@ export default function DevTestPanel() {
                             <textarea
                                 value={prompt}
                                 onChange={(e) => setPrompt(e.target.value)}
-                                className="w-full h-64 p-4 bg-slate-900/50 border border-white/10 rounded-lg text-slate-200 font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                                className="w-full h-64 p-4 bg-white/5 border border-white/20 rounded-lg text-slate-200 font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-500/50"
                                 placeholder="Inserisci il prompt template..."
                             />
                         )}
@@ -359,7 +363,7 @@ export default function DevTestPanel() {
                             <textarea
                                 value={response}
                                 readOnly
-                                className="w-full h-96 p-4 bg-slate-900/50 border border-white/10 rounded-lg text-slate-200 font-mono text-xs resize-none focus:outline-none"
+                                className="w-full h-96 p-4 bg-white/5 border border-white/20 rounded-lg text-slate-200 font-mono text-xs resize-none focus:outline-none"
                             />
                         ) : (
                             <div className="h-40 flex items-center justify-center text-slate-500 border border-dashed border-white/10 rounded-lg">

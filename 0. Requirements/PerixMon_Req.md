@@ -19,7 +19,8 @@ The application must register all the- **Ingestione Dati**: Upload di file Excel
     - I dati (Transazioni, Asset, Performance) sono segregati per Portafoglio.
 - **Riconciliazione**: Rilevamento automatico di Acquisti/Vendite in base alle differenze di quantità.
 - **Logica Fiscale/Finanziaria**: Calcolo MWR (Money Weighted Return) e XIRR.
-- **Dashboard**: Visualizzazione chiara di Allocazione e Performance.ial literature.
+- **Integrazione AI**: Arricchimento dati asset tramite OpenAI (GPT-5, Web Search).
+- **Dashboard**: Visualizzazione chiara di Allocazione e Performance.
 
 ## TECHNICAL STACK (Vercel and Supabase Non-negotiable):
 
@@ -67,7 +68,10 @@ Hosting: Vercel (Front-end + Backend).
 
 - Open Source Support: evaluate the use of the OpenBB Platform and other libraries available on GitHub to make the development production-ready and high-performing, eliminating uncertainties and the testing time required for a from-scratch development. 
 
-- Logging: Implement a file-based logging system that can be enabled via a FLAG in the code and that generates a log file with timestamps and all the information needed to trace the application’s logic. You should log only the relevant high-level operations, except for the Excel file ingestion phase, where the log must include detailed information about the processing performed for each ISIN. At the end of the ingestion process, you must list in the log all ISINs stored in the database along with their associated data.
+- Logging: Implement a file-based logging system that can be enabled dynamically via the UI (Maintenance page). 
+  - **Audit Trail**: High-level log for critical operations (Ingestion, Sync, Reset).
+  - **Technical Logs**: Detailed debug info (ISIN processing, API interactions, LLM usage).
+  - **Auto-Cleanup**: Ability to clear logs from the interface.
 
 - Unit test for financial math: plan to do a thorought test for the financial math part in order to be sure that the calculations done are correct.
 

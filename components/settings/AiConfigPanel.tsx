@@ -10,6 +10,8 @@ import {
     CheckCircle2,
     AlertCircle,
     Loader2,
+    Globe,
+    Search
 } from 'lucide-react';
 import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 
 interface AppConfigState {
     model: string;
@@ -25,8 +28,24 @@ interface AppConfigState {
     max_tokens: number;
     cost_in: number;
     cost_out: number;
-    history_length: number;
     reasoning_effort?: string;
+    web_search_enabled: boolean;
+}
+
+interface ModelCapability {
+    reasoning: boolean;
+    web_search: boolean;
+    temperature: boolean;
+}
+
+interface ModelDefinition {
+    id: string;
+    name: string;
+    desc: string;
+    default_in: number;
+    default_out: number;
+    badge: string | null;
+    capabilities: ModelCapability;
 }
 
 export default function AiConfigPanel() {
@@ -37,14 +56,14 @@ export default function AiConfigPanel() {
         max_tokens: 1000,
         cost_in: 0.15,
         cost_out: 0.6,
-        history_length: 8,
-        reasoning_effort: 'medium'
+        reasoning_effort: 'medium',
+        web_search_enabled: false
     });
     const [loading, setLoading] = useState<boolean>(false);
     const [testStatus, setTestStatus] = useState<'success' | 'error' | null>(null);
     const [errorMessage, setErrorMessage] = useState<string>('');
 
-    const AVAILABLE_MODELS = [
+    const AVAILABLE_MODELS: ModelDefinition[] = [
         {
             id: 'gpt-4o-mini',
             name: 'GPT-4o Mini',
@@ -52,30 +71,25 @@ export default function AiConfigPanel() {
             default_in: 0.15,
             default_out: 0.6,
             badge: 'Consigliato',
+            capabilities: { reasoning: false, web_search: false, temperature: true }
         },
         {
-            id: 'gpt-4.1',
-            name: 'GPT-4.1',
-            desc: 'Nuova generazione',
-            default_in: 2.0,
-            default_out: 8.0,
-            badge: null,
+            id: 'gpt-4.5-preview',
+            name: 'GPT-4.5',
+            desc: 'Reasoning & Vision',
+            default_in: 75.0,
+            default_out: 225.0,
+            badge: 'New',
+            capabilities: { reasoning: false, web_search: true, temperature: true }
         },
         {
-            id: 'gpt-5-mini-2025-08-07',
+            id: 'gpt-5-mini', // Hypothetical ID as per user context
             name: 'GPT-5 Mini',
-            desc: 'Efficiente e smart',
+            desc: 'Next-Gen Reasoning',
             default_in: 0.25,
             default_out: 1.0,
             badge: 'Nuovo',
-        },
-        {
-            id: 'gpt-5.2',
-            name: 'GPT-5.2',
-            desc: "Stato dell'arte",
-            default_in: 10.0,
-            default_out: 30.0,
-            badge: 'Premium',
+            capabilities: { reasoning: true, web_search: true, temperature: false }
         },
         {
             id: 'gpt-4-turbo',
@@ -84,15 +98,17 @@ export default function AiConfigPanel() {
             default_in: 10.0,
             default_out: 30.0,
             badge: null,
+            capabilities: { reasoning: false, web_search: true, temperature: true }
         },
         {
-            id: 'gpt-3.5-turbo',
-            name: 'GPT-3.5 Turbo',
-            desc: 'Economico',
-            default_in: 0.5,
-            default_out: 1.5,
-            badge: 'Legacy',
-        },
+            id: 'o1-mini',
+            name: 'O1 Mini',
+            desc: 'Ragionamento puro',
+            default_in: 3.0,
+            default_out: 12.0,
+            badge: 'Reasoning',
+            capabilities: { reasoning: true, web_search: false, temperature: false }
+        }
     ];
 
     useEffect(() => {
@@ -115,14 +131,30 @@ export default function AiConfigPanel() {
 
     const handleModelChange = (modelId: string) => {
         const modelData = AVAILABLE_MODELS.find((m) => m.id === modelId);
-        setConfig((prev) => ({
-            ...prev,
-            model: modelId,
-            cost_in: modelData ? modelData.default_in : prev.cost_in,
-            cost_out: modelData ? modelData.default_out : prev.cost_out,
-            // Reset reasoning effort if not gpt-5
-            reasoning_effort: modelId.startsWith('gpt-5') ? (prev.reasoning_effort || 'medium') : undefined
-        }));
+        if (!modelData) return;
+
+        setConfig((prev) => {
+            const newState = {
+                ...prev,
+                model: modelId,
+                cost_in: modelData.default_in,
+                cost_out: modelData.default_out,
+            };
+
+            // Reset or Set defaults based on capabilities
+            if (modelData.capabilities.reasoning) {
+                newState.reasoning_effort = prev.reasoning_effort || 'medium';
+            } else {
+                newState.reasoning_effort = undefined;
+            }
+
+            // Web Search defaults
+            if (!modelData.capabilities.web_search) {
+                newState.web_search_enabled = false;
+            }
+
+            return newState;
+        });
     };
 
     const testAndSave = async () => {
@@ -155,7 +187,9 @@ export default function AiConfigPanel() {
         }
     };
 
-    const isReasoningModel = config.model.startsWith('gpt-5');
+    // Helper to get current model capabilities
+    const currentModelDef = AVAILABLE_MODELS.find(m => m.id === config.model);
+    const capabilities = currentModelDef?.capabilities || { reasoning: false, web_search: false, temperature: true };
 
     return (
         <div className="space-y-8">
@@ -183,20 +217,21 @@ export default function AiConfigPanel() {
                         <CardDescription>Seleziona il modello di linguaggio da utilizzare</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {AVAILABLE_MODELS.map((m) => (
                                 <div
                                     key={m.id}
                                     onClick={() => handleModelChange(m.id)}
                                     className={`relative p-4 rounded-xl border cursor-pointer transition-all duration-200 ${config.model === m.id
                                         ? 'bg-blue-500/10 border-blue-500/50 ring-1 ring-blue-500/50'
-                                        : 'bg-secondary/20 border-white/20 hover:bg-secondary/30 hover:border-white/30'
+                                        : 'bg-white/5 border-white/30 hover:bg-white/10 hover:border-white/40'
                                         }`}
                                 >
                                     {m.badge && (
                                         <Badge
                                             className={`absolute -top-2.5 right-3 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider
-                                                ${m.badge === 'Consigliato' ? 'bg-emerald-500 text-emerald-950' : 'bg-violet-500 text-violet-50'}
+                                                ${m.badge === 'Consigliato' ? 'bg-emerald-500 text-emerald-950' :
+                                                    m.badge === 'Nuovo' ? 'bg-amber-500 text-amber-950' : 'bg-violet-500 text-violet-50'}
                                             `}
                                         >
                                             {m.badge}
@@ -208,7 +243,21 @@ export default function AiConfigPanel() {
                                             {m.name}
                                         </span>
                                     </div>
-                                    <p className="text-xs text-muted-foreground pl-4">{m.desc}</p>
+                                    <p className="text-xs text-muted-foreground pl-4 mb-2">{m.desc}</p>
+
+                                    {/* Capabilities Icons */}
+                                    <div className="flex gap-2 pl-4 mt-2">
+                                        {m.capabilities.web_search && (
+                                            <span title="Web Search">
+                                                <Globe className="w-3 h-3 text-cyan-400" />
+                                            </span>
+                                        )}
+                                        {m.capabilities.reasoning && (
+                                            <span title="Reasoning">
+                                                <Activity className="w-3 h-3 text-amber-400" />
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -228,8 +277,8 @@ export default function AiConfigPanel() {
                         </CardHeader>
                         <CardContent className="space-y-6">
 
-                            {/* Reasoning Effort (Only for GPT-5) */}
-                            {isReasoningModel && (
+                            {/* Reasoning Effort (Only for Reasoning Models) */}
+                            {capabilities.reasoning && (
                                 <div className="space-y-3">
                                     <div className="flex justify-between items-center">
                                         <Label className="text-foreground">Reasoning Effort</Label>
@@ -240,42 +289,64 @@ export default function AiConfigPanel() {
                                     <select
                                         value={config.reasoning_effort || 'medium'}
                                         onChange={(e) => setConfig({ ...config, reasoning_effort: e.target.value })}
-                                        className="w-full bg-secondary/20 border border-white/10 rounded-lg p-2 text-foreground focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                        className="w-full bg-slate-900 border border-white/30 rounded-lg p-2 text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
                                     >
                                         <option value="none">None (Fastest)</option>
                                         <option value="low">Low</option>
                                         <option value="medium">Medium (Default)</option>
                                         <option value="high">High (Maximum Reasoning)</option>
                                     </select>
-                                    <p className="text-xs text-muted-foreground">Controlla la profondità di ragionamento del modello.</p>
+                                    <p className="text-xs text-muted-foreground">Controlla la profondità di ragionamento.</p>
                                     <Separator className="bg-white/10 mt-3" />
                                 </div>
                             )}
 
-                            {/* Temperature */}
-                            <div className="space-y-3">
-                                <div className="flex justify-between items-center">
-                                    <Label className="text-foreground">Creatività (Temperatura)</Label>
-                                    <Badge variant="outline" className="text-violet-400 border-violet-500/20 bg-violet-500/5">
-                                        {config.temperature.toFixed(1)}
-                                    </Badge>
+                            {/* Web Search (Only for supported models) */}
+                            {capabilities.web_search && (
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="space-y-1">
+                                            <Label className="text-foreground flex items-center gap-2">
+                                                <Globe className="w-4 h-4 text-cyan-400" />
+                                                Web Search
+                                            </Label>
+                                            <p className="text-xs text-muted-foreground">Consenti al modello di cercare info online.</p>
+                                        </div>
+                                        <Switch
+                                            checked={config.web_search_enabled}
+                                            onCheckedChange={(checked) => setConfig({ ...config, web_search_enabled: checked })}
+                                            className="data-[state=checked]:bg-cyan-500"
+                                        />
+                                    </div>
+                                    <Separator className="bg-white/10 mt-3" />
                                 </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="2"
-                                    step="0.1"
-                                    value={config.temperature}
-                                    onChange={(e) => setConfig({ ...config, temperature: parseFloat(e.target.value) })}
-                                    className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-violet-500"
-                                />
-                                <div className="flex justify-between text-[10px] text-muted-foreground uppercase font-medium">
-                                    <span>Preciso</span>
-                                    <span>Creativo</span>
-                                </div>
-                            </div>
+                            )}
 
-                            <Separator className="bg-white/10" />
+                            {/* Temperature (Only if NOT Reasoning) */}
+                            {capabilities.temperature && (
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-center">
+                                        <Label className="text-foreground">Creatività (Temperatura)</Label>
+                                        <Badge variant="outline" className="text-violet-400 border-violet-500/20 bg-violet-500/5">
+                                            {config.temperature.toFixed(1)}
+                                        </Badge>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="2"
+                                        step="0.1"
+                                        value={config.temperature}
+                                        onChange={(e) => setConfig({ ...config, temperature: parseFloat(e.target.value) })}
+                                        className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-violet-500"
+                                    />
+                                    <div className="flex justify-between text-[10px] text-muted-foreground uppercase font-medium">
+                                        <span>Preciso</span>
+                                        <span>Creativo</span>
+                                    </div>
+                                    <Separator className="bg-white/10" />
+                                </div>
+                            )}
 
                             {/* Max Tokens */}
                             <div className="space-y-2">
@@ -284,31 +355,10 @@ export default function AiConfigPanel() {
                                     type="number"
                                     value={config.max_tokens}
                                     onChange={(e) => setConfig({ ...config, max_tokens: parseInt(e.target.value) || 0 })}
-                                    className="bg-secondary/20 border-white/10 text-foreground font-mono"
+                                    className="bg-white/5 border-white/30 text-foreground font-mono"
                                 />
                             </div>
 
-                            <Separator className="bg-white/10" />
-
-                            {/* History Length */}
-                            <div className="space-y-3">
-                                <div className="flex justify-between items-center">
-                                    <Label className="text-foreground">Memoria Chat (Messaggi)</Label>
-                                    <Badge variant="outline" className="text-blue-400 border-blue-500/20 bg-blue-500/5">
-                                        {config.history_length || 8}
-                                    </Badge>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="20"
-                                    step="2"
-                                    value={config.history_length || 8}
-                                    onChange={(e) => setConfig({ ...config, history_length: parseInt(e.target.value) })}
-                                    className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-blue-500"
-                                />
-                                <p className="text-xs text-muted-foreground">Numero di messaggi precedenti mantenuti nel contesto.</p>
-                            </div>
                         </CardContent>
                     </Card>
 
@@ -331,7 +381,7 @@ export default function AiConfigPanel() {
                                         step="0.01"
                                         value={config.cost_in}
                                         onChange={(e) => setConfig({ ...config, cost_in: parseFloat(e.target.value) || 0 })}
-                                        className="pl-8 bg-secondary/20 border-white/10 text-foreground text-lg font-mono"
+                                        className="pl-8 bg-white/5 border-white/30 text-foreground text-lg font-mono"
                                     />
                                 </div>
                             </div>
@@ -344,7 +394,7 @@ export default function AiConfigPanel() {
                                         step="0.01"
                                         value={config.cost_out}
                                         onChange={(e) => setConfig({ ...config, cost_out: parseFloat(e.target.value) || 0 })}
-                                        className="pl-8 bg-secondary/20 border-white/10 text-foreground text-lg font-mono"
+                                        className="pl-8 bg-white/5 border-white/30 text-foreground text-lg font-mono"
                                     />
                                 </div>
                             </div>

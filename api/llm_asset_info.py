@@ -53,9 +53,11 @@ def fetch_asset_info_from_llm(isin: str, model: str = None, asset_name: str = No
             return None
         
         # Try to fetch global config (model, prompt, reasoning_effort) from DB
-        prompt_template = default_prompt
-        reasoning_effort = None
-        global_model = None
+        prompt_template = "Analizza questo asset finanziario: {isin}" # Default fallback
+        reasoning_effort = 'medium' # Default for GPT-5 Mini
+        global_model = 'gpt-5-mini' # Default Model
+        web_search_enabled = False # Default Flag
+        max_tokens = 1000 # Default
         
         try:
             from supabase_client import get_supabase_client
@@ -65,22 +67,24 @@ def fetch_asset_info_from_llm(isin: str, model: str = None, asset_name: str = No
             res_prompt = supabase.table('app_config').select('value').eq('key', 'llm_asset_prompt').single().execute()
             if res_prompt.data and res_prompt.data.get('value') and res_prompt.data['value'].get('prompt'):
                 prompt_template = res_prompt.data['value']['prompt']
-                # logger.info("LLM ASSET INFO: Using saved prompt from DB")
             
             # Fetch global AI config (model, reasoning_effort)
             res_ai = supabase.table('app_config').select('value').eq('key', 'openai_config').single().execute()
             if res_ai.data and res_ai.data.get('value'):
                 ai_config = res_ai.data['value']
-                global_model = ai_config.get('model')
-                reasoning_effort = ai_config.get('reasoning_effort')
-                if reasoning_effort == 'none': # Handle 'none' as None/Omit
+                global_model = ai_config.get('model') or global_model
+                reasoning_effort = ai_config.get('reasoning_effort') or reasoning_effort
+                web_search_enabled = ai_config.get('web_search_enabled', False)
+                max_tokens = ai_config.get('max_tokens', 1000)
+                
+                if reasoning_effort == 'none': 
                     reasoning_effort = None
                     
         except Exception as e:
             logger.warning(f"LLM ASSET INFO: Could not fetch config from DB: {e}")
         
-        # Use provided model override, or global config model, or default
-        model_to_use = model or global_model or 'gpt-4o-mini'
+        # Use provided model override, or global config model
+        model_to_use = model or global_model
         
         # Build final prompt with placeholders
         final_prompt = prompt_template.replace('{isin}', isin).replace('{template}', template)
@@ -90,69 +94,121 @@ def fetch_asset_info_from_llm(isin: str, model: str = None, asset_name: str = No
             name_to_use = asset_name or isin  # Fallback to ISIN if no name provided
             final_prompt = final_prompt.replace('{nome_asset}', name_to_use)
 
-        logger.info(f"LLM ASSET INFO: Request for ISIN: {isin} | Model: {model_to_use} | Effort: {reasoning_effort}")
-        
-        # Create OpenAI client and make request
+        # Create OpenAI client
         client = openai.OpenAI(api_key=api_key)
         
         # Prepare parameters
         api_params = {
             "model": model_to_use,
-            "messages": [{"role": "user", "content": final_prompt}],
-            "max_tokens": 4000
+            "messages": [{"role": "user", "content": final_prompt}]
         }
         
-        # Add reasoning_effort only for supported models (gpt-5 series)
-        if model_to_use.startswith('gpt-5') and reasoning_effort:
-             # Note: OpenAI API parameter might be strictly validated. 'low', 'medium', 'high' are expected.
+        # [MODIFIED] Reasoning Effort Support
+        # Logic: If reasoning_effort is set (and not None/none), we use it. 
+        # API requires temperature to NOT be present if reasoning_effort is used (for some models like o1).
+        # We assume 'gpt-5' or 'o1' class models use reasoning.
+        is_reasoning_model = model_to_use.startswith('gpt-5') or model_to_use.startswith('o')
+        
+        if is_reasoning_model and reasoning_effort:
              api_params["reasoning_effort"] = reasoning_effort
-             # Remove max_tokens? Usually reasoning models use max_completion_tokens, but let's keep max_tokens if supported or alias.
-             # For O-series it's max_completion_tokens. For GPT-5 it depends. Assume standard params + reasoning_effort.
-             # Note: Using standard chat endpoint.
+             # Max Tokens handling for reasoning models often uses max_completion_tokens
+             api_params["max_completion_tokens"] = int(max_tokens)
         else:
-             api_params["temperature"] = 0.3  # Temperature supported for non-reasoning models
+             # Standard models
+             api_params["temperature"] = 0.3
+             api_params["max_tokens"] = int(max_tokens)
         
-        response = client.chat.completions.create(**api_params)
-        
-        # Extract the response content
-        response_text = response.choices[0].message.content.strip()
-        original_response = response_text  # Keep original for text fallback
-        
-        # Try to parse as JSON
-        # Handle potential markdown code blocks
-        if response_text.startswith('```'):
-            # Remove markdown code blocks
-            lines = response_text.split('\n')
-            # Find start and end of JSON
-            start_idx = 1 if lines[0].startswith('```') else 0
-            end_idx = len(lines) - 1 if lines[-1].strip() == '```' else len(lines)
-            response_text = '\n'.join(lines[start_idx:end_idx])
-        
-        # Try to parse JSON
+        # DETAILED LOGGING - PRE-FLIGHT
+        logger.info(f"LLM REQUEST [ISIN: {isin}]")
+        logger.info(f"  > Model: {model_to_use}")
+        logger.info(f"  > Params: Reasoning={reasoning_effort if is_reasoning_model else 'N/A'}, WebSearch={web_search_enabled}")
+        logger.info(f"  > Prompt Length: {len(final_prompt)} chars")
+
+        # Send Request
         try:
-            metadata = json.loads(response_text)
+            if web_search_enabled:
+                 logger.info("LLM ASSET INFO: Using Native Responses API for Web Search")
+                 response = client.responses.create(
+                    model=model_to_use,
+                    tools=[{"type": "web_search_preview"}],
+                    input=[{"role": "user", "content": final_prompt}]
+                 )
+                 
+                 # Extract content from Responses API object
+                 if hasattr(response, 'output_text'):
+                    response_text = response.output_text
+                 elif hasattr(response, 'message'):
+                    response_text = response.message.content
+                 else:
+                    response_text = str(response)
+                 
+                 original_response = response_text
+                 finish_reason = "stop (responses-api)" # Placeholder
+                 usage = None 
+            else:
+                 # Standard Chat Completion
+                 response = client.chat.completions.create(**api_params)
+                
+                 # DETAILED LOGGING - POST-FLIGHT
+                 usage = response.usage
+                 finish_reason = response.choices[0].finish_reason
+                 
+                 msg = response.choices[0].message
+                 response_text = msg.content
+                 
+                 if response_text is None:
+                     if msg.tool_calls:
+                         tool_call = msg.tool_calls[0]
+                         logger.warning(f"LLM tried to use tool: {tool_call.function.name} with args: {tool_call.function.arguments}")
+                         response_text = json.dumps({
+                            "assetType": "Unknown (Tool Call)",
+                            "description": f"Model attempted to use tool: {tool_call.function.name}",
+                            "identifiers": {"isin": isin}
+                         }) 
+                     else:
+                         logger.warning("LLM returned NO content and NO tool calls.")
+                         return None
+                 
+                 original_response = response_text
             
-            # Log the response with key fields
-            isin_from_response = metadata.get('identifiers', {}).get('isin', 'N/A')
-            asset_type = metadata.get('assetType', 'N/A')
-            profile_name = metadata.get('profile', {}).get('name', 'N/A')
+            logger.info(f"LLM RESPONSE [ISIN: {isin}]")
+            logger.info(f"  > Finish Reason: {finish_reason}")
+            if usage:
+                 logger.info(f"  > Tokens: In={usage.prompt_tokens}, Out={usage.completion_tokens}, Total={usage.total_tokens}")
             
-            logger.info(f"LLM ASSET INFO: JSON Response - ISIN: {isin_from_response}, Type: {asset_type}, Name: {profile_name}")
+            # Try to parse as JSON (Handle markdown blocks)
+            # Standard parsing logic continues below...
+            if response_text.startswith('```'):
+                lines = response_text.split('\n')
+                start_idx = 1 if lines[0].startswith('```') else 0
+                end_idx = len(lines) - 1 if lines[-1].strip() == '```' else len(lines)
+                response_text = '\n'.join(lines[start_idx:end_idx])
             
-            # Return as dict with type indicator
-            return {
-                "response_type": "json",
-                "data": metadata
-            }
-        except json.JSONDecodeError:
-            # JSON parsing failed - treat as text/markdown response
-            logger.info(f"LLM ASSET INFO: Text/Markdown response for {isin} (not valid JSON)")
-            
-            return {
-                "response_type": "text",
-                "data": original_response
-            }
-        
+            # Parsing
+            try:
+                metadata = json.loads(response_text)
+                
+                # Log success details
+                parsed_isin = metadata.get('identifiers', {}).get('isin', 'N/A')
+                parsed_type = metadata.get('assetType', 'N/A')
+                logger.info(f"  > Parsed Valid JSON. AssetType: {parsed_type}, MatchISIN: {parsed_isin == isin}")
+                
+                return {
+                    "response_type": "json",
+                    "data": metadata
+                }
+            except json.JSONDecodeError:
+                logger.warning(f"  > Failed to parse JSON. Returning raw text (Length: {len(original_response)})")
+                return {
+                    "response_type": "text",
+                    "data": original_response
+                }
+                
+        except openai.APIStatusError as e:
+            logger.error(f"LLM API ERROR [ISIN: {isin}] - Status: {e.status_code}")
+            logger.error(f"  > Message: {e.message}")
+            return None
+
     except openai.AuthenticationError:
         logger.error("LLM ASSET INFO: OpenAI authentication failed - invalid API key")
         return None
@@ -160,7 +216,7 @@ def fetch_asset_info_from_llm(isin: str, model: str = None, asset_name: str = No
         logger.error(f"LLM ASSET INFO: Rate limit exceeded for {isin}")
         return None
     except Exception as e:
-        logger.error(f"LLM ASSET INFO: Error fetching info for {isin}: {e}")
+        logger.error(f"LLM ASSET INFO: General Error fetching info for {isin}: {e}")
         return None
 
 
