@@ -226,7 +226,7 @@ def parse_portfolio_excel(file_stream, debug=False):
         logger.error(traceback.format_exc())
         return {"error": f"Parse Error: {str(e)}"}
 
-def calculate_delta(excel_data, db_holdings):
+def calculate_delta(excel_data, db_holdings, debug=False):
     # db_holdings structure: {isin: {"qty": float, "metadata": dict}} OR {isin: float} (legacy fallback)
     # [SIMPLIFIED LOGIC]
     # 1. If column 'Operation' is "Acquisto"/"Vendita" -> Qty is TRANSACTION AMOUNT (Delta).

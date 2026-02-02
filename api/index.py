@@ -29,12 +29,14 @@ from dashboard import register_dashboard_routes
 from assets import register_assets_routes
 from portfolio import register_portfolio_routes
 from analysis import register_analysis_routes
+from settings import register_settings_routes
 
 app = Flask(__name__)
 register_dashboard_routes(app)
 register_assets_routes(app)
 register_portfolio_routes(app)
 register_analysis_routes(app)
+register_settings_routes(app)
 
 from flask_cors import CORS
 CORS(app, resources={r"/api/*": {"origins": "*"}}) # Enable CORS for all API routes
@@ -491,7 +493,7 @@ def ingest_excel():
                 pass
 
         # Calculate Delta
-        delta = calculate_delta(parse_result['data'], db_holdings)
+        delta = calculate_delta(parse_result['data'], db_holdings, debug=debug_mode)
         
         # Prepare Price Snapshots (Don't save yet)
         prices_to_save = []

@@ -30,7 +30,9 @@ Hosting: Vercel (Front-end + Backend).
 
 - Backend: Python Serverless Functions (hosted on Vercel) for financial math (NumPy/SciPy/Pandas) and data fetching.
 
-- Database: Supabase (PostgreSQL) + Supabase Auth for multi-tenancy.
+- Database: Supabase (PostgreSQL) + Supabase Auth per la multi-tenancy. **Row Level Security (RLS)** abilitata su tutte le tabelle critiche per impedire accessi non autorizzati lato client.
+33: 
+33: - Comunicazione Sicura: Il frontend interagisce con il database quasi esclusivamente tramite il backend Python (che usa la Service Role Key), garantendo che la logica di accesso ai dati sia centralizzata e protetta.
 
 - Data Providers: OpenFIGI (Identification), Yahoo Finance/OpenBB (Market Data).
 
@@ -82,7 +84,7 @@ Hosting: Vercel (Front-end + Backend).
 
 Broadly speaking, the following phases can be envisaged; however, you are free to optimize and modify them if you consider it necessary.
 
-- Phase 1: Database Schema & Supabase Setup (SQL & RLS).
+- Phase 1: Database Schema & Supabase Setup (SQL & RLS). **[COMPLETATO]** Migrazioni sicure create e RLS configurata.
 
 - Phase 2: Vercel Environment Configuration (Next.js + Python Serverless setup).
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Separator } from "@/components/ui/separator"
+import { SidebarTrigger } from "@/components/ui/sidebar"
 
 interface PanelHeaderProps {
     title: string;
@@ -11,7 +12,10 @@ export function PanelHeader({ title, breadcrumbs, children }: PanelHeaderProps) 
     return (
         <div className="flex flex-col gap-2 mb-6">
             <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+                <div className="flex items-center gap-2">
+                    <SidebarTrigger className="-ml-1" />
+                    <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+                </div>
                 <div className="flex items-center gap-2">
                     {children}
                 </div>

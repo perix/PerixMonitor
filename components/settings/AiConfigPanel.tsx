@@ -116,16 +116,17 @@ export default function AiConfigPanel() {
     }, []);
 
     const loadConfig = async () => {
-        const { data } = await supabase
-            .from('app_config')
-            .select('value')
-            .eq('key', 'openai_config')
-            .single();
-        if ((data as any)?.value) {
-            setConfig((prev) => ({
-                ...prev,
-                ...(data as any).value
-            }));
+        try {
+            const response = await axios.get('/api/settings/ai');
+            if (response.data) {
+                setConfig((prev) => ({
+                    ...prev,
+                    ...response.data
+                }));
+            }
+        } catch (error) {
+            console.error("Error loading config:", error);
+            // Fallback defaults are already in state
         }
     };
 
@@ -171,11 +172,13 @@ export default function AiConfigPanel() {
                 throw new Error(response.data.error || `Il modello '${config.model}' non è accessibile.`);
             }
 
-            const { error: dbError } = await supabase
-                .from('app_config')
-                .upsert({ key: 'openai_config', value: config } as any);
+            // 2. Save via Backend API (Secure Service Role)
+            const saveRes = await axios.post('/api/settings/ai', config);
 
-            if (dbError) throw dbError;
+            if (saveRes.status !== 200) {
+                throw new Error("Failed to save configuration");
+            }
+
             setTestStatus('success');
 
         } catch (err: any) {

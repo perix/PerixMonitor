@@ -1,6 +1,6 @@
 # Obiettivo
 Recupera informazioni sull'asset:
-DE000VJ0K5X0 - VON EXPE28
+{isin} - {nome_asset}
 da siti di settore affidabili e crea una sintesi sintetica ma completa seguendo questi criteri:
 
 ## Istruzioni

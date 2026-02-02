@@ -109,6 +109,16 @@ api/
     - Logging a due livelli (INFO per Audit, DEBUG per dettagli tecnici).
     - Supporto per file log (`perix_monitor.log`) attivabile dinamicamente da UI.
 
+### Sicurezza e Row Level Security (RLS)
+
+Per garantire la massima protezione dei dati, il progetto implementa una **sicurezza a due livelli**:
+
+1.  **Row Level Security (RLS)**: Tutte le tabelle Supabase (`profiles`, `portfolios`, `asset_prices`, `dividends`, `app_config`, ecc.) hanno la RLS attiva. Per impostazione predefinita, nessun utente anonimo (dal browser) può leggere o scrivere dati.
+2.  **Backend Proxy (Service Role)**: Poiché il frontend è bloccato dalla RLS, tutte le operazioni sui dati sensibili passano attraverso il **Backend Python**. Il backend utilizza la `SERVICE_ROLE_KEY` (una chiave segreta che non esce mai dal server) per comunicare con Supabase, agendo come un filtro sicuro che valida i permessi prima di ogni operazione.
+
+> [!CAUTION]
+> **NON tentare mai** di eseguire query dirette dal frontend (`supabase.from(...)`) su tabelle protette. Queste chiamate falliranno silenziosamente o con errore 403. Utilizzare sempre gli endpoint API del backend.
+
 ### Database
 - **Provider**: Supabase (PostgreSQL).
 - **Schema Aggiornato (v2)**:
