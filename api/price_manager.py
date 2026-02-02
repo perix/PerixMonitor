@@ -129,6 +129,115 @@ def get_latest_price(isin):
         logger.error(f"Failed to get latest price for {isin}: {e}")
         return None
 
+def get_price_before_date(isin, target_date_str):
+    """
+    Fetches the most recent price for an ISIN strictly BEFORE the target_date.
+    target_date_str should be 'YYYY-MM-DD'.
+    Returns dict {'date': 'YYYY-MM-DD', 'price': float, ...} or None.
+    """
+    try:
+        history = get_price_history(isin)
+        if not history:
+            return None
+            
+        target_date = datetime.strptime(target_date_str, "%Y-%m-%d")
+        
+        # History is sorted by date ascending. We want the last one < target_date.
+        # Iterate backwards
+        for entry in reversed(history):
+            entry_date = datetime.strptime(entry['date'], "%Y-%m-%d")
+            if entry_date < target_date:
+                return entry
+                
+        return None
+    except Exception as e:
+        logger.error(f"Failed to get price before {target_date_str} for {isin}: {e}")
+        return None
+
+def calculate_projected_trend(isin, candidate_prices):
+    """
+    Calculates the 'Latest Trend' that would result from applying the candidate_prices to the history.
+    
+    candidate_prices: List of dicts {'date': 'YYYY-MM-DD', 'price': float}
+    
+    Logic:
+    1. Initial History = DB History (Prices + Transactions)
+    2. Virtual History = Merged(Initial + Candidates)
+       - Candidates overwrite Initial if dates match.
+    3. Sort by Date.
+    4. Latest = Last Item.
+    5. Previous = Penultimate Item.
+    6. Calculate Trend & Days Delta.
+    
+    Returns: {
+        'latest_price': float,
+        'latest_date': str,
+        'variation_pct': float,
+        'days_delta': int
+    } or None if not enough data.
+    """
+    try:
+        # 1. Fetch existing history
+        history = get_price_history(isin) or []
+        
+        # 2. Convert to Dictionary for easy merge (Key: Date String)
+        # We prefer 'Candidate' source over existing
+        price_map = {item['date']: item['price'] for item in history}
+        
+        # 3. Apply Candidates
+        for cand in candidate_prices:
+            d_str = cand.get('date')
+            p_val = cand.get('price')
+            if d_str and p_val is not None:
+                # Ensure date format is consistent YYYY-MM-DD
+                # Assuming candidate input is already YYYY-MM-DD from parser
+                price_map[d_str] = float(p_val)
+        
+        # 4. Reconstruct List and Sort
+        timeline = [{'date': k, 'price': v} for k, v in price_map.items()]
+        timeline.sort(key=lambda x: datetime.strptime(x['date'], "%Y-%m-%d"))
+        
+        if not timeline:
+            return None
+            
+        latest = timeline[-1]
+        
+        if len(timeline) < 2:
+            # Only one price exists (and it's the one we just added/overwrite)
+            return {
+                'latest_price': latest['price'],
+                'latest_date': latest['date'],
+                'variation_pct': 0.0,
+                'days_delta': 0
+            }
+            
+        previous = timeline[-2]
+        
+        d1 = datetime.strptime(previous['date'], "%Y-%m-%d")
+        d2 = datetime.strptime(latest['date'], "%Y-%m-%d")
+        days_delta = abs((d2 - d1).days)
+        
+        old_p = previous['price']
+        new_p = latest['price']
+        
+        if old_p == 0:
+             pct = 0.0
+        else:
+             pct = ((new_p - old_p) / old_p) * 100
+             
+        return {
+            'latest_price': new_p,
+            'latest_date': latest['date'],
+            'previous_price': old_p,
+            'previous_date': previous['date'],
+            'variation_pct': pct,
+            'days_delta': days_delta
+        }
+
+    except Exception as e:
+        logger.error(f"Projected trend error for {isin}: {e}")
+        return None
+
 def get_interpolated_price_history(isin, min_date=None, max_date=None):
     """
     Fetches historical prices and interpolates missing days using LOCF (Last Observation Carried Forward).

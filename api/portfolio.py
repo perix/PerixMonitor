@@ -25,6 +25,23 @@ def register_portfolio_routes(app):
             logger.error(f"GET PORTFOLIO DETAILS ERROR: {str(e)}")
             return jsonify(error=str(e)), 500
 
+    @app.route('/api/portfolios', methods=['GET'])
+    def list_portfolios():
+        try:
+            user_id = request.args.get('user_id')
+            if not user_id:
+                # If no user_id, return all? Or error?
+                # For safety, let's require user_id or handle authentication token.
+                return jsonify(error="Missing user_id"), 400
+
+            supabase = get_supabase_client()
+            res = supabase.table('portfolios').select('*').eq('user_id', user_id).execute()
+            
+            return jsonify(portfolios=res.data)
+        except Exception as e:
+            logger.error(f"LIST PORTFOLIOS ERROR: {str(e)}")
+            return jsonify(error=str(e)), 500
+
     @app.route('/api/portfolio/<portfolio_id>/settings', methods=['PATCH'])
     def update_portfolio_settings(portfolio_id):
         """
@@ -72,7 +89,7 @@ def register_portfolio_routes(app):
             
             # Fetch all transactions with asset data for this portfolio
             res_trans = supabase.table('transactions').select(
-                "quantity, type, price_eur, date, assets(id, isin, name, ticker, asset_class, country, sector, rating, issuer, currency, metadata)"
+                "quantity, type, price_eur, date, assets(id, isin, name, ticker, asset_class, country, sector, rating, issuer, currency, metadata, last_trend_variation, last_trend_days)"
             ).eq('portfolio_id', portfolio_id).order('date').execute()
             
             if not res_trans.data:

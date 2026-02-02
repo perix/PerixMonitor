@@ -34,6 +34,9 @@ interface PortfolioContextType {
     assetHistoryCache: Record<string, Record<string, any>>;
     setAssetHistoryCache: (portfolioId: string, assetIsin: string, data: any) => void;
 
+    memoryCache: Record<string, any[]>;
+    setMemoryCache: (portfolioId: string, data: any[]) => void;
+
     invalidateCache: (portfolioId: string) => void;
     clearCache: () => void;
 }
@@ -48,6 +51,7 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
     const [portfolioCache, setPortfolioCacheState] = useState<Record<string, PortfolioData>>({});
     const [analysisCache, setAnalysisCacheState] = useState<Record<string, any>>({});
     const [assetHistoryCache, setAssetHistoryCacheState] = useState<Record<string, Record<string, any>>>({});
+    const [memoryCache, setMemoryCacheState] = useState<Record<string, any[]>>({});
 
     // Initial load from local storage - wrapped in useEffect to avoid Hydration Mismatch
     useEffect(() => {
@@ -98,6 +102,13 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
         }));
     };
 
+    const setMemoryCache = (portfolioId: string, data: any[]) => {
+        setMemoryCacheState(prev => ({
+            ...prev,
+            [portfolioId]: data
+        }));
+    };
+
     const invalidateCache = (portfolioId: string) => {
         setDashboardCacheState(prev => {
             const next = { ...prev };
@@ -119,6 +130,11 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
             delete next[portfolioId];
             return next;
         });
+        setMemoryCacheState(prev => {
+            const next = { ...prev };
+            delete next[portfolioId];
+            return next;
+        });
     };
 
     const clearCache = () => {
@@ -126,6 +142,7 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
         setPortfolioCacheState({});
         setAnalysisCacheState({});
         setAssetHistoryCacheState({});
+        setMemoryCacheState({});
     };
 
     return (
@@ -140,6 +157,8 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
             setAnalysisCache,
             assetHistoryCache,
             setAssetHistoryCache,
+            memoryCache,
+            setMemoryCache,
             invalidateCache,
             clearCache
         }}>

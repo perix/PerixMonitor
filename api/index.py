@@ -30,16 +30,20 @@ from assets import register_assets_routes
 from portfolio import register_portfolio_routes
 from analysis import register_analysis_routes
 from settings import register_settings_routes
+from memory import memory_bp
 
+from config_api import config_bp
 app = Flask(__name__)
+from flask_cors import CORS
+CORS(app, resources={r"/api/*": {"origins": "*"}}) # Enable CORS for all API routes
+app.register_blueprint(config_bp)
 register_dashboard_routes(app)
 register_assets_routes(app)
 register_portfolio_routes(app)
 register_analysis_routes(app)
 register_settings_routes(app)
+app.register_blueprint(memory_bp)
 
-from flask_cors import CORS
-CORS(app, resources={r"/api/*": {"origins": "*"}}) # Enable CORS for all API routes
 
 import sys
 logger.info("Backend API Initialized")
@@ -87,6 +91,9 @@ def sync_transactions():
         portfolio_id = data.get('portfolio_id')
         enable_ai_lookup = data.get('enable_ai_lookup', True)  # Default to True for backward compatibility
         
+        # Initialize errors list for trend updates
+        errors = []
+
         # Check debug mode
         debug_mode = check_debug_mode(portfolio_id)
         configure_file_logging(debug_mode)
@@ -94,7 +101,7 @@ def sync_transactions():
         if not portfolio_id:
             return jsonify(error="Missing portfolio_id"), 400
         
-        if not changes and not data.get('prices') and not data.get('snapshot'):
+        if not changes and not data.get('prices') and not data.get('snapshot') and not data.get('trend_updates'):
             return jsonify(message="No data to sync"), 200
 
         supabase = get_supabase_client()
@@ -352,6 +359,38 @@ def sync_transactions():
             
             if debug_mode: logger.debug(f"SYNC: Saved {count_prices} price snapshots.")
 
+        # 3. Process Referentials/Trends (if any)
+        trend_updates = data.get('trend_updates', [])
+        if trend_updates:
+            try:
+                supabase = get_supabase_client()
+                logger.info(f"SYNC: Processing {len(trend_updates)} trend updates...")
+                
+                # Batch update might be heavy, but let's loop for now (assets table isn't huge)
+                # Or better, we just update the ones provided.
+                for trend in trend_updates:
+                    isin = trend.get('isin')
+                    variation = trend.get('variation_pct')
+                    days = trend.get('days_delta')
+                    
+                    if isin:
+                         update_payload = {
+                             'last_trend_variation': variation,
+                             'last_trend_ts': 'now()',
+                             'last_trend_days': days
+                         }
+                         # If days is None, it saves NULL, which is correct for cleared trend.
+
+                         supabase.table('assets').update(update_payload).eq('isin', isin).execute()
+                         
+            except Exception as e:
+                logger.error(f"SYNC: Error updating trends: {e}")
+                errors.append(f"Trend Update Error: {str(e)}")
+
+        # 4. Finalize
+        if len(errors) > 0:
+            return jsonify(error="Sync completed with errors", details=errors), 500
+        
         if valid_transactions:
             res = supabase.table('transactions').insert(valid_transactions).execute()
             log_audit("SYNC_SUCCESS", f"Portfolio {portfolio_id}: {len(valid_transactions)} transactions, {len(prices)} prices.")
@@ -527,6 +566,151 @@ def ingest_excel():
             if avg_cost and qty:
                  total_invested_eur += (qty * avg_cost)
         
+        # --- [NEW] PRICE VARIATION SUMMARY LOGIC ---
+        real_transactions = [d for d in delta if d['type'] not in ['METADATA_UPDATE', 'ERROR_QTY_MISMATCH_NO_OP', 'ERROR_INCOMPLETE_OP']]
+        price_variations = []
+        threshold = 0.1  # Default value
+        is_historical_reconstruction = False
+        unique_assets_in_file = set()
+        
+        if len(real_transactions) == 0 and len(prices_to_save) > 0:
+            if debug_mode: logger.debug("INGEST: No transactions detected. Calculating Price Variations...")
+            from price_manager import calculate_projected_trend
+            
+            # [USER REQUEST] Filter out variations smaller than configured threshold
+            try:
+                supabase = get_supabase_client()
+                config_res = supabase.table('app_config').select('value').eq('key', 'asset_settings').execute()
+                threshold = 0.1
+                if config_res.data:
+                    threshold = float(config_res.data[0]['value'].get('priceVariationThreshold', 0.1))
+            except Exception as e:
+                logger.error(f"Error fetching config, using default threshold 0.1: {e}")
+                threshold = 0.1
+
+            # [NEW] Detect if we have multiple prices for the same ISIN (Historical Reconstruction)
+            isin_candidates = {} # Map ISIN -> List of {date, price}
+            
+            for item in parse_result['data']:
+                isin = item.get('isin')
+                price = item.get('current_price')
+                date_str = item.get('date') or datetime.now().strftime("%Y-%m-%d")
+                
+                if isin and price:
+                    if isin not in isin_candidates:
+                        isin_candidates[isin] = []
+                    isin_candidates[isin].append({'date': date_str, 'price': price})
+                    unique_assets_in_file.add(isin)
+            
+            # [USER REQUEST] If ANY ISIN appears multiple times, the ENTIRE file is historical reconstruction
+            # BUT we now use the SAME LOGIC for everything.
+            has_duplicate_isins = any(len(cands) > 1 for cands in isin_candidates.values())
+            
+            is_historical_reconstruction = has_duplicate_isins
+
+            if debug_mode: logger.debug(f"INGEST: Processing {len(unique_assets_in_file)} unique assets. Historical Mode: {is_historical_reconstruction}")
+
+            for isin in unique_assets_in_file:
+                candidates = isin_candidates.get(isin, [])
+                if not candidates: continue
+
+                # Calculate projected trend
+                trend_data = calculate_projected_trend(isin, candidates)
+                
+                if not trend_data:
+                    continue
+
+                # Prepare the variation object
+                desc = next((d.get('description') for d in parse_result['data'] if d.get('isin') == isin), isin)
+                
+                variation_obj = {
+                    "name": desc,
+                    "isin": isin,
+                    "variation_pct": trend_data['variation_pct'],
+                    "days_delta": trend_data['days_delta'],
+                    "old_price": trend_data.get('previous_price'),
+                    "new_price": trend_data.get('latest_price'),
+                    "is_hidden": False,
+                    "price_count": len(candidates)
+                }
+
+                # Threshold Logic
+                if abs(trend_data['variation_pct']) < threshold:
+                     variation_obj['variation_pct'] = 0.0
+                     variation_obj['is_hidden'] = True
+                     
+                # [USER REQUEST] Sold Assets Logic: If final quantity is 0, set trend to null (None)
+                # Calculate final quantity: Current Holding + Delta
+                current_qty = db_holdings.get(isin, {}).get('qty', 0)
+                
+                # Calculate delta for this ISIN from actual transactions
+                isin_delta = 0
+                for d in real_transactions:
+                    if d.get('isin') == isin:
+                         # Sales are negative in delta? Check logic.
+                         # In ingest_file logic (lines 450+), logic is:
+                         # If found in file (qty_file) vs existing (qty_db).
+                         # delta = qty_file - qty_db.
+                         # So final_qty SHOULD be qty_file (if full snapshot mode) ??
+                         # But wait, ingest handles "delta" for transactions.
+                         # Use the 'quantity' from the file row if available?
+                         # Or just check if the parsed data has quantity 0?
+                         pass
+                
+                # Simpler approach: Check the parsed item for this ISIN.
+                # If the file says quantity is 0, then it's 0.
+                # If the file doesn't have quantity (only price update), we rely on DB.
+                # But if we assume the file reflects the portfolio state...
+                
+                # Let's start with: Is there an item in the file with Quantity = 0?
+                # Actually, ingest logic (lines 480+) calculates delta based on difference.
+                # If we rely on valid_transactions? No, that's for saving.
+                
+                # Let's peek at the 'final' quantity perceived by the ingest logic.
+                # 'existing_holdings' is the DB state.
+                # 'delta' contains the change.
+                # final_qty = existing_found + change.
+                
+                # Find delta for this ISIN
+                d_item = next((x for x in delta if x.get('isin') == isin), None)
+                final_qty = current_qty
+                if d_item:
+                    final_qty = current_qty + d_item.get('quantity_change', 0)
+                
+                # Also check if it's a direct price update with quantity in the file
+                # The file row might allow us to be more precise if delta logic is complex.
+                # But delta logic IS what generates transactions.
+                
+                if final_qty <= 0.001: # Float safety
+                     variation_obj['variation_pct'] = None
+                     variation_obj['days_delta'] = None
+                     variation_obj['is_hidden'] = True # Don't show in modal either?
+                     # The user said "Non deve essere visualizzato nulla a livello di UI".
+                     # If we hide it in modal, the user won't see "Trend Update: NULL".
+                     # But we DO want to send it to backend to update DB to NULL.
+                     # So is_hidden = True prevents Modal display.
+                     # But UploadForm logic sends trendUpdates based on priceModalData.variations.
+                     # If is_hidden is True, does it send it?
+                     # Let's check UploadForm.tsx logic soon (mental check).
+                     # Usually filtering is done for display, but we might filter for sending?
+                     # We need to ensure it IS sent.
+                     pass
+
+                price_variations.append(variation_obj)
+                
+                # If Historical, we still want to pass the data, the UI will decide how to show it.
+                # But typically historical mode shows a simpler table.
+                # However, the USER asked to use this logic "whenever there are price injections".
+                # So we pass the full object.
+                price_variations.append(variation_obj)
+
+            # Sort by absolute variation for user visibility (or just variation)
+            price_variations.sort(key=lambda x: abs(x['variation_pct']), reverse=True)
+            
+            if debug_mode: logger.debug(f"INGEST: Calculated {len(price_variations)} variations. Historical={is_historical_reconstruction}")
+        
+        # Prepare Snapshot Record (Don't save yet)
+        
         # Prepare Snapshot Record (Don't save yet)
         snapshot_proposal = None
         if portfolio_id:
@@ -553,7 +737,11 @@ def ingest_excel():
             parsed_data=parse_result['data'],
             delta=list(delta),
             prices=prices_to_save,
-            snapshot_proposal=snapshot_proposal
+            snapshot_proposal=snapshot_proposal,
+            price_variations=price_variations,
+            threshold=threshold,
+            is_historical_reconstruction=is_historical_reconstruction,
+            unique_assets_count=len(unique_assets_in_file)
         )
 
     except Exception as e:

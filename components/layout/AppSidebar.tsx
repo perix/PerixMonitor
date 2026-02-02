@@ -55,14 +55,19 @@ const data = {
                     icon: Wallet,
                 },
                 {
-                    title: "Carica Dati",
-                    url: "/upload",
-                    icon: Upload,
-                },
-                {
                     title: "Analisi",
                     url: "/analytics",
                     icon: BarChart3,
+                },
+                {
+                    title: "Note & Storico",
+                    url: "/memory",
+                    icon: BookOpen,
+                },
+                {
+                    title: "Carica Dati",
+                    url: "/upload",
+                    icon: Upload,
                 },
             ],
         },

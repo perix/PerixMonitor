@@ -9,7 +9,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { ReconciliationModal } from './ReconciliationModal';
-import { Sparkles } from 'lucide-react';
+import { PriceVariationModal } from './PriceVariationModal';
+import { Sparkles, Loader2 } from 'lucide-react';
 
 import { PortfolioSelector } from '../user/PortfolioSelector';
 import { usePortfolio } from '@/context/PortfolioContext';
@@ -21,8 +22,17 @@ export const UploadForm = () => {
     const [delta, setDelta] = useState<any[] | null>(null);
     const [dividends, setDividends] = useState<any[] | null>(null);
     const [pricesAndSnapshot, setPricesAndSnapshot] = useState<{ prices: any[], snapshot: any } | null>(null);
+    // [REFACTORED] Combined state for Price Modal to ensure atomic updates
+    const [priceModalData, setPriceModalData] = useState<{
+        variations: any[],
+        totalUpdated: number,
+        threshold?: number,
+        isHistoricalReconstruction?: boolean,
+        uniqueAssetsCount?: number
+    } | null>(null);
     const [showModal, setShowModal] = useState(false);
-    const [enableAiLookup, setEnableAiLookup] = useState(true);
+    const [enableAiLookup, setEnableAiLookup] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
 
     // Global Context State
     const { selectedPortfolioId, setSelectedPortfolioId, invalidateCache, clearCache } = usePortfolio();
@@ -71,12 +81,30 @@ export const UploadForm = () => {
                 setShowModal(true);
             } else {
                 // Standard Portfolio
-                const { delta, prices, snapshot_proposal, debug } = data;
+                const { delta, prices, snapshot_proposal, price_variations, debug } = data;
 
                 setDelta(delta);
                 setPricesAndSnapshot({ prices, snapshot: snapshot_proposal });
 
-                if ((delta && delta.length > 0) || (prices && prices.length > 0)) {
+                // Check for actionable transactions (Buy/Sell)
+                const hasTransactions = delta && delta.some((d: any) =>
+                    d.type !== 'METADATA_UPDATE' &&
+                    d.type !== 'ERROR_QTY_MISMATCH_NO_OP' &&
+                    d.type !== 'ERROR_INCOMPLETE_OP'
+                );
+
+                if (hasTransactions) {
+                    setShowModal(true);
+                } else if (price_variations && price_variations.length > 0) {
+                    // Store both variations and total count atomically
+                    setPriceModalData({
+                        variations: price_variations,
+                        totalUpdated: prices ? prices.length : 0,
+                        threshold: data.threshold,
+                        isHistoricalReconstruction: data.is_historical_reconstruction || false,
+                        uniqueAssetsCount: data.unique_assets_count || 0
+                    });
+                } else if ((delta && delta.length > 0) || (prices && prices.length > 0)) {
                     setShowModal(true);
                 } else {
                     let msg = "Nessuna modifica rilevata (né transazioni né prezzi nuovi)!";
@@ -101,9 +129,10 @@ export const UploadForm = () => {
         }
     };
 
-    const handleReconciliationConfirm = async (resolutions: any[]) => {
+    const handleReconciliationConfirm = async (resolutions: any[], trendUpdates?: any[]) => {
         if (!selectedPortfolioId) return;
 
+        setIsSyncing(true);
         // Send final sync command to backend
         try {
             await axios.post('/api/sync', {
@@ -112,7 +141,8 @@ export const UploadForm = () => {
                 portfolio_id: selectedPortfolioId,
                 prices: pricesAndSnapshot?.prices || [],
                 snapshot: pricesAndSnapshot?.snapshot,
-                enable_ai_lookup: enableAiLookup
+                enable_ai_lookup: enableAiLookup,
+                trend_updates: trendUpdates || [] // [NEW] Pass trend updates
             });
             // Invalidate ALL caches because Assets are shared globally.
             // If we updated an Asset Name/Type, it affects other portfolios too.
@@ -124,6 +154,8 @@ export const UploadForm = () => {
         } catch (e: any) {
             console.error(e);
             alert("Errore durante la sincronizzazione: " + (e.response?.data?.error || e.message));
+        } finally {
+            setIsSyncing(false);
         }
     };
 
@@ -202,6 +234,30 @@ export const UploadForm = () => {
                     prices={pricesAndSnapshot?.prices || []}
                     onConfirm={handleReconciliationConfirm}
                 />
+            )}
+
+            {priceModalData && (
+                <PriceVariationModal
+                    isOpen={!!priceModalData}
+                    onClose={() => setPriceModalData(null)}
+                    variations={priceModalData.variations}
+                    totalUpdated={priceModalData.totalUpdated}
+                    threshold={priceModalData.threshold}
+                    isHistoricalReconstruction={priceModalData.isHistoricalReconstruction}
+                    uniqueAssetsCount={priceModalData.uniqueAssetsCount}
+                    onConfirm={() => {
+                        handleReconciliationConfirm([], priceModalData.variations);
+                        setPriceModalData(null);
+                    }}
+                />
+            )}
+            {isSyncing && (
+                <div className="fixed inset-0 z-[9999] bg-black/50 cursor-wait flex items-center justify-center backdrop-blur-sm">
+                    <div className="flex flex-col items-center gap-2 text-white font-medium">
+                        <Loader2 className="w-8 h-8 animate-spin" />
+                        <span>Sincronizzazione in corso...</span>
+                    </div>
+                </div>
             )}
         </div>
     );

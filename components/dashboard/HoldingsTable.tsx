@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import axios from 'axios';
 import {
     Table,
     TableBody,
@@ -20,6 +21,7 @@ interface Holding {
     quantity: number;
     price: number;
     sector: string;
+    last_trend_variation?: number;
 }
 
 interface HoldingsTableProps {
@@ -29,6 +31,13 @@ interface HoldingsTableProps {
 export function HoldingsTable({ data }: HoldingsTableProps) {
     const [selectedIsin, setSelectedIsin] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [threshold, setThreshold] = useState(0.1);
+
+    useEffect(() => {
+        axios.get('/api/config/assets').then(res => {
+            if (res.data?.priceVariationThreshold !== undefined) setThreshold(res.data.priceVariationThreshold);
+        }).catch(err => console.error("Failed to load asset config", err));
+    }, []);
 
     const handleOpenDetails = (isin: string) => {
         setSelectedIsin(isin);
@@ -58,40 +67,48 @@ export function HoldingsTable({ data }: HoldingsTableProps) {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {data.map((holding) => (
-                            <TableRow key={holding.isin} className="hover:bg-white/5 border-white/10">
-                                <TableCell className="font-medium text-white max-w-[200px] truncate" title={holding.name}>
-                                    {holding.name}
-                                </TableCell>
-                                <TableCell className="font-mono text-xs text-neutral-300">
-                                    {holding.isin}
-                                </TableCell>
-                                <TableCell>
-                                    <Badge variant="outline" className="text-xs border-neutral-700 text-neutral-300">
-                                        {holding.sector}
-                                    </Badge>
-                                </TableCell>
-                                <TableCell className="text-right text-neutral-300">
-                                    {formatSwissNumber(holding.quantity, 0)}
-                                </TableCell>
-                                <TableCell className="text-right text-neutral-300">
-                                    € {formatSwissMoney(holding.price)}
-                                </TableCell>
-                                <TableCell className="text-right font-semibold text-white">
-                                    € {formatSwissMoney(holding.value)}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-8 w-8 p-0 hover:bg-indigo-500/20 hover:text-indigo-400"
-                                        onClick={() => handleOpenDetails(holding.isin)}
-                                    >
-                                        <Info className="h-4 w-4" />
-                                    </Button>
-                                </TableCell>
-                            </TableRow>
-                        ))}
+                        {data.map((holding) => {
+                            const variation = holding.last_trend_variation || 0;
+                            const isSignificant = Math.abs(variation) >= threshold;
+                            const colorClass = isSignificant
+                                ? (variation > 0 ? "text-green-500" : "text-red-500")
+                                : "text-white";
+
+                            return (
+                                <TableRow key={holding.isin} className="hover:bg-white/5 border-white/10">
+                                    <TableCell className={`font-medium max-w-[200px] truncate ${colorClass}`} title={holding.name}>
+                                        {holding.name}
+                                    </TableCell>
+                                    <TableCell className="font-mono text-xs text-neutral-300">
+                                        {holding.isin}
+                                    </TableCell>
+                                    <TableCell>
+                                        <Badge variant="outline" className="text-xs border-neutral-700 text-neutral-300">
+                                            {holding.sector}
+                                        </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-right text-neutral-300">
+                                        {formatSwissNumber(holding.quantity, 0)}
+                                    </TableCell>
+                                    <TableCell className="text-right text-neutral-300">
+                                        € {formatSwissMoney(holding.price)}
+                                    </TableCell>
+                                    <TableCell className="text-right font-semibold text-white">
+                                        € {formatSwissMoney(holding.value)}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 w-8 p-0 hover:bg-indigo-500/20 hover:text-indigo-400"
+                                            onClick={() => handleOpenDetails(holding.isin)}
+                                        >
+                                            <Info className="h-4 w-4" />
+                                        </Button>
+                                    </TableCell>
+                                </TableRow>
+                            );
+                        })}
                     </TableBody>
                 </Table>
             </div>

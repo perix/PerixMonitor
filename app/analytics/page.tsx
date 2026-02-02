@@ -34,6 +34,7 @@ interface AssetDetail {
     isin: string;
     value: number;
     percent_of_component: number;
+    last_trend_variation?: number;
 }
 
 interface ComponentData {
@@ -53,10 +54,11 @@ interface AnalysisData {
 }
 
 export default function AnalyticsPage() {
-    const { selectedPortfolioId, analysisCache, setAnalysisCache } = usePortfolio();
+    const { selectedPortfolioId, analysisCache, setAnalysisCache, portfolioCache } = usePortfolio();
     const [data, setData] = useState<AnalysisData | null>(null);
     const [loading, setLoading] = useState(false);
     const [selectedSlice, setSelectedSlice] = useState<ComponentData | null>(null);
+    const [threshold, setThreshold] = useState(0.1);
 
     useEffect(() => {
         if (!selectedPortfolioId) {
@@ -108,6 +110,15 @@ export default function AnalyticsPage() {
         fetchData();
     }, [selectedPortfolioId]);
 
+    // Fetch threshold configuration
+    useEffect(() => {
+        axios.get('/api/config/assets').then(res => {
+            if (res.data?.priceVariationThreshold !== undefined) {
+                setThreshold(res.data.priceVariationThreshold);
+            }
+        }).catch(err => console.error("Failed to load asset config", err));
+    }, []);
+
     // [PERSISTENCE] Save selection
     useEffect(() => {
         if (selectedPortfolioId && selectedSlice) {
@@ -128,10 +139,14 @@ export default function AnalyticsPage() {
         color: getComponentColor(c.name, i)
     })) || [], [data]);
 
+    const portfolioName = selectedPortfolioId && portfolioCache[selectedPortfolioId]
+        ? portfolioCache[selectedPortfolioId].name
+        : "Portafoglio";
+
     if (!selectedPortfolioId) {
         return (
             <div className="flex flex-1 flex-col h-full bg-background/50 p-6">
-                <PanelHeader title="Analisi Portafoglio" />
+                <PanelHeader title={`Analisi portafoglio - ${portfolioName}`} />
                 <div className="flex flex-1 items-center justify-center text-muted-foreground">
                     Seleziona un portafoglio per visualizzare l'analisi.
                 </div>
@@ -160,7 +175,7 @@ export default function AnalyticsPage() {
 
     return (
         <div className="flex flex-col h-full bg-background/50 p-6 overflow-hidden">
-            <PanelHeader title="Analisi Portafoglio" />
+            <PanelHeader title={`Analisi portafoglio - ${portfolioName}`} />
 
             <div className="flex flex-1 items-stretch gap-6 min-h-0">
                 {/* Main Content Area: Chart (Left) and Asset Details (Right) */}
@@ -208,10 +223,26 @@ export default function AnalyticsPage() {
                                                 <div className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/50">
                                                     <div className="w-1.5 h-2.5 border-r-2 border-b-2 border-emerald-400 rotate-45 -mt-0.5" />
                                                 </div>
-                                                <span className="text-sm truncate text-slate-200" title={asset.name}>
-                                                    <span className="font-medium">{asset.name}</span>
-                                                    <span className="ml-1 text-slate-400 font-normal">({asset.isin})</span>
-                                                </span>
+                                                {(() => {
+                                                    const variation = asset.last_trend_variation || 0;
+                                                    const isSignificant = Math.abs(variation) >= threshold;
+                                                    const colorClass = isSignificant
+                                                        ? (variation > 0 ? "text-green-500" : "text-red-500")
+                                                        : "text-slate-200";
+
+                                                    const formatPct = (val: number) => {
+                                                        const sign = val >= 0 ? '+' : '';
+                                                        return `${sign}${val.toFixed(2)}%`;
+                                                    };
+                                                    const tooltipTitle = `${asset.name}\nDelta: ${formatPct(variation)}`;
+
+                                                    return (
+                                                        <span className={`text-sm truncate ${colorClass}`} title={tooltipTitle}>
+                                                            <span className="font-medium">{asset.name}</span>
+                                                            <span className="ml-1 text-slate-400 font-normal">({asset.isin})</span>
+                                                        </span>
+                                                    );
+                                                })()}
                                             </div>
                                             <div className="text-right flex-shrink-0 text-xs text-muted-foreground">
                                                 <span className="font-mono text-white mr-1">

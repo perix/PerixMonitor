@@ -23,7 +23,7 @@ def register_dashboard_routes(app):
             supabase = get_supabase_client()
             
             # 1. Fetch Transactions
-            res_trans = supabase.table('transactions').select("*, assets(id, isin, name, asset_class)").eq('portfolio_id', portfolio_id).execute()
+            res_trans = supabase.table('transactions').select("*, assets(id, isin, name, asset_class, last_trend_variation)").eq('portfolio_id', portfolio_id).execute()
             transactions = res_trans.data
             
             # Filter by specific assets if requested
@@ -58,7 +58,13 @@ def register_dashboard_routes(app):
                 
                 # Update Holdings
                 if isin not in holdings:
-                    holdings[isin] = {"qty": 0, "cost": 0, "name": name, "asset_class": t['assets'].get('asset_class')}
+                    holdings[isin] = {
+                        "qty": 0, 
+                        "cost": 0, 
+                        "name": name, 
+                        "asset_class": t['assets'].get('asset_class'),
+                        "last_trend_variation": t['assets'].get('last_trend_variation')
+                    }
                 
                 if is_buy:
                     holdings[isin]["qty"] += qty
@@ -123,7 +129,8 @@ def register_dashboard_routes(app):
                     "sector": data.get('asset_class') or "Other",
                     "isin": isin,
                     "quantity": data['qty'],
-                    "price": current_price
+                    "price": current_price,
+                    "last_trend_variation": data.get('last_trend_variation')
                 })
 
             # 4. XIRR Calculation (Tiered)

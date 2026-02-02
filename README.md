@@ -114,3 +114,12 @@ Solo confermando la preview i dati vengono scritti nel database.
 - **Supporto CORS & Long-running tasks**: Ottimizzazione del timeout (5 min) e bypass proxy per query AI complesse.
 - **Sistema di Audit**: Nuovo motore di logging professionale con attivazione dinamica dei log tecnici.
 - **Codebase Clean-up**: Consolidamento dipendenze e rimozione script legacy.
+
+### UI Ingestion & Trend Logic (02/02/2026)
+- **Safe Ingestion UI**: 
+    - **Blocking Overlay**: Schermata di attesa bloccante durante la sincronizzazione per prevenire errori di concorrenza.
+    - **AI Search**: Disattivata di default per maggiore controllo manuale.
+- **Trend Calculation Engine**:
+    - **Logica Unificata**: Il calcolo del trend (prezzo vs prezzo precedente) ora è coerente per qualsiasi tipo di operazione (singolo prezzo, sovrascrittura data, ricostruzione storica).
+    - **Sold Assets**: Gestione automatica assets venduti (Quantità=0) -> Il trend viene forzato a `NULL` nel DB per pulizia visiva.
+    - **Historical Fills**: Supporto robusto per iniezione massiva di prezzi storici senza corrompere l'indicatore "Ultima Variazione".

@@ -34,6 +34,8 @@ interface Asset {
 
     mwr?: number;
     mwr_type?: string;
+    last_trend_variation?: number;
+    last_trend_days?: number;
 }
 
 interface AssetDetailPanelProps {
@@ -344,6 +346,35 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                 <span className={`font-medium text-base truncate ${isMwrPositive ? 'text-green-500' : 'text-red-500'}`}>
                                     {activeMwr !== undefined && activeMwr !== null ? `${formatSwissNumber(activeMwr, 2)}%` : '-'}
                                 </span>
+                            </div>
+                        </div>
+
+                        <div className="space-y-1">
+                            <span className="text-xs text-muted-foreground block truncate">Ultima Variazione</span>
+                            <div className="flex items-center gap-1">
+                                {(() => {
+                                    if (asset.last_trend_variation === undefined || asset.last_trend_variation === null) {
+                                        return <span className="text-muted-foreground">-</span>;
+                                    }
+                                    const variation = asset.last_trend_variation;
+                                    const isPositive = variation >= 0;
+                                    const colorClass = variation > 0 ? "text-green-500" : (variation < 0 ? "text-red-500" : "text-muted-foreground");
+                                    const Icon = isPositive ? ArrowUpRight : ArrowDownRight;
+
+                                    return (
+                                        <>
+                                            <Icon className={`h-4 w-4 shrink-0 ${colorClass}`} />
+                                            <span className={`font-medium text-base truncate ${colorClass}`}>
+                                                {variation > 0 ? '+' : ''}{formatSwissNumber(variation, 2)}%
+                                                {asset.last_trend_days !== undefined && asset.last_trend_days !== null && (
+                                                    <span className="ml-1 text-xs text-muted-foreground font-normal">
+                                                        ({asset.last_trend_days} {asset.last_trend_days === 1 ? 'giorno' : 'giorni'})
+                                                    </span>
+                                                )}
+                                            </span>
+                                        </>
+                                    );
+                                })()}
                             </div>
                         </div>
                     </div>

@@ -1,0 +1,1 @@
+Get-Content perix_monitor.log -Tail 10 -Wait

@@ -23,7 +23,7 @@ def register_analysis_routes(app):
             supabase = get_supabase_client()
             
             # 1. Fetch Transactions
-            res_trans = supabase.table('transactions').select("*, assets(id, isin, name, asset_class)").eq('portfolio_id', portfolio_id).execute()
+            res_trans = supabase.table('transactions').select("*, assets(id, isin, name, asset_class, last_trend_variation)").eq('portfolio_id', portfolio_id).execute()
             transactions = res_trans.data
             
             if not transactions:
@@ -139,7 +139,8 @@ def register_analysis_routes(app):
                 components_data[component]["assets_list"].append({
                     "name": sample_t['assets']['name'] if sample_t else isin,
                     "isin": isin,
-                    "value": mkt_value
+                    "value": mkt_value,
+                    "last_trend_variation": sample_t['assets'].get('last_trend_variation') if sample_t else None
                 })
 
             # 4. Fetch Manual Liquidity from Portfolio Settings
@@ -204,7 +205,8 @@ def register_analysis_routes(app):
                         "name": a['name'],
                         "isin": a['isin'],
                         "value": round(a['value'], 2),
-                        "percent_of_component": round(asset_pct, 2)
+                        "percent_of_component": round(asset_pct, 2),
+                        "last_trend_variation": a.get('last_trend_variation')
                     })
                 final_assets.sort(key=lambda x: x['value'], reverse=True)
 

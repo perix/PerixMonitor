@@ -56,8 +56,7 @@ export const PortfolioSelector: React.FC<PortfolioSelectorProps> = ({ selectedPo
         // Fetch Portfolios via API (Backend Service Role)
         try {
             const response = await axios.get(`/api/portfolios?user_id=${user.id}`);
-            const data = response.data;
-            // setPortfolios etc. (Handled below if I reassign 'data')
+            const data = response.data.portfolios;
 
             // Re-use existing logic variable 'data'
             setPortfolios(data || []);

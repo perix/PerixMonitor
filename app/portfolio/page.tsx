@@ -32,6 +32,8 @@ interface Asset {
     pnl_value?: number;
     pnl_percent?: number;
     mwr?: number;
+    last_trend_variation?: number;
+    last_trend_days?: number;
 }
 
 export default function PortfolioPage() {
