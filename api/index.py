@@ -858,9 +858,12 @@ def delete_portfolio(portfolio_id):
         logger.error(f"PORTFOLIO DELETE FAIL: {e}")
         return jsonify(error=str(e)), 500
 
-@app.route('/api/validate-model', methods=['POST'])
+@app.route('/api/validate-model', methods=['POST', 'OPTIONS'])
 def validate_model_route():
     try:
+        if request.method == 'OPTIONS':
+            return jsonify(status="ok"), 200
+            
         data = request.json
         # Only use env var for security, ignore client-provided key if any (or treat as temp override if needed, but user asked for secure)
         # User said "Voglio anche quelli. Non voglio che l'API Key sia presente in chiaro, la voglio mettere nel codice."
@@ -878,7 +881,11 @@ def validate_model_route():
              logger.error("VALIDATE AI FAIL: No modelType provided")
              return jsonify(error="Model Type is required"), 400
 
-        client = openai.OpenAI(api_key=api_key)
+        # Create client with timeout settings for Vercel
+        client = openai.OpenAI(
+            api_key=api_key,
+            timeout=8.0  # 8 second timeout to stay within Vercel limits
+        )
         
         # Verify model access
         try:
@@ -895,6 +902,9 @@ def validate_model_route():
         except openai.NotFoundError:
              logger.error(f"VALIDATE AI FAIL: Model '{model_type}' not found")
              return jsonify(success=False, error=f"Model '{model_type}' not found or no access"), 200
+        except openai.APITimeoutError:
+             logger.error(f"VALIDATE AI FAIL: Timeout connecting to OpenAI")
+             return jsonify(success=False, error="Connection timeout - please try again"), 200
         except Exception as e:
              logger.error(f"VALIDATE AI FAIL: OpenAI Error: {e}")
              return jsonify(success=False, error=str(e)), 200
