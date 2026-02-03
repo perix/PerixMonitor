@@ -800,7 +800,7 @@ def manage_portfolios():
             
             supabase = get_supabase_client()
             res = supabase.table('portfolios').select('id, name, description, user_id, created_at').eq('user_id', user_id).order('created_at', desc=True).execute()
-            return jsonify(res.data if res.data else []), 200
+            return jsonify(portfolios=res.data if res.data else []), 200
 
         # POST (Create)
         data = request.json

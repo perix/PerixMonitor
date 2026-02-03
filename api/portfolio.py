@@ -25,22 +25,8 @@ def register_portfolio_routes(app):
             logger.error(f"GET PORTFOLIO DETAILS ERROR: {str(e)}")
             return jsonify(error=str(e)), 500
 
-    @app.route('/api/portfolios', methods=['GET'])
-    def list_portfolios():
-        try:
-            user_id = request.args.get('user_id')
-            if not user_id:
-                # If no user_id, return all? Or error?
-                # For safety, let's require user_id or handle authentication token.
-                return jsonify(error="Missing user_id"), 400
-
-            supabase = get_supabase_client()
-            res = supabase.table('portfolios').select('*').eq('user_id', user_id).execute()
-            
-            return jsonify(portfolios=res.data)
-        except Exception as e:
-            logger.error(f"LIST PORTFOLIOS ERROR: {str(e)}")
-            return jsonify(error=str(e)), 500
+    # NOTE: The /api/portfolios route is now defined in index.py (manage_portfolios)
+    # This was removed to prevent duplicate route registration errors in Flask.
 
     @app.route('/api/portfolio/<portfolio_id>/settings', methods=['PATCH', 'OPTIONS'])
     def update_portfolio_settings(portfolio_id):
