@@ -865,13 +865,11 @@ def validate_model_route():
             return jsonify(status="ok"), 200
             
         data = request.json
-        # Only use env var for security, ignore client-provided key if any (or treat as temp override if needed, but user asked for secure)
-        # User said "Voglio anche quelli. Non voglio che l'API Key sia presente in chiaro, la voglio mettere nel codice."
-        # So we prioritize env var and strictly use it.
         api_key = os.getenv('OPENAI_API_KEY')
         model_type = data.get('modelType')
         
         logger.info(f"VALIDATE AI REQUEST: Checking model '{model_type}'")
+        logger.info(f"VALIDATE AI: API Key present: {bool(api_key)}, length: {len(api_key) if api_key else 0}")
         
         if not api_key:
             logger.error("VALIDATE AI FAIL: No OPENAI_API_KEY set in environment")
@@ -881,11 +879,15 @@ def validate_model_route():
              logger.error("VALIDATE AI FAIL: No modelType provided")
              return jsonify(error="Model Type is required"), 400
 
+        logger.info(f"VALIDATE AI: Creating OpenAI client...")
+        
         # Create client with timeout settings for Vercel
         client = openai.OpenAI(
             api_key=api_key,
             timeout=8.0  # 8 second timeout to stay within Vercel limits
         )
+        
+        logger.info(f"VALIDATE AI: Client created, calling models.retrieve('{model_type}')...")
         
         # Verify model access
         try:
@@ -896,21 +898,26 @@ def validate_model_route():
                 id=model.id,
                 owned_by=model.owned_by
             ), 200
-        except openai.AuthenticationError:
-             logger.error("VALIDATE AI FAIL: AuthenticationError (Invalid Key)")
+        except openai.AuthenticationError as e:
+             logger.error(f"VALIDATE AI FAIL: AuthenticationError (Invalid Key): {e}")
              return jsonify(success=False, error="Invalid API Key"), 200
-        except openai.NotFoundError:
-             logger.error(f"VALIDATE AI FAIL: Model '{model_type}' not found")
+        except openai.NotFoundError as e:
+             logger.error(f"VALIDATE AI FAIL: Model '{model_type}' not found: {e}")
              return jsonify(success=False, error=f"Model '{model_type}' not found or no access"), 200
-        except openai.APITimeoutError:
-             logger.error(f"VALIDATE AI FAIL: Timeout connecting to OpenAI")
+        except openai.APITimeoutError as e:
+             logger.error(f"VALIDATE AI FAIL: Timeout connecting to OpenAI: {e}")
              return jsonify(success=False, error="Connection timeout - please try again"), 200
+        except openai.APIConnectionError as e:
+             logger.error(f"VALIDATE AI FAIL: Connection error to OpenAI: {e}")
+             return jsonify(success=False, error="Connection error - check network"), 200
         except Exception as e:
-             logger.error(f"VALIDATE AI FAIL: OpenAI Error: {e}")
+             logger.error(f"VALIDATE AI FAIL: OpenAI Error: {type(e).__name__}: {e}")
              return jsonify(success=False, error=str(e)), 200
 
     except Exception as e:
-        logger.error(f"VALIDATE AI CRITICAL ERROR: {e}")
+        logger.error(f"VALIDATE AI CRITICAL ERROR: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify(error=str(e)), 500
 
 # --- ADMIN USER MANAGEMENT ---

@@ -593,7 +593,7 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                 {/* Zero line */}
                                 <ReferenceLine
                                     y={0}
-                                    yAxisId={viewMode === 'value' ? 'right' : 'left'}
+                                    yAxisId="left"
                                     stroke="#ffffff"
                                     strokeWidth={2}
                                     strokeOpacity={0.8}
