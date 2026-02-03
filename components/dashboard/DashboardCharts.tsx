@@ -60,8 +60,8 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
         if (viewMode === 'mwr') {
             setMwrRange(val);
         } else {
-            // For Value mode, strictly enforce 0 as minimum
-            setValueRange([0, val[1]]);
+            // Allow both ends to be adjusted in value mode
+            setValueRange(val);
         }
 
     };
@@ -213,8 +213,8 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
     // Initialize Y range when data loads or view mode changes
     useEffect(() => {
         if (viewMode === 'value') {
-            // Always ensure min is 0
-            if (valueRange[0] !== 0 || (valueRange[1] === 100 && yMaxLimit !== 100)) {
+            // Initialize with reasonable range if not yet set
+            if (valueRange[1] === 100 && yMaxLimit !== 100) {
                 setValueRange([0, yMaxLimit]);
             }
         }
@@ -545,7 +545,6 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                             onValueChange={setYRange}
                             orientation="vertical"
                             className="h-[85%]"
-                            disabledLower={viewMode === 'value'}
                         />
                         <span className="text-xs text-muted-foreground writing-mode-vertical">
                             {viewMode === 'value' ? `€${formatSwissNumber(yRange[0], 0)}` : `${yRange[0]}%`}
@@ -650,24 +649,7 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                     }
                                 />
 
-                                {/* SECONDARY Y-AXIS (Right) - Only for Value Mode */}
-                                {viewMode === 'value' && (
-                                    <YAxis
-                                        yAxisId="right"
-                                        orientation="right"
-                                        stroke="#818cf8"
-                                        tickLine={false}
-                                        axisLine={false}
-                                        domain={[0, portfolioMax]} // Fixed range based on data
-                                        allowDataOverflow={true}
-                                        ticks={rightAxisTicks} // Fixed ticks
-                                        tick={({ x, y, payload }) => (
-                                            <text x={x} y={y} dy={4} fill="#818cf8" fontSize={12} textAnchor="start" fontWeight="bold">
-                                                {`€${formatSwissNumber(payload.value)}`}
-                                            </text>
-                                        )}
-                                    />
-                                )}
+                                {/* SECONDARY Y-AXIS REMOVED as per user request */}
 
                                 <Tooltip
                                     contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc', borderRadius: '8px' }}
@@ -683,10 +665,10 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                     labelFormatter={(label) => new Date(label).toLocaleDateString(undefined, { dateStyle: 'medium' })}
                                 />
 
-                                {/* Portfolio Line */}
+                                {/* Portfolio Line - Always on left axis now */}
                                 {!hidePortfolio && (
                                     <Line
-                                        yAxisId={viewMode === 'value' ? "right" : "left"}
+                                        yAxisId="left"
                                         type="monotone"
                                         dataKey="Portfolio"
                                         stroke="#ffffff"

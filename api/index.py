@@ -424,16 +424,19 @@ def reset_db_route():
 
         supabase = get_supabase_client()
         
+        # Use a valid UUID comparison (gt with nil UUID matches all real UUIDs)
+        nil_uuid = '00000000-0000-0000-0000-000000000000'
+        
         # NUCLEAR OPTION: Wipe everything except User/Portfolio structure.
         # 1. Dependent Tables first
         logger.info("RESET: Deleting ALL Transactions...")
-        supabase.table('transactions').delete().neq('id', -1).execute() # Delete All
+        supabase.table('transactions').delete().gt('id', nil_uuid).execute()
         
         logger.info("RESET: Deleting ALL Dividends...")
-        supabase.table('dividends').delete().neq('id', -1).execute() # Delete All
+        supabase.table('dividends').delete().gt('id', nil_uuid).execute()
         
         logger.info("RESET: Deleting ALL Snapshots...")
-        supabase.table('snapshots').delete().neq('id', -1).execute() # Delete All
+        supabase.table('snapshots').delete().gt('id', nil_uuid).execute()
         
         # 2. Global Data
         logger.info("RESET: Deleting ALL Asset Prices...")
@@ -441,11 +444,10 @@ def reset_db_route():
         supabase.table('asset_prices').delete().neq('isin', 'X_INVALID').execute()
         
         logger.info("RESET: Deleting ALL Assets...")
-        # assets PK is id
-        supabase.table('assets').delete().neq('id', -1).execute() 
+        supabase.table('assets').delete().gt('id', nil_uuid).execute()
         
         logger.info("RESET: Deleting ALL Portfolios...")
-        supabase.table('portfolios').delete().neq('id', -1).execute()
+        supabase.table('portfolios').delete().gt('id', nil_uuid).execute()
 
         log_audit("RESET_DB", f"FULL WIPE COMPLETED for Portfolio {portfolio_id}")
         return jsonify(status="ok", message="Database completely wiped (Portfolios, Assets, Prices, History, Transactions)."), 200

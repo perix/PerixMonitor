@@ -7,3 +7,4 @@ supabase<2.10.0
 openpyxl
 openai
 python-dotenv
+flask-cors
