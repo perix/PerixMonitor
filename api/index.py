@@ -893,9 +893,12 @@ def validate_model_route():
 
 # --- ADMIN USER MANAGEMENT ---
 
-@app.route('/api/admin/users', methods=['GET'])
+@app.route('/api/admin/users', methods=['GET', 'OPTIONS'])
 def list_users_route():
     try:
+        if request.method == 'OPTIONS':
+             return jsonify(status="ok"), 200
+
         supabase = get_supabase_client()
         # list_users() returns UserResponse object which has 'users' property (list of User objects)
         response = supabase.auth.admin.list_users() 
@@ -915,9 +918,11 @@ def list_users_route():
         logger.error(f"ADMIN LIST USERS FAIL: {e}")
         return jsonify(error=str(e)), 500
 
-@app.route('/api/admin/users/<user_id>', methods=['DELETE'])
+@app.route('/api/admin/users/<user_id>', methods=['DELETE', 'OPTIONS'])
 def delete_user_route(user_id):
     try:
+        if request.method == 'OPTIONS':
+             return jsonify(status="ok"), 200
         supabase = get_supabase_client()
         supabase.auth.admin.delete_user(user_id)
         logger.info(f"ADMIN: Deleted user {user_id}")
@@ -926,7 +931,7 @@ def delete_user_route(user_id):
         logger.error(f"ADMIN DELETE USER FAIL: {e}")
         return jsonify(error=str(e)), 500
 
-@app.route('/api/admin/users/<user_id>/reset_password', methods=['POST'])
+@app.route('/api/admin/users/<user_id>/reset_password', methods=['POST', 'OPTIONS'])
 def reset_password_route(user_id):
     """
     Triggers Supabase's password reset email flow.

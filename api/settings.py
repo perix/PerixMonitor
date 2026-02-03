@@ -6,7 +6,7 @@ import traceback
 
 def register_settings_routes(app):
 
-    @app.route('/api/settings/ai', methods=['GET'])
+    @app.route('/api/settings/ai', methods=['GET', 'OPTIONS'])
     def get_ai_config():
         """
         Retrieves the AI/OpenAI configuration from app_config table.
@@ -31,7 +31,7 @@ def register_settings_routes(app):
             logger.error(f"GET SETTINGS ERROR: {str(e)}")
             return jsonify(error=str(e)), 500
 
-    @app.route('/api/settings/ai', methods=['POST'])
+    @app.route('/api/settings/ai', methods=['POST', 'OPTIONS'])
     def save_ai_config():
         """
         Saves the AI/OpenAI configuration to app_config table.
