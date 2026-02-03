@@ -163,16 +163,10 @@ export default function AiConfigPanel() {
         setTestStatus(null);
         setErrorMessage('');
         try {
-            // 1. Validate via Python Backend
-            const response = await axios.post('/api/validate-model', {
-                modelType: config.model
-            });
+            // NOTE: Live validation is disabled due to Vercel network restrictions
+            // The LLM connection can be tested separately in the Dev/Test panel
 
-            if (!response.data.success) {
-                throw new Error(response.data.error || `Il modello '${config.model}' non è accessibile.`);
-            }
-
-            // 2. Save via Backend API (Secure Service Role)
+            // Save via Backend API (Secure Service Role)
             const saveRes = await axios.post('/api/settings/ai', config);
 
             if (saveRes.status !== 200) {
