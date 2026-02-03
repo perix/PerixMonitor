@@ -13,11 +13,29 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#a855f7', '#ec4899', '#6366f1', '#14b8a6'];
 
+interface DashboardSummary {
+    total_value: number;
+    total_invested: number;
+    pl_value: number;
+    pl_percent: number;
+    xirr: number;
+    mwr_type: string;
+    allocation: any[];
+}
+
+interface DashboardHistory {
+    series: any[];
+    portfolio: any[];
+    settings?: any;
+    requestParams?: any;
+    name?: string;
+}
+
 export default function DashboardPage() {
     const { selectedPortfolioId, dashboardCache, setDashboardCache, portfolioCache } = usePortfolio();
 
     const [summary, setSummary] = useState<any>(null);
-    const [history, setHistory] = useState<any>([]);
+    const [history, setHistory] = useState<any>(null);
     const [loading, setLoading] = useState(false); // Changed default to false to prevent infinite spin on logic gap
     const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
     const [filteredSummary, setFilteredSummary] = useState<any>(null); // State for filtered subset

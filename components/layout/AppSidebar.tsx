@@ -40,6 +40,19 @@ import { createClient } from "@/utils/supabase/client";
 import { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 
+interface NavItem {
+    title: string;
+    url: string;
+    icon: React.ElementType;
+    className?: string;
+    separatorAbove?: boolean;
+}
+
+interface NavGroup {
+    title: string;
+    items: NavItem[];
+}
+
 const data = {
     navMain: [
         {
@@ -149,8 +162,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <SidebarGroup>
                     {/* <SidebarGroupLabel>Menu</SidebarGroupLabel> */}
                     <SidebarMenu>
-                        {data.navMain.map((group) => (
-                            group.items.map((item: any) => (
+                        {data.navMain.map((group: NavGroup) => (
+                            group.items.map((item: NavItem) => (
                                 <div key={item.title}>
                                     {item.separatorAbove && <div className="my-2 ml-2 mr-28 border-t border-white/40" />}
                                     <SidebarMenuItem>
