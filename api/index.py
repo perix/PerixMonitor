@@ -82,8 +82,10 @@ def check_debug_mode(portfolio_id):
         logger.error(f"DEBUG CHECK FAIL: {e}")
         return False
 
-@app.route('/api/sync', methods=['POST'])
+@app.route('/api/sync', methods=['POST', 'OPTIONS'])
 def sync_transactions():
+    if request.method == 'OPTIONS':
+         return jsonify(status="ok"), 200
     try:
         from logger import configure_file_logging, log_audit
         data = request.json
@@ -406,9 +408,12 @@ def sync_transactions():
         traceback.print_exc() # Force stdout
         return jsonify(error=str(e)), 500
 
-@app.route('/api/reset', methods=['POST'])
+@app.route('/api/reset', methods=['POST', 'OPTIONS'])
 def reset_db_route():
     from logger import log_audit
+    if request.method == 'OPTIONS':
+        return jsonify(status="ok"), 200
+
     logger.warning("RESET DB REQUEST RECEIVED")
     try:
         data = request.json
@@ -449,8 +454,11 @@ def reset_db_route():
         logger.error(f"RESET FAIL: {e}")
         return jsonify(error=str(e)), 500
 
-@app.route('/api/ingest', methods=['POST'])
+@app.route('/api/ingest', methods=['POST', 'OPTIONS'])
 def ingest_excel():
+    if request.method == 'OPTIONS':
+        return jsonify(status="ok"), 200
+
     from logger import clear_log_file, configure_file_logging, log_ingestion_start, log_ingestion_summary, log_audit
     
     # [NEW] Configure logging based on user preference ASAP
@@ -783,6 +791,8 @@ def calculate_xirr_route():
 def manage_portfolios():
     from logger import log_audit
     try:
+        if request.method == 'OPTIONS':
+             return jsonify(status="ok"), 200
         if request.method == 'GET':
             user_id = request.args.get('user_id')
             if not user_id:
