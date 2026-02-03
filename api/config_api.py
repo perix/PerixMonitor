@@ -21,9 +21,11 @@ def get_asset_config():
         logger.error(f"Failed to fetch asset config: {e}")
         return jsonify({"error": str(e)}), 500
 
-@config_bp.route('/api/config/assets', methods=['POST'])
+@config_bp.route('/api/config/assets', methods=['POST', 'OPTIONS'])
 def update_asset_config():
     try:
+        if request.method == 'OPTIONS':
+             return jsonify(status="ok"), 200
         data = request.json
         if not data:
             return jsonify({"error": "No data provided"}), 400

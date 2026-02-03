@@ -42,12 +42,14 @@ def register_portfolio_routes(app):
             logger.error(f"LIST PORTFOLIOS ERROR: {str(e)}")
             return jsonify(error=str(e)), 500
 
-    @app.route('/api/portfolio/<portfolio_id>/settings', methods=['PATCH'])
+    @app.route('/api/portfolio/<portfolio_id>/settings', methods=['PATCH', 'OPTIONS'])
     def update_portfolio_settings(portfolio_id):
         """
         Updates the settings JSONB column for a portfolio.
         """
         try:
+            if request.method == 'OPTIONS':
+                 return jsonify(status="ok"), 200
             settings_update = request.json
             if settings_update is None:
                 return jsonify(error="Missing settings in body"), 400

@@ -230,9 +230,11 @@ def get_memory_data():
         logger.error(traceback.format_exc())
         return jsonify(error=str(e)), 500
 
-@memory_bp.route('/api/memory/notes', methods=['POST'])
+@memory_bp.route('/api/memory/notes', methods=['POST', 'OPTIONS'])
 def save_note():
     try:
+        if request.method == 'OPTIONS':
+             return jsonify(status="ok"), 200
         data = request.json
         portfolio_id = data.get('portfolio_id')
         asset_id = data.get('asset_id')
@@ -257,13 +259,15 @@ def save_note():
         logger.error(f"SAVE NOTE ERROR: {e}")
         return jsonify(error=str(e)), 500
 
-@memory_bp.route('/api/memory/settings', methods=['GET', 'POST'])
+@memory_bp.route('/api/memory/settings', methods=['GET', 'POST', 'OPTIONS'])
 def memory_settings():
     """
     Saves/Loads table configuration (column visibility, sorting, filters)
     Key: memory_settings_{user_id}_{portfolio_id}
     """
     try:
+        if request.method == 'OPTIONS':
+             return jsonify(status="ok"), 200
         supabase = get_supabase_client()
         
         if request.method == 'POST':
