@@ -13,6 +13,9 @@ def register_settings_routes(app):
         Uses Service Role, so it bypasses RLS.
         """
         try:
+            if request.method == 'OPTIONS':
+                return jsonify(status="ok"), 200
+
             supabase = get_supabase_client()
             res = supabase.table('app_config').select('value').eq('key', 'openai_config').limit(1).execute()
             
@@ -38,6 +41,9 @@ def register_settings_routes(app):
         Uses Service Role, so it bypasses RLS.
         """
         try:
+            if request.method == 'OPTIONS':
+                return jsonify(status="ok"), 200
+
             config_data = request.json
             if not config_data:
                 return jsonify(error="No config data provided"), 400

@@ -94,8 +94,10 @@ export default function SystemMaintenancePanel() {
         try {
             const res = await axios.get('/api/admin/users');
             setUsers(res.data.users || []);
-        } catch (error) {
-            console.error("Failed to fetch users", error);
+        } catch (error: any) {
+            console.error("Failed to fetch users. Response:", error.response);
+            console.error("Full Error:", error);
+            // Optionally set an error state to show in UI
         } finally {
             setLoadingUsers(false);
         }
@@ -132,12 +134,33 @@ export default function SystemMaintenancePanel() {
     const handleResetDatabase = async () => {
         setResetLoading(true);
         try {
-            const { error } = await supabase.rpc('reset_db_data');
-            if (error) throw error;
+            // Use Backend API instead of direct RPC for better permission handling
+            if (!currentUserId) throw new Error("User ID not found");
+
+            // We need a portfolio_id (or just pass user_id and let backend handle it, 
+            // but backend expects portfolio_id currently. Let's see index.py)
+            // Index.py line 417 checks portfolio_id.
+            // But this is a SYSTEM reset. 
+            // Wait, index.py checks `portfolio_id = data.get('portfolio_id')`.
+            // If I pass a dummy or fetch one?
+            // Actually, the reset logic in backend (lines 425+) deletes EVERYTHING neq -1.
+            // It uses portfolio_id mostly for logging?
+            // "FULL WIPE COMPLETED for Portfolio {portfolio_id}"
+
+            // Let's first fetch a portfolio ID or pass a placeholder if allowed.
+            // But to be safe, let's fetch one.
+            const { data: portfolios } = await supabase.from('portfolios').select('id').limit(1);
+            const pid = portfolios && portfolios.length > 0 ? portfolios[0].id : '00000000-0000-0000-0000-000000000000';
+
+            await axios.post('/api/reset', {
+                portfolio_id: pid
+            });
+
+            alert('Database resettato con successo.');
             window.location.reload();
         } catch (error: any) {
             console.error('Reset failed:', error);
-            alert('Errore durante il reset del database: ' + error.message);
+            alert('Errore durante il reset del database: ' + (error.response?.data?.error || error.message));
         } finally {
             setResetLoading(false);
         }
