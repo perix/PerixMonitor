@@ -524,7 +524,7 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
 
                 {/* Chart area with Y-axis slider on the left */}
                 <div
-                    className={`flex items-stretch transition-opacity duration-200 flex-1 min-h-[450px] ${isPending ? 'opacity-50 cursor-wait' : 'opacity-100'}`}
+                    className={`flex items-stretch transition-opacity duration-200 flex-1 min-h-0 ${isPending ? 'opacity-50 cursor-wait' : 'opacity-100'}`}
                 >
                     {/* Y-Axis Slider (Vertical) */}
                     {/* In Value Mode, this slider controls the Right Axis (Portfolio). 

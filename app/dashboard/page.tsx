@@ -399,7 +399,7 @@ export default function DashboardPage() {
 
     return (
 
-        <div className="flex flex-1 flex-col h-full bg-background/50 p-6 overflow-y-auto">
+        <div className="flex flex-1 flex-col h-full bg-background/50 p-6 overflow-hidden">
             <PanelHeader title={`Dashboard - ${portfolioName || 'Loading...'}`}>
                 <div className="flex items-center gap-2 text-xs">
                     <div className="flex items-center gap-1 bg-background/50 border border-white/10 rounded px-2 py-1">
@@ -429,7 +429,7 @@ export default function DashboardPage() {
                 </div>
             </PanelHeader>
 
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 flex-1 min-h-0">
                 <div className="grid gap-3" style={{ gridTemplateColumns: "minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 1.6fr)" }}>
                     <Card className="bg-card/80 backdrop-blur-xl border-white/40 shadow-lg hover:bg-card/90 transition-colors">
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -669,20 +669,20 @@ export default function DashboardPage() {
                     </Card>
                 </div>
 
-                <div className="grid gap-3 md:grid-cols-1">
+                <div className="flex-1 min-h-0 flex flex-col">
                     {/* 
                          MODIFIED: Full width graph as requested.
                          Removed the side allocation panel.
                          The NetWorthChart will be replaced/updated to show MWR of assets.
                      */}
-                    <div className="col-span-1">
+                    <div className="flex-1 min-h-0">
                         <DashboardCharts
                             allocationData={summary.allocation}
                             history={filteredHistory}
                             initialSettings={initialSettings}
                             onSettingsChange={updateSettings}
                             portfolioName={portfolioName}
-                            className="h-[450px]"
+                            className="h-full"
                         />
                     </div>
                 </div>

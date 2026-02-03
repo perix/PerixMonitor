@@ -52,7 +52,7 @@ export default function SettingsPage() {
     const gridCols = logEnabled ? 'grid-cols-4' : 'grid-cols-3';
 
     return (
-        <div className="max-w-4xl mx-auto pb-20">
+        <div className="max-w-5xl lg:max-w-6xl xl:max-w-7xl mx-auto pb-20 px-4">
             <h1 className="text-3xl font-bold mb-6 text-white">Impostazioni</h1>
             <Tabs defaultValue="assets" className="space-y-6">
                 <TabsList className={`grid w-full ${gridCols} bg-slate-900 border border-white/10 h-14 p-1 rounded-xl`}>

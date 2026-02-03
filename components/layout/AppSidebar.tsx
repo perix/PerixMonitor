@@ -17,7 +17,8 @@ import {
     Settings,
     BarChart3,
     Upload,
-    LogOut
+    LogOut,
+    LayoutDashboard
 } from "lucide-react"
 
 import {
@@ -47,7 +48,7 @@ const data = {
                 {
                     title: "Dashboard",
                     url: "/dashboard",
-                    icon: Home,
+                    icon: LayoutDashboard,
                 },
                 {
                     title: "Portafoglio",
@@ -68,6 +69,8 @@ const data = {
                     title: "Carica Dati",
                     url: "/upload",
                     icon: Upload,
+                    className: "text-red-400 hover:text-red-300 hover:bg-red-500/10 data-[active=true]:bg-red-500/10 data-[active=true]:text-red-400",
+                    separatorAbove: true
                 },
             ],
         },
@@ -144,18 +147,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             </SidebarHeader>
             <SidebarContent>
                 <SidebarGroup>
-                    <SidebarGroupLabel>Menu</SidebarGroupLabel>
+                    {/* <SidebarGroupLabel>Menu</SidebarGroupLabel> */}
                     <SidebarMenu>
                         {data.navMain.map((group) => (
-                            group.items.map((item) => (
-                                <SidebarMenuItem key={item.title}>
-                                    <SidebarMenuButton asChild isActive={pathname === item.url} tooltip={item.title}>
-                                        <Link href={item.url}>
-                                            <item.icon />
-                                            <span>{item.title}</span>
-                                        </Link>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
+                            group.items.map((item: any) => (
+                                <div key={item.title}>
+                                    {item.separatorAbove && <div className="my-2 ml-2 mr-28 border-t border-white/40" />}
+                                    <SidebarMenuItem>
+                                        <SidebarMenuButton
+                                            asChild
+                                            isActive={pathname === item.url}
+                                            tooltip={item.title}
+                                            className={item.className}
+                                        >
+                                            <Link href={item.url}>
+                                                <item.icon />
+                                                <span>{item.title}</span>
+                                            </Link>
+                                        </SidebarMenuButton>
+                                    </SidebarMenuItem>
+                                </div>
                             ))
                         ))}
                     </SidebarMenu>

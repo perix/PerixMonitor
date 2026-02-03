@@ -263,75 +263,80 @@ export default function SystemMaintenancePanel() {
                                 <Loader2 className="w-8 h-8 animate-spin text-slate-500" />
                             </div>
                         ) : (
-                            <Table>
-                                <TableHeader>
-                                    <TableRow className="border-white/10 hover:bg-white/5">
-                                        <TableHead className="text-slate-400">Email</TableHead>
-                                        <TableHead className="text-slate-400">Creato il</TableHead>
-                                        <TableHead className="text-slate-400">Ultimo Login</TableHead>
-                                        <TableHead className="text-right text-slate-400">Azioni</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {users.map((user) => (
-                                        <TableRow key={user.id} className="border-white/10 hover:bg-white/5">
-                                            <TableCell className="font-medium text-slate-200">{user.email}</TableCell>
-                                            <TableCell className="text-slate-400">
-                                                {new Date(user.created_at).toLocaleDateString()}
-                                            </TableCell>
-                                            <TableCell className="text-slate-400">
-                                                {user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString() : 'Mai'}
-                                            </TableCell>
-                                            <TableCell className="text-right space-x-2">
-                                                <Dialog open={resettingPwdUser?.id === user.id} onOpenChange={(open) => {
-                                                    if (!open) { setResettingPwdUser(null); }
-                                                    else setResettingPwdUser(user);
-                                                }}>
-                                                    <DialogTrigger asChild>
-                                                        <Button variant="outline" size="sm" className="h-8 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300">
-                                                            <Key className="w-3 h-3 mr-1" /> Reset Pwd
-                                                        </Button>
-                                                    </DialogTrigger>
-                                                    <DialogContent className="bg-slate-900 border-white/10 text-white">
-                                                        <DialogHeader>
-                                                            <DialogTitle>Invia Email Reset Password</DialogTitle>
-                                                            <DialogDescription className="text-slate-400">
-                                                                Verrà inviata un'email a <b className="text-white">{user.email}</b> con un link per reimpostare la password.
-                                                                <br /><br />
-                                                                L'utente dovrà cliccare sul link nell'email e scegliere una nuova password.
-                                                            </DialogDescription>
-                                                        </DialogHeader>
-                                                        <DialogFooter className="pt-4">
-                                                            <Button variant="ghost" onClick={() => setResettingPwdUser(null)}>Annulla</Button>
-                                                            <Button onClick={handleResetPassword} disabled={pwdLoading} className="bg-indigo-600 hover:bg-indigo-700">
-                                                                {pwdLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                                                                Invia Email
+                            <div className="rounded-xl border border-slate-600 overflow-hidden">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="bg-slate-800/80 border-b border-slate-600 hover:bg-slate-800/80">
+                                            <TableHead className="text-slate-200 font-semibold border-r border-slate-700">Email</TableHead>
+                                            <TableHead className="text-slate-200 font-semibold border-r border-slate-700">Creato il</TableHead>
+                                            <TableHead className="text-slate-200 font-semibold border-r border-slate-700">Ultimo Login</TableHead>
+                                            <TableHead className="text-right text-slate-200 font-semibold">Azioni</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {users.map((user, index) => (
+                                            <TableRow
+                                                key={user.id}
+                                                className={`border-b border-slate-700 hover:bg-slate-800/40 transition-colors ${index % 2 === 0 ? 'bg-slate-900/30' : 'bg-slate-900/50'}`}
+                                            >
+                                                <TableCell className="font-medium text-slate-200 border-r border-slate-700/50">{user.email}</TableCell>
+                                                <TableCell className="text-slate-400 border-r border-slate-700/50">
+                                                    {new Date(user.created_at).toLocaleDateString()}
+                                                </TableCell>
+                                                <TableCell className="text-slate-400 border-r border-slate-700/50">
+                                                    {user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString() : 'Mai'}
+                                                </TableCell>
+                                                <TableCell className="text-right space-x-2">
+                                                    <Dialog open={resettingPwdUser?.id === user.id} onOpenChange={(open) => {
+                                                        if (!open) { setResettingPwdUser(null); }
+                                                        else setResettingPwdUser(user);
+                                                    }}>
+                                                        <DialogTrigger asChild>
+                                                            <Button variant="outline" size="sm" className="h-8 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300">
+                                                                <Key className="w-3 h-3 mr-1" /> Reset Pwd
                                                             </Button>
-                                                        </DialogFooter>
-                                                    </DialogContent>
-                                                </Dialog>
+                                                        </DialogTrigger>
+                                                        <DialogContent className="bg-slate-900 border-white/10 text-white">
+                                                            <DialogHeader>
+                                                                <DialogTitle>Invia Email Reset Password</DialogTitle>
+                                                                <DialogDescription className="text-slate-400">
+                                                                    Verrà inviata un'email a <b className="text-white">{user.email}</b> con un link per reimpostare la password.
+                                                                    <br /><br />
+                                                                    L'utente dovrà cliccare sul link nell'email e scegliere una nuova password.
+                                                                </DialogDescription>
+                                                            </DialogHeader>
+                                                            <DialogFooter className="pt-4">
+                                                                <Button variant="ghost" onClick={() => setResettingPwdUser(null)}>Annulla</Button>
+                                                                <Button onClick={handleResetPassword} disabled={pwdLoading} className="bg-indigo-600 hover:bg-indigo-700">
+                                                                    {pwdLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                                                                    Invia Email
+                                                                </Button>
+                                                            </DialogFooter>
+                                                        </DialogContent>
+                                                    </Dialog>
 
-                                                <Button
-                                                    variant="destructive"
-                                                    size="sm"
-                                                    className="h-8"
-                                                    onClick={() => handleDeleteUser(user.id)}
-                                                    disabled={deletingUser === user.id}
-                                                >
-                                                    {deletingUser === user.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserX className="w-3 h-3" />}
-                                                </Button>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                    {users.length === 0 && (
-                                        <TableRow>
-                                            <TableCell colSpan={4} className="text-center py-8 text-slate-500">
-                                                Nessun utente trovato
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
+                                                    <Button
+                                                        variant="destructive"
+                                                        size="sm"
+                                                        className="h-8"
+                                                        onClick={() => handleDeleteUser(user.id)}
+                                                        disabled={deletingUser === user.id}
+                                                    >
+                                                        {deletingUser === user.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserX className="w-3 h-3" />}
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                        {users.length === 0 && (
+                                            <TableRow>
+                                                <TableCell colSpan={4} className="text-center py-8 text-slate-500">
+                                                    Nessun utente trovato
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </div>
                         )}
                     </CardContent>
                 </Card>

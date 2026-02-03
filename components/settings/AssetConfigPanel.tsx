@@ -49,7 +49,7 @@ export const AssetConfigPanel = () => {
     };
 
     return (
-        <Card className="bg-card border-white/10">
+        <Card className="bg-card border-white/40">
             <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                     Configurazione Asset
@@ -67,7 +67,7 @@ export const AssetConfigPanel = () => {
                             step="0.01"
                             value={threshold}
                             onChange={(e) => setThreshold(parseFloat(e.target.value))}
-                            className="max-w-[150px] bg-black/20"
+                            className="max-w-[150px] bg-black/20 border-slate-600"
                         />
                         <span className="text-sm text-muted-foreground">
                             Variazione minima per notifica popup e colorazione trend.
