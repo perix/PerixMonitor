@@ -1,5 +1,5 @@
 from flask import jsonify, request
-from supabase_client import get_supabase_client
+from db_helper import execute_request, update_table
 from logger import logger
 from price_manager import get_latest_price
 from finance import xirr
@@ -14,13 +14,29 @@ def register_portfolio_routes(app):
         Returns details for a specific portfolio (e.g. name).
         """
         try:
-            supabase = get_supabase_client()
-            res = supabase.table('portfolios').select('id, name, settings').eq('id', portfolio_id).single().execute()
+            # supabase = get_supabase_client()
+            # res = supabase.table('portfolios').select('id, name, settings').eq('id', portfolio_id).single().execute()
+            res = execute_request('portfolios', 'GET', params={
+                'select': 'id,name,settings',
+                'id': f'eq.{portfolio_id}'
+            }, headers={"Accept": "application/vnd.pgrst.object+json"}) # Ensure single object return if possible, or just parse list
             
-            if not res.data:
+            # PostgREST returns object with Accept header or list without it unless &limit=1 and some headers.
+            # Easiest: get list and take first.
+            
+            data = None
+            if res and res.status_code == 200:
+                json_resp = res.json()
+                # If we used Accept header for single object:
+                if isinstance(json_resp, dict):
+                     data = json_resp
+                elif isinstance(json_resp, list) and json_resp:
+                     data = json_resp[0]
+
+            if not data:
                 return jsonify(error="Portfolio not found"), 404
             
-            return jsonify(res.data)
+            return jsonify(data)
         except Exception as e:
             logger.error(f"GET PORTFOLIO DETAILS ERROR: {str(e)}")
             return jsonify(error=str(e)), 500
@@ -40,21 +56,27 @@ def register_portfolio_routes(app):
             if settings_update is None:
                 return jsonify(error="Missing settings in body"), 400
 
-            supabase = get_supabase_client()
+            # supabase = get_supabase_client()
             
-            # Fetch existing settings first to merge (optional, but safer if partial updates supported)
-            # For simplicity, we'll do a shallow merge or overwrite. 
-            # Let's assume the frontend sends the specific keys to update/merge.
-            # Supabase/Postgrest doesn't have a simple deep merge patch out of the box without functions.
-            # We'll fetch, update in python, and write back.
+            # 1. Fetch existing settings
+            # res_curr = supabase.table('portfolios').select("settings").eq('id', portfolio_id).single().execute()
+            res_curr = execute_request('portfolios', 'GET', params={
+                'select': 'settings',
+                'id': f'eq.{portfolio_id}'
+            })
             
-            res_curr = supabase.table('portfolios').select("settings").eq('id', portfolio_id).single().execute()
-            current_settings = res_curr.data.get('settings') or {}
+            current_settings = {}
+            if res_curr and res_curr.status_code == 200:
+                rows = res_curr.json()
+                if rows:
+                    current_settings = rows[0].get('settings') or {}
             
             # Merge
             current_settings.update(settings_update)
             
-            res = supabase.table('portfolios').update({"settings": current_settings}).eq('id', portfolio_id).execute()
+            # 2. Update
+            # res = supabase.table('portfolios').update({"settings": current_settings}).eq('id', portfolio_id).execute()
+            update_table('portfolios', {"settings": current_settings}, {'id': portfolio_id})
             
             return jsonify(success=True, settings=current_settings)
             
@@ -73,20 +95,25 @@ def register_portfolio_routes(app):
             if not portfolio_id:
                 return jsonify(error="Missing portfolio_id"), 400
 
-            supabase = get_supabase_client()
+            # supabase = get_supabase_client()
             
             # Fetch all transactions with asset data for this portfolio
-            res_trans = supabase.table('transactions').select(
-                "quantity, type, price_eur, date, assets(id, isin, name, ticker, asset_class, country, sector, rating, issuer, currency, metadata, last_trend_variation, last_trend_days)"
-            ).eq('portfolio_id', portfolio_id).order('date').execute()
+            # res_trans = supabase.table('transactions').select(...).eq(...).order(...).execute()
+            res_trans = execute_request('transactions', 'GET', params={
+                'select': 'quantity,type,price_eur,date,assets(id,isin,name,ticker,asset_class,country,sector,rating,issuer,currency,metadata,last_trend_variation,last_trend_days)',
+                'portfolio_id': f'eq.{portfolio_id}',
+                'order': 'date.asc'
+            })
             
-            if not res_trans.data:
+            trans_data = res_trans.json() if (res_trans and res_trans.status_code == 200) else []
+            
+            if not trans_data:
                 return jsonify(assets=[])
             
             # Calculate current holdings per asset with cost basis and cashflows
             holdings = {}  # isin -> {asset_data, qty, total_cost, cashflows}
             
-            for t in res_trans.data:
+            for t in trans_data:
                 asset = t['assets']
                 isin = asset['isin']
                 qty = float(t['quantity'])
@@ -176,8 +203,11 @@ def register_portfolio_routes(app):
                         # (Correction: we are inside the function, let's fetch settings once efficiently)
                         if 'settings_cache' not in locals():
                              try:
-                                 res_s = supabase.table('portfolios').select('settings').eq('id', portfolio_id).single().execute()
-                                 settings_cache = res_s.data.get('settings') or {}
+                                 # res_s = supabase.table('portfolios').select('settings').eq('id', portfolio_id).single().execute()
+                                 # settings_cache = res_s.data.get('settings') or {}
+                                 res_s = execute_request('portfolios', 'GET', params={'select': 'settings', 'id': f'eq.{portfolio_id}'})
+                                 rows = res_s.json() if (res_s and res_s.status_code == 200) else []
+                                 settings_cache = rows[0].get('settings') or {} if rows else {}
                              except:
                                  settings_cache = {}
                         
@@ -194,8 +224,18 @@ def register_portfolio_routes(app):
                         mwr_t2 = int(t2_val)
                         
                         from finance import get_tiered_mwr
+                        
+                        # Option A: Determine end_date for this asset to avoid dilution
+                        asset_end_date = datetime.now()
+                        if asset_info.get('price_date'):
+                            asset_end_date = datetime.strptime(asset_info['price_date'], '%Y-%m-%d')
+                        
+                        # Check last cashflow date too
+                        last_cf_date = max(f['date'] for f in data['cashflows']) if data['cashflows'] else asset_end_date
+                        asset_end_date = max(asset_end_date, last_cf_date)
+                        
                         # cashflows is just the history list so far
-                        mwr_val, mwr_t = get_tiered_mwr(data['cashflows'], current_value, t1=mwr_t1, t2=mwr_t2)
+                        mwr_val, mwr_t = get_tiered_mwr(data['cashflows'], current_value, t1=mwr_t1, t2=mwr_t2, end_date=asset_end_date)
                         mwr = mwr_val
                         mwr_type = mwr_t
 

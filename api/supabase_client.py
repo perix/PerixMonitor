@@ -15,7 +15,45 @@ if not url or not key:
     logger.error("Supabase URL or Key missing in .env.local")
     raise ValueError("Missing Supabase Credentials")
 
-supabase: Client = create_client(url, key)
+# HACK: Bypass supabase-py validation for opaque/local keys
+# Local Supabase uses 'sb_...' keys which look invalid to the python client (expects JWT).
+# We init with a dummy JWT and then swap the headers.
+dummy_jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIn0.dummy"
+
+try:
+    # Try normal init first (in case keys are JWTs)
+    supabase: Client = create_client(url, key)
+except Exception:
+    # If it fails (likely Invalid API Key), use the bypass
+    supabase: Client = create_client(url, dummy_jwt)
+    
+    # Swap in the real key
+    supabase.supabase_key = key
+    
+    # Update headers for PostgREST
+    supabase.postgrest.auth(key)
+    
+    # Update headers for Auth/GoTrue (Important for Admin)
+    # Note: gotrue-py client stores headers in .headers (dict)
+    # We might need to inspect the object structure if this doesn't work.
+    # Current library version usually has supabase.auth._headers or similar?
+    # Inspecting basic usage:
+    # supabase.auth is a GoTrueClient.
+    
+    # For newer supabase-py, auth is separate.
+    # Let's set the headers directly in the http client if accessible, or rebuild.
+    # The GoTrue client usually gets the headers from the parent or sets them on init.
+    
+    # Re-setting headers manually where we can:
+    supabase.options.headers["apikey"] = key
+    supabase.options.headers["Authorization"] = f"Bearer {key}"
+    
+    # Also fix the Auth client headers if they were initialized with dummy
+    if hasattr(supabase.auth, 'headers'):
+        supabase.auth.headers["apikey"] = key
+        supabase.auth.headers["Authorization"] = f"Bearer {key}"
+    
+    # For postgrest, .auth() call above handles it.
 
 def get_supabase_client() -> Client:
     return supabase

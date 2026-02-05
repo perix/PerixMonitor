@@ -73,6 +73,7 @@ export interface MemoryTableProps {
     onColumnVisibilityChange: (updaterOrValue: VisibilityState | ((old: VisibilityState) => VisibilityState)) => void;
     columnSizing: Record<string, number>;
     onColumnSizingChange: (updaterOrValue: Record<string, number> | ((old: Record<string, number>) => Record<string, number>)) => void;
+    portfolioId?: string;
 }
 
 // Extract Cell Component to prevent focus loss - uses local state
@@ -154,17 +155,20 @@ export function MemoryTable({
     columnVisibility,
     onColumnVisibilityChange,
     columnSizing,
-    onColumnSizingChange
+    onColumnSizingChange,
+    portfolioId
 }: MemoryTableProps) {
 
 
     const [threshold, setThreshold] = useState(0.1);
 
     useEffect(() => {
-        axios.get('/api/config/assets').then(res => {
+        axios.get('/api/config/assets', {
+            params: { portfolio_id: portfolioId }
+        }).then(res => {
             if (res.data?.priceVariationThreshold !== undefined) setThreshold(res.data.priceVariationThreshold);
         }).catch(err => console.error("Failed to load asset config", err));
-    }, []);
+    }, [portfolioId]);
 
     const columns = useMemo<ColumnDef<MemoryData>[]>(() => [
         {
@@ -175,7 +179,7 @@ export function MemoryTable({
                     onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
                     className="text-left w-full pl-0 hover:bg-transparent font-bold text-black hover:text-black"
                 >
-                    Descrizione Titolo
+                    Descrizione Asset
                     <ArrowUpDown className="ml-2 h-4 w-4" />
                 </Button>
             ),
@@ -185,7 +189,7 @@ export function MemoryTable({
                 const isSignificant = Math.abs(variation) >= threshold;
                 const colorClass = isSignificant
                     ? (variation > 0 ? "text-green-500" : "text-red-500")
-                    : ""; // Default: Inherit (slate-200 normally, slate-900 on hover)
+                    : "text-muted-foreground";
 
                 const formatPct = (val: number) => {
                     const sign = val >= 0 ? '+' : '';
@@ -393,14 +397,25 @@ export function MemoryTable({
                             .getAllColumns()
                             .filter((column) => column.getCanHide())
                             .map((column) => {
+                                // Map column IDs to readable labels matching the table headers
+                                const columnLabels: Record<string, string> = {
+                                    description: "Descrizione Asset",
+                                    isin: "ISIN",
+                                    type: "Tipologia",
+                                    pnl: "P&L",
+                                    mwr: "MWR%",
+                                    value: "Controvalore",
+                                    open_date: "Data Apertura",
+                                    close_date: "Data Chiusura",
+                                    note: "Note"
+                                };
                                 return (
                                     <DropdownMenuCheckboxItem
                                         key={column.id}
-                                        className="capitalize"
                                         checked={column.getIsVisible()}
                                         onCheckedChange={(value) => column.toggleVisibility(!!value)}
                                     >
-                                        {column.id}
+                                        {columnLabels[column.id] || column.id}
                                     </DropdownMenuCheckboxItem>
                                 );
                             })}

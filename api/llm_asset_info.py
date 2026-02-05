@@ -60,18 +60,17 @@ def fetch_asset_info_from_llm(isin: str, model: str = None, asset_name: str = No
         max_tokens = 1000 # Default
         
         try:
-            from supabase_client import get_supabase_client
-            supabase = get_supabase_client()
+            from db_helper import get_config
             
             # Fetch prompt config
-            res_prompt = supabase.table('app_config').select('value').eq('key', 'llm_asset_prompt').single().execute()
-            if res_prompt.data and res_prompt.data.get('value') and res_prompt.data['value'].get('prompt'):
-                prompt_template = res_prompt.data['value']['prompt']
+            prompt_config = get_config('llm_asset_prompt')
+            if prompt_config and prompt_config.get('prompt'):
+                prompt_template = prompt_config['prompt']
             
             # Fetch global AI config (model, reasoning_effort)
-            res_ai = supabase.table('app_config').select('value').eq('key', 'openai_config').single().execute()
-            if res_ai.data and res_ai.data.get('value'):
-                ai_config = res_ai.data['value']
+            ai_config = get_config('openai_config')
+
+            if ai_config:
                 global_model = ai_config.get('model') or global_model
                 reasoning_effort = ai_config.get('reasoning_effort') or reasoning_effort
                 web_search_enabled = ai_config.get('web_search_enabled', False)

@@ -6,31 +6,32 @@ import { cn } from "@/lib/utils";
 interface ResizablePortfolioLayoutProps {
     leftPanel: ReactNode;
     rightPanel: ReactNode;
+    // Controlled Width
+    widthPercent?: number;
+    onWidthChange?: (width: number) => void;
     defaultLayout?: number[];
 }
 
-const STORAGE_KEY = 'perix-portfolio-layout-v1';
+// const STORAGE_KEY = 'perix-portfolio-layout-v1'; -> Removed
 
-export function ResizablePortfolioLayout({ leftPanel, rightPanel, defaultLayout = [30, 70] }: ResizablePortfolioLayoutProps) {
-    // V17: FINAL + PERSISTENCE
-    // - Min width reduced to 1%.
-    // - LocalStorage persistence implemented (load on mount, save on drag end).
-    // - CSS constraints relaxed to allow small sizes.
+export function ResizablePortfolioLayout({ leftPanel, rightPanel, widthPercent, onWidthChange, defaultLayout = [30, 70] }: ResizablePortfolioLayoutProps) {
+    // V18: CONTROLLED COMPONENT
+    // - Persisted by parent via onWidthChange
 
-    const [leftWidth, setLeftWidth] = useState(defaultLayout[0]);
+    // Internal state for dragging smoothness, seeded by prop
+    const [leftWidth, setLeftWidth] = useState(widthPercent || defaultLayout[0]);
     const [isDragging, setIsDragging] = useState(false);
     const [mounted, setMounted] = useState(false);
 
-    // Load persisted state on mount
+    // Sync from prop if it changes (and not dragging)
+    useEffect(() => {
+        if (widthPercent && !isDragging) {
+            setLeftWidth(widthPercent);
+        }
+    }, [widthPercent, isDragging]);
+
     useEffect(() => {
         setMounted(true);
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-            const parsed = parseFloat(saved);
-            if (!isNaN(parsed) && parsed > 0 && parsed < 100) {
-                setLeftWidth(parsed);
-            }
-        }
     }, []);
 
     const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -69,8 +70,10 @@ export function ResizablePortfolioLayout({ leftPanel, rightPanel, defaultLayout 
         setIsDragging(false);
         e.currentTarget.releasePointerCapture(e.pointerId);
 
-        // Save to localStorage when drag ends
-        localStorage.setItem(STORAGE_KEY, leftWidth.toString());
+        // Notify parent of final width
+        if (onWidthChange) {
+            onWidthChange(leftWidth);
+        }
     };
 
     if (!mounted) {

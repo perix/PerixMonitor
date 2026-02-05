@@ -10,6 +10,7 @@ interface PriceVariation {
     old_price?: number;
     new_price?: number;
     variation_pct?: number;
+    days_delta?: number;
     price_count?: number;
     is_hidden?: boolean;
 }
@@ -42,15 +43,21 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
         return `${sign}${val.toFixed(2)}%`;
     };
 
-    // Determine color
+    // Determine color based on threshold
     const getColor = (val: number) => {
+        const absVal = Math.abs(val);
+        const currentThreshold = threshold || 0.1;
+
+        if (absVal < currentThreshold) return 'text-gray-500 opacity-60';
         if (val > 0) return 'text-green-500';
         if (val < 0) return 'text-red-500';
         return 'text-gray-400';
     };
 
-    // Filter out hidden variations (those below threshold deemed as reset-to-zero)
-    const visibleVariations = variations.filter(v => !v.is_hidden);
+    // List only significant variations in the table for noise reduction
+    const absThreshold = threshold || 0.1;
+    const visibleVariations = variations.filter(v => Math.abs(v.variation_pct || 0) >= absThreshold);
+    const significantCount = visibleVariations.length;
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
@@ -75,7 +82,7 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {visibleVariations.map((item, idx) => (
+                                {variations.map((item, idx) => (
                                     <TableRow key={idx} className="border-b-2 border-white/20 hover:bg-white/10">
                                         <TableCell className="font-medium border-r border-white/20">{item.name}</TableCell>
                                         <TableCell className="text-muted-foreground text-xs border-r border-white/20">{item.isin}</TableCell>
@@ -102,7 +109,7 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
                                 {visibleVariations.length === 0 ? (
                                     <TableRow>
                                         <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                                            Nessuna variazione significativa ({'>'}{threshold || 0.1}%) rilevata.
+                                            Nessuna variazione significativa ({'>'}{absThreshold}%) rilevata.
                                         </TableCell>
                                     </TableRow>
                                 ) : (
@@ -127,8 +134,8 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
                     <div className="flex justify-between w-full items-center">
                         <span className="text-sm text-muted-foreground">
                             {isHistoricalReconstruction
-                                ? `${totalUpdated} prezzi storici per ${uniqueAssetsCount || visibleVariations.length} asset`
-                                : `${totalUpdated} prezzi aggiornati (visualizzati ${visibleVariations.length}, Δ > ${threshold || 0.1}%)`
+                                ? `${totalUpdated} prezzi storici caricati per ${uniqueAssetsCount || variations.length} asset`
+                                : `${totalUpdated} prezzi di asset caricati (${significantCount} asset con Δ>|${absThreshold}%|)`
                             }
                         </span>
                         <div className="flex gap-2">

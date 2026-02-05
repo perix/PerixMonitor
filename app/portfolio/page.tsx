@@ -45,6 +45,9 @@ export default function PortfolioPage() {
     const [liquidity, setLiquidity] = useState<number>(0);
     const [isEditingLiquidity, setIsEditingLiquidity] = useState(false);
 
+    // [PERSISTENCE STATE]
+    const [layoutWidth, setLayoutWidth] = useState(30);
+
     useEffect(() => {
         async function fetchAssets() {
             if (!selectedPortfolioId) {
@@ -52,29 +55,37 @@ export default function PortfolioPage() {
                 return;
             }
 
-            // [PERSISTENCE] Load saved selection
-            const savedIsin = localStorage.getItem(`portfolio_selection_${selectedPortfolioId}`);
-
             // Check Cache
             if (portfolioCache[selectedPortfolioId]) {
                 const cached = portfolioCache[selectedPortfolioId];
                 setAssets(cached.assets);
                 setPortfolioName(cached.name);
 
-                // Let's do a quick fetch for settings anyway to ensure liquidity is up to date
-                try {
-                    const portfolioRes = await axios.get(`/api/portfolio/${selectedPortfolioId}`);
-                    const settings = portfolioRes.data.settings || {};
-                    setLiquidity(Number(settings.liquidity) || 0);
-                } catch (e) {
-                    console.error("Failed to fetch latest liquidity", e);
-                }
+                // Use cached settings if available
+                if (cached.settings) {
+                    setLiquidity(Number(cached.settings.liquidity) || 0);
+                    if (cached.settings.layoutWidth) setLayoutWidth(cached.settings.layoutWidth);
 
-                // Selection Logic: Saved > First if none
-                if (savedIsin && cached.assets.some(a => a.isin === savedIsin)) {
-                    setSelectedIsin(savedIsin);
-                } else if (!selectedIsin && cached.assets.length > 0) {
-                    setSelectedIsin(cached.assets[0].isin);
+                    // Saved ISIN from DB
+                    if (cached.settings.selectedIsin && cached.assets.some(a => a.isin === cached.settings.selectedIsin)) {
+                        setSelectedIsin(cached.settings.selectedIsin);
+                    } else if (!selectedIsin && cached.assets.length > 0) {
+                        setSelectedIsin(cached.assets[0].isin);
+                    }
+                } else {
+                    // Fallback fetch settings
+                    try {
+                        const portfolioRes = await axios.get(`/api/portfolio/${selectedPortfolioId}`);
+                        const settings = portfolioRes.data.settings || {};
+                        setLiquidity(Number(settings.liquidity) || 0);
+                        if (settings.layoutWidth) setLayoutWidth(settings.layoutWidth);
+
+                        if (settings.selectedIsin && cached.assets.some(a => a.isin === settings.selectedIsin)) {
+                            setSelectedIsin(settings.selectedIsin);
+                        } else if (!selectedIsin && cached.assets.length > 0) {
+                            setSelectedIsin(cached.assets[0].isin);
+                        }
+                    } catch (e) { console.error(e) }
                 }
 
                 setLoading(false);
@@ -96,10 +107,11 @@ export default function PortfolioPage() {
                 setAssets(fetchedAssets);
                 setPortfolioName(fetchedName);
                 setLiquidity(Number(fetchedSettings.liquidity) || 0);
+                if (fetchedSettings.layoutWidth) setLayoutWidth(fetchedSettings.layoutWidth);
 
-                // Selection Logic
-                if (savedIsin && fetchedAssets.some((a: any) => a.isin === savedIsin)) {
-                    setSelectedIsin(savedIsin);
+                // Selection Logic (DB > First)
+                if (fetchedSettings.selectedIsin && fetchedAssets.some((a: any) => a.isin === fetchedSettings.selectedIsin)) {
+                    setSelectedIsin(fetchedSettings.selectedIsin);
                 } else if (!selectedIsin && fetchedAssets.length > 0) {
                     setSelectedIsin(fetchedAssets[0].isin);
                 }
@@ -107,7 +119,8 @@ export default function PortfolioPage() {
                 // Update Cache
                 setPortfolioCache(selectedPortfolioId, {
                     assets: fetchedAssets,
-                    name: fetchedName
+                    name: fetchedName,
+                    settings: fetchedSettings // Cache settings too
                 });
 
             } catch (e) {
@@ -120,12 +133,42 @@ export default function PortfolioPage() {
         fetchAssets();
     }, [selectedPortfolioId]);
 
-    // [PERSISTENCE] Save selection
+    // [PERSISTENCE] Save selection and layout on change
+    // Using simple debounce helper or effect
     useEffect(() => {
         if (selectedPortfolioId && selectedIsin) {
-            localStorage.setItem(`portfolio_selection_${selectedPortfolioId}`, selectedIsin);
+            // Check if different from cached? Or just save.
+            // We use a small timeout to bundle layout changes?
+            const timer = setTimeout(() => {
+                axios.patch(`/api/portfolio/${selectedPortfolioId}/settings`, {
+                    selectedIsin: selectedIsin
+                }).catch(console.error);
+            }, 1000);
+            return () => clearTimeout(timer);
         }
     }, [selectedIsin, selectedPortfolioId]);
+
+    const handleLayoutChange = (width: number) => {
+        setLayoutWidth(width);
+
+        if (selectedPortfolioId) {
+            // Update Cache
+            if (portfolioCache[selectedPortfolioId]) {
+                const currentCache = portfolioCache[selectedPortfolioId];
+                setPortfolioCache(selectedPortfolioId, {
+                    ...currentCache,
+                    settings: {
+                        ...currentCache.settings,
+                        layoutWidth: width
+                    }
+                });
+            }
+
+            axios.patch(`/api/portfolio/${selectedPortfolioId}/settings`, {
+                layoutWidth: width
+            }).catch(console.error);
+        }
+    };
 
     const handleLiquidityUpdate = async (newValue: string) => {
         if (!selectedPortfolioId) return;
@@ -133,13 +176,26 @@ export default function PortfolioPage() {
         if (isNaN(val)) return;
 
         setLiquidity(val);
+
+        // Optimistic Cache Update
+        if (portfolioCache[selectedPortfolioId]) {
+            const currentCache = portfolioCache[selectedPortfolioId];
+            setPortfolioCache(selectedPortfolioId, {
+                ...currentCache,
+                settings: {
+                    ...currentCache.settings,
+                    liquidity: val
+                }
+            });
+        }
+
         try {
             await axios.patch(`/api/portfolio/${selectedPortfolioId}/settings`, {
                 liquidity: val
             });
         } catch (e) {
             console.error("Failed to update liquidity", e);
-            // Optionally revert state on error
+            // Optionally revert state on error (omitted for simplicity as it's a minor UX risk)
         }
     };
 
@@ -195,7 +251,13 @@ export default function PortfolioPage() {
                             <input
                                 type="number"
                                 value={liquidity}
-                                onChange={(e) => handleLiquidityUpdate(e.target.value)}
+                                onChange={(e) => setLiquidity(parseFloat(e.target.value) || 0)}
+                                onBlur={() => handleLiquidityUpdate(liquidity.toString())}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.currentTarget.blur();
+                                    }
+                                }}
                                 className="w-32 bg-transparent border-b border-dashed border-muted-foreground/50 focus:border-primary focus:outline-none text-right font-mono"
                                 placeholder="0.00"
                                 step="100"
@@ -212,6 +274,8 @@ export default function PortfolioPage() {
 
             <div className="flex-1 w-full min-h-0 relative">
                 <ResizablePortfolioLayout
+                    widthPercent={layoutWidth}
+                    onWidthChange={handleLayoutChange}
                     leftPanel={
                         <AssetList
                             assets={assets}

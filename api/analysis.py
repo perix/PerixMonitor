@@ -1,7 +1,7 @@
 from flask import jsonify, request
 import pandas as pd
 from datetime import datetime
-from supabase_client import get_supabase_client
+from db_helper import execute_request
 from finance import xirr
 from price_manager import get_latest_price
 from asset_classification import get_component_from_asset_type
@@ -20,11 +20,15 @@ def register_analysis_routes(app):
             if not portfolio_id:
                 return jsonify(error="Missing portfolio_id"), 400
 
-            supabase = get_supabase_client()
+            # supabase = get_supabase_client() -> Removed
             
             # 1. Fetch Transactions
-            res_trans = supabase.table('transactions').select("*, assets(id, isin, name, asset_class, last_trend_variation)").eq('portfolio_id', portfolio_id).execute()
-            transactions = res_trans.data
+            # res_trans = supabase.table('transactions').select("*, assets(id, isin, name, asset_class, last_trend_variation)").eq('portfolio_id', portfolio_id).execute()
+            res_trans = execute_request('transactions', 'GET', params={
+                'select': '*,assets(id,isin,name,asset_class,last_trend_variation)',
+                'portfolio_id': f'eq.{portfolio_id}'
+            })
+            transactions = res_trans.json() if (res_trans and res_trans.status_code == 200) else []
             
             if not transactions:
                 return jsonify({
@@ -145,10 +149,17 @@ def register_analysis_routes(app):
 
             # 4. Fetch Manual Liquidity from Portfolio Settings
             manual_liquidity = 0
+            manual_liquidity = 0
             try:
-                res_p = supabase.table('portfolios').select('settings').eq('id', portfolio_id).single().execute()
-                if res_p.data and res_p.data.get('settings'):
-                    manual_liquidity = float(res_p.data['settings'].get('liquidity', 0))
+                # res_p = supabase.table('portfolios').select('settings').eq('id', portfolio_id).single().execute()
+                res_p = execute_request('portfolios', 'GET', params={
+                    'select': 'settings',
+                    'id': f'eq.{portfolio_id}'
+                })
+                
+                rows = res_p.json() if (res_p and res_p.status_code == 200) else []
+                if rows and len(rows) > 0 and rows[0].get('settings'):
+                    manual_liquidity = float(rows[0]['settings'].get('liquidity', 0))
             except Exception as e:
                 logger.warning(f"Failed to fetch manual liquidity: {e}")
 

@@ -68,12 +68,77 @@ export default function AnalyticsPage() {
 
         // Check Cache
         if (analysisCache[selectedPortfolioId]) {
-            setData(analysisCache[selectedPortfolioId]);
+            let displayData = analysisCache[selectedPortfolioId];
+
+            // [SMART PATCH] Check if liquidity matches the latest user setting
+            const cachedSettings = portfolioCache[selectedPortfolioId]?.settings;
+            if (cachedSettings && cachedSettings.liquidity !== undefined) {
+                const currentLiquidity = Number(cachedSettings.liquidity);
+
+                // Find existing liquidity component value
+                const liqComponent = displayData.components.find((c: any) => c.name === "Liquidità");
+                const oldLiquidity = liqComponent ? liqComponent.value : 0;
+
+                // Sync if different
+                if (Math.abs(oldLiquidity - currentLiquidity) > 0.01) {
+                    // Deep clone to avoid mutating cache directly (or maybe we update cache too? let's just render correct data)
+                    const patched = JSON.parse(JSON.stringify(displayData));
+                    let comp = patched.components.find((c: any) => c.name === "Liquidità");
+
+                    if (!comp && currentLiquidity > 0) {
+                        comp = {
+                            name: "Liquidità",
+                            value: 0,
+                            percentage: 0,
+                            invested: 0,
+                            pl_value: 0,
+                            pl_percent: 0,
+                            mwr: 0,
+                            assets: []
+                        };
+                        patched.components.push(comp);
+                    }
+
+                    if (comp) {
+                        comp.value = currentLiquidity;
+                        comp.invested = currentLiquidity; // Simplified: usually cash is net invested
+                        // Update inner asset list
+                        comp.assets = [{
+                            name: "Liquidità Manuale",
+                            isin: "MANUAL_CASH",
+                            value: currentLiquidity,
+                            percent_of_component: 100
+                        }];
+
+                        // If it became 0 and we want to remove it?
+                        if (currentLiquidity === 0) {
+                            patched.components = patched.components.filter((c: any) => c.name !== "Liquidità");
+                        }
+                    }
+
+                    // Recalculate Totals
+                    patched.total_portfolio_value = patched.components.reduce((sum: number, c: any) => sum + c.value, 0);
+
+                    // Recalculate Percentages
+                    patched.components.forEach((c: any) => {
+                        c.percentage = patched.total_portfolio_value > 0
+                            ? Number(((c.value / patched.total_portfolio_value) * 100).toFixed(2))
+                            : 0;
+                    });
+
+                    patched.components.sort((a: any, b: any) => b.value - a.value);
+
+                    displayData = patched;
+                }
+            }
+
+            setData(displayData);
 
             // [PERSISTENCE] Restore selection (logic duplicated for cache hit)
             const savedSelectionName = localStorage.getItem(`analysis_selection_${selectedPortfolioId}`);
-            if (savedSelectionName && analysisCache[selectedPortfolioId].components) {
-                const found = analysisCache[selectedPortfolioId].components.find((c: any) => c.name === savedSelectionName);
+            if (savedSelectionName && displayData.components) {
+                const found = displayData.components.find((c: any) => c.name === savedSelectionName);
+                // If the selected component was Liquidità and we just removed it? Handle gracefully.
                 if (found) {
                     setSelectedSlice(found);
                 }
@@ -108,7 +173,7 @@ export default function AnalyticsPage() {
         };
 
         fetchData();
-    }, [selectedPortfolioId]);
+    }, [selectedPortfolioId, analysisCache, portfolioCache]);
 
     // Fetch threshold configuration
     useEffect(() => {

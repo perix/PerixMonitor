@@ -1,6 +1,6 @@
 import random
 from logger import logger
-from supabase_client import get_supabase_client
+from db_helper import execute_request, upsert_table
 
 # Curated palette for high contrast and aesthetics (Dark Mode optimized)
 PALETTE = [
@@ -24,10 +24,15 @@ PALETTE = [
 
 def get_assigned_colors(portfolio_id):
     """Fetch all currently assigned colors for a portfolio."""
-    supabase = get_supabase_client()
+    # supabase = get_supabase_client()
     try:
-        res = supabase.table('portfolio_asset_settings').select('color').eq('portfolio_id', portfolio_id).execute()
-        return {row['color'] for row in res.data}
+        # res = supabase.table('portfolio_asset_settings').select('color').eq('portfolio_id', portfolio_id).execute()
+        res = execute_request('portfolio_asset_settings', 'GET', params={
+            'select': 'color',
+            'portfolio_id': f'eq.{portfolio_id}'
+        })
+        rows = res.json() if (res and res.status_code == 200) else []
+        return {row['color'] for row in rows}
     except Exception as e:
         logger.error(f"Failed to fetch assigned colors: {e}")
         return set()
@@ -40,17 +45,20 @@ def assign_colors(portfolio_id, asset_ids):
     if not asset_ids:
         return
 
-    supabase = get_supabase_client()
+    # supabase = get_supabase_client() -> Removed
     
     try:
         # 1. Check which assets already have colors
-        res_existing = supabase.table('portfolio_asset_settings')\
-            .select('asset_id, color')\
-            .eq('portfolio_id', portfolio_id)\
-            .in_('asset_id', list(asset_ids))\
-            .execute()
+        
+        in_filter = f"in.({','.join(asset_ids)})"
+        res_existing = execute_request('portfolio_asset_settings', 'GET', params={
+            'select': 'asset_id,color',
+            'portfolio_id': f'eq.{portfolio_id}',
+            'asset_id': in_filter
+        })
             
-        existing_map = {row['asset_id']: row['color'] for row in res_existing.data}
+        rows = res_existing.json() if (res_existing and res_existing.status_code == 200) else []
+        existing_map = {row['asset_id']: row['color'] for row in rows}
         
         assets_needing_color = [aid for aid in asset_ids if aid not in existing_map]
         
@@ -89,7 +97,8 @@ def assign_colors(portfolio_id, asset_ids):
             })
             
         if new_settings:
-            supabase.table('portfolio_asset_settings').insert(new_settings).execute()
+            # supabase.table('portfolio_asset_settings').insert(new_settings).execute()
+            upsert_table('portfolio_asset_settings', new_settings)
             logger.info(f"Assigned colors for {len(new_settings)} assets in portfolio {portfolio_id}")
 
     except Exception as e:

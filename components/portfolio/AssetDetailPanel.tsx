@@ -8,7 +8,7 @@ import { formatSwissMoney, formatSwissNumber } from "@/lib/utils";
 import { DashboardCharts } from "@/components/dashboard/DashboardCharts";
 import { usePortfolio } from "@/context/PortfolioContext";
 import axios from "axios";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 
 interface Asset {
     id: string;
@@ -209,45 +209,79 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
         );
     }
 
-    const { selectedPortfolioId, assetHistoryCache, setAssetHistoryCache } = usePortfolio();
+    const { selectedPortfolioId, assetHistoryCache, setAssetHistoryCache, assetSettingsCache, setAssetSettingsCache } = usePortfolio();
     const [history, setHistory] = useState<any>(null);
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [visibleStats, setVisibleStats] = useState<{ pnl: number; mwr: number } | null>(null);
+    const [threshold, setThreshold] = useState(0.1);
+    const [chartSettings, setChartSettings] = useState<any>(null);
+    const lastAssetIdRef = useRef<string | null>(null);
 
-    // Fetch history when asset changes
+    // Synchronous reset on asset change to avoid race conditions/leakage
+    if (asset?.id !== lastAssetIdRef.current) {
+        lastAssetIdRef.current = asset?.id || null;
+        if (history !== null) setHistory(null);
+        if (chartSettings !== null) setChartSettings(null);
+        if (visibleStats !== null) setVisibleStats(null);
+    }
+
+    // Fetch threshold settings
+    useEffect(() => {
+        if (!selectedPortfolioId) return;
+        axios.get('/api/config/assets', {
+            params: { portfolio_id: selectedPortfolioId }
+        }).then(res => {
+            if (res.data?.priceVariationThreshold !== undefined) setThreshold(res.data.priceVariationThreshold);
+        }).catch(err => console.error("Failed to load asset config", err));
+    }, [selectedPortfolioId]);
+
+    // Fetch history and settings when asset changes
     useEffect(() => {
         if (!asset || !selectedPortfolioId) {
             setHistory(null);
             setVisibleStats(null);
+            setChartSettings(null);
             return;
         }
 
-        // Check Cache
-        if (assetHistoryCache && assetHistoryCache[selectedPortfolioId] && assetHistoryCache[selectedPortfolioId][asset.isin]) {
-            setHistory(assetHistoryCache[selectedPortfolioId][asset.isin]);
-            setVisibleStats(null); // Reset stats on switch even if cached
-            return;
+        const isin = asset.isin;
+        const portfolioId = selectedPortfolioId;
+
+        // 1. Handle History Cache
+        if (assetHistoryCache && assetHistoryCache[portfolioId] && assetHistoryCache[portfolioId][isin]) {
+            setHistory(assetHistoryCache[portfolioId][isin]);
+        } else {
+            const fetchHistory = async () => {
+                setLoadingHistory(true);
+                try {
+                    const res = await axios.get(`/api/dashboard/history?portfolio_id=${portfolioId}&assets=${isin}`);
+                    setHistory(res.data);
+                    setAssetHistoryCache(portfolioId, isin, res.data);
+                } catch (e) {
+                    console.error("Failed to fetch asset history", e);
+                } finally {
+                    setLoadingHistory(false);
+                }
+            };
+            fetchHistory();
         }
 
-        const fetchHistory = async () => {
-            setLoadingHistory(true);
-            try {
-                const res = await axios.get(`/api/dashboard/history?portfolio_id=${selectedPortfolioId}&assets=${asset.isin}`);
-                setHistory(res.data);
+        // 2. Handle Asset Settings (Sliders) Cache
+        const assetId = asset.id;
+        if (assetSettingsCache && assetSettingsCache[portfolioId] && assetSettingsCache[portfolioId][assetId]) {
+            setChartSettings(assetSettingsCache[portfolioId][assetId]);
+        } else {
+            // Fetch Settings
+            axios.get(`/api/config/asset-settings`, {
+                params: { portfolio_id: portfolioId, asset_id: assetId }
+            }).then(res => {
+                setChartSettings(res.data || {});
+                setAssetSettingsCache(portfolioId, assetId, res.data || {});
+            }).catch(err => console.error("Failed to load asset settings", err));
+        }
 
-                // Update Cache
-                setAssetHistoryCache(selectedPortfolioId, asset.isin, res.data);
-
-            } catch (e) {
-                console.error("Failed to fetch asset history", e);
-            } finally {
-                setLoadingHistory(false);
-            }
-        };
-
-        const timeoutId = setTimeout(fetchHistory, 100);
-        return () => clearTimeout(timeoutId);
-    }, [asset?.isin, selectedPortfolioId]); // safer dependency chain
+        setVisibleStats(null);
+    }, [asset?.isin, asset?.id, selectedPortfolioId]);
 
     const handleVisibleStatsChange = useCallback((stats: { pnl: number; mwr: number }) => {
         // Prevent unnecessary state updates if values are same (though object identity differs)
@@ -256,6 +290,25 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
             return stats;
         });
     }, []);
+
+    const handleChartSettingsChange = useCallback((newSettings: any) => {
+        if (!asset || !selectedPortfolioId) return;
+
+        const assetId = asset.id;
+        const portfolioId = selectedPortfolioId;
+
+        // Update local state and cache
+        setChartSettings(newSettings);
+        setAssetSettingsCache(portfolioId, assetId, newSettings);
+
+        // Persist to backend (debounced implicitly by DashboardCharts calling this?)
+        // DashboardCharts already has a 1s debounce on onSettingsChange
+        axios.post('/api/config/asset-settings', {
+            portfolio_id: portfolioId,
+            asset_id: assetId,
+            settings: newSettings
+        }).catch(err => console.error("Failed to persist asset settings", err));
+    }, [asset?.id, selectedPortfolioId]);
 
     const displayName = getAssetDisplayName(asset);
 
@@ -358,7 +411,11 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                     }
                                     const variation = asset.last_trend_variation;
                                     const isPositive = variation >= 0;
-                                    const colorClass = variation > 0 ? "text-green-500" : (variation < 0 ? "text-red-500" : "text-muted-foreground");
+
+                                    const isSignificant = Math.abs(variation) >= threshold;
+                                    const colorClass = isSignificant
+                                        ? (variation > 0 ? "text-green-500" : "text-red-500")
+                                        : "text-muted-foreground";
                                     const Icon = isPositive ? ArrowUpRight : ArrowDownRight;
 
                                     return (
@@ -392,12 +449,15 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                         </Card>
                     ) : history ? (
                         <DashboardCharts
+                            key={asset.id}
                             allocationData={[]}
                             history={history}
                             portfolioName={displayName}
                             hidePortfolio={true}
                             className="mt-0 h-full"
                             onVisibleStatsChange={handleVisibleStatsChange}
+                            initialSettings={chartSettings}
+                            onSettingsChange={handleChartSettingsChange}
                         />
                     ) : (
                         <Card className="bg-card/80 backdrop-blur-xl border-white/40 h-full flex items-center justify-center">

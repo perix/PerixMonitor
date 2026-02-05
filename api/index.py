@@ -10,14 +10,22 @@ if api_dir not in sys.path:
 from dotenv import load_dotenv
 
 # Load env vars safely
-if os.path.exists('.env.local'):
-    load_dotenv('.env.local')
+# Load env vars safely
+env_path = '.env.local'
+if not os.path.exists(env_path):
+    # Try parent directory (if running from api/)
+    parent_env = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env.local')
+    if os.path.exists(parent_env):
+        env_path = parent_env
+
+if os.path.exists(env_path):
+    load_dotenv(env_path)
 
 from datetime import datetime
 
 import pandas as pd
 import numpy as np
-from ingest import parse_portfolio_excel, calculate_delta
+from ingest import parse_portfolio_excel
 # from isin_resolver import resolve_isin (Removed)
 from finance import xirr
 from color_manager import assign_colors
@@ -52,32 +60,37 @@ logger.info(f"debug_path: {sys.path}")
 
 @app.errorhandler(Exception)
 def handle_exception(e):
-    logger.error(f"Unhandled Exception: {str(e)}")
+    logger.error(f"Eccezione Non Gestita: {str(e)}")
     logger.error(traceback.format_exc())
-    return jsonify(error=str(e)), 500
+    # Risposta standard in Italiano per il frontend
+    return jsonify({
+        "error": "Errore interno del server",
+        "details": str(e)
+    }), 500
 
 @app.route('/api/hello', methods=['GET'])
 def hello():
     return jsonify(message="Hello from Python!", version="1.1", build="20260127-fix-assets")
 
-from supabase_client import get_supabase_client, get_or_create_default_portfolio
+# from supabase_client import get_supabase_client, get_or_create_default_portfolio
+# REPLACED BY DB HELPER
+from db_helper import execute_request, query_table, upsert_table, update_table, delete_table
 
 def check_debug_mode(portfolio_id):
     """Check if file logging is enabled for the portfolio owner."""
+    from db_helper import get_config, query_table
     if not portfolio_id: return False
     try:
-        supabase = get_supabase_client()
-        # Get User ID from Portfolio
-        res_p = supabase.table('portfolios').select('user_id').eq('id', portfolio_id).single().execute()
-        if not res_p.data: return False
-        user_id = res_p.data['user_id']
+        # Get User ID from Portfolio using query_table
+        results = query_table('portfolios', 'user_id', {'id': portfolio_id})
+        if not results: return False
+        user_id = results[0].get('user_id')
+        if not user_id: return False
         
         # Get Config for User
         config_key = f'log_config_{user_id}'
-        res_c = supabase.table('app_config').select('value').eq('key', config_key).single().execute()
-        if res_c.data and res_c.data.get('value'):
-             return res_c.data['value'].get('enabled', False)
-        return False
+        config = get_config(config_key, {'enabled': False})
+        return config.get('enabled', False)
     except Exception as e:
         logger.error(f"DEBUG CHECK FAIL: {e}")
         return False
@@ -88,6 +101,7 @@ def sync_transactions():
          return jsonify(status="ok"), 200
     try:
         from logger import configure_file_logging, log_audit
+        from db_helper import upsert_table, execute_request, update_table
         data = request.json
         changes = data.get('changes', [])
         portfolio_id = data.get('portfolio_id')
@@ -106,19 +120,20 @@ def sync_transactions():
         if not changes and not data.get('prices') and not data.get('snapshot') and not data.get('trend_updates'):
             return jsonify(message="No data to sync"), 200
 
-        supabase = get_supabase_client()
-        
+        # supabase = get_supabase_client() -> Removed
         
         # --- 1. Init Prices (Processing moved to end) ---
         prices = data.get('prices', [])
 
         # --- 2. Handle Snapshot Record (If present) ---
         snapshot = data.get('snapshot')
+        snapshot = data.get('snapshot')
         if snapshot:
             try:
                 # Update upload_date to NOW just to be precise on confirm
                 snapshot['upload_date'] = datetime.now().isoformat()
-                supabase.table('snapshots').insert(snapshot).execute()
+                # supabase.table('snapshots').insert(snapshot).execute()
+                upsert_table('snapshots', snapshot)
                 if debug_mode: logger.debug(f"SYNC: Snapshot records saved.")
             except Exception as e:
                  logger.error(f"SYNC: Snapshot save failed: {e}")
@@ -132,8 +147,13 @@ def sync_transactions():
                 div_isins = {d['isin'] for d in dividends}
                 if div_isins:
                      # Reuse or fetch asset map
-                     res_assets = supabase.table('assets').select("id, isin").in_('isin', list(div_isins)).execute()
-                     asset_map_div = {row['isin']: row['id'] for row in res_assets.data}
+                     # res_assets = supabase.table('assets').select("id, isin").in_('isin', list(div_isins)).execute()
+                     in_filter = f"in.({','.join(div_isins)})"
+                     res_assets = execute_request('assets', 'GET', params={'select': 'id,isin', 'isin': in_filter})
+                     
+                     asset_map_div = {}
+                     if res_assets and res_assets.status_code == 200:
+                        asset_map_div = {row['isin']: row['id'] for row in res_assets.json()}
                      
                      valid_dividends = []
                      for d in dividends:
@@ -148,7 +168,8 @@ def sync_transactions():
                      
                      if valid_dividends:
                          # Upsert based on unique constraint (portfolio, asset, date)
-                         supabase.table('dividends').upsert(valid_dividends, on_conflict='portfolio_id, asset_id, date').execute()
+                         # supabase.table('dividends').upsert(valid_dividends, on_conflict='portfolio_id, asset_id, date').execute()
+                         upsert_table('dividends', valid_dividends, on_conflict='portfolio_id, asset_id, date')
                          if debug_mode: logger.debug(f"SYNC: Saved {len(valid_dividends)} dividends.")
             except Exception as e:
                  logger.error(f"SYNC: Dividend save failed: {e}")
@@ -161,8 +182,13 @@ def sync_transactions():
             target_isins = {item.get('isin') for item in changes if item.get('quantity_change') and item.get('isin')}
             if target_isins:
                 # 3b. Batch Fetch existing assets
-                res_assets = supabase.table('assets').select("id, isin").in_('isin', list(target_isins)).execute()
-                asset_map = {row['isin']: row['id'] for row in res_assets.data}
+                # res_assets = supabase.table('assets').select("id, isin").in_('isin', list(target_isins)).execute()
+                in_filter = f"in.({','.join(target_isins)})"
+                res_assets = execute_request('assets', 'GET', params={'select': 'id,isin', 'isin': in_filter})
+                
+                asset_map = {}
+                if res_assets and res_assets.status_code == 200:
+                    asset_map = {row['isin']: row['id'] for row in res_assets.json()}
                 
                 # Ensure existing assets have colors too (backfill)
                 exist_ids = list(asset_map.values())
@@ -181,9 +207,13 @@ def sync_transactions():
                 
                 if isin_to_type:
                     # We need to fetch current metadata for these assets to merge
-                    existing_assets_data = supabase.table('assets').select("id, isin, metadata").in_('isin', list(isin_to_type.keys())).execute()
-                    if existing_assets_data.data:
-                        for row in existing_assets_data.data:
+                    # existing_assets_data = supabase.table('assets').select("id, isin, metadata").in_('isin', list(isin_to_type.keys())).execute()
+                    in_filter_type = f"in.({','.join(isin_to_type.keys())})"
+                    existing_assets_data = execute_request('assets', 'GET', params={'select': 'id,isin,metadata', 'isin': in_filter_type})
+                    
+                    if existing_assets_data and existing_assets_data.status_code == 200:
+                        rows = existing_assets_data.json()
+                        for row in rows:
                             isin = row['isin']
                             new_type = isin_to_type.get(isin)
                             if new_type:
@@ -195,10 +225,11 @@ def sync_transactions():
                                 current_meta['assetType'] = new_type
                                 if debug_mode: logger.debug(f"SYNC: Backfilling Asset Type for {isin} -> {new_type}")
                                 # Update both metadata and asset_class column for consistency
-                                supabase.table('assets').update({
+                                # supabase.table('assets').update({...}).eq('id', row['id']).execute()
+                                update_table('assets', {
                                     "metadata": current_meta,
                                     "asset_class": new_type
-                                }).eq('id', row['id']).execute()
+                                }, filters={'id': row['id']})
                         
                         # [NEW] Update Asset Names (Description) for EXISTING assets
                         # If Excel has a better/new description, update the global asset name.
@@ -210,9 +241,12 @@ def sync_transactions():
                         if isin_to_desc:
                              # Re-using existing_assets_data if possible or fetch again. 
                              # We can just iterate the same rows since we fetched 'id' and 'isin' (and 'name' if we add it to select)
-                             existing_assets_names = supabase.table('assets').select("id, isin, name").in_('isin', list(isin_to_desc.keys())).execute()
-                             if existing_assets_names.data:
-                                 for row in existing_assets_names.data:
+                             in_filter_desc = f"in.({','.join(isin_to_desc.keys())})"
+                             existing_assets_names = execute_request('assets', 'GET', params={'select': 'id,isin,name', 'isin': in_filter_desc})
+                             
+                             if existing_assets_names and existing_assets_names.status_code == 200:
+                                 rows = existing_assets_names.json()
+                                 for row in rows:
                                      isin = row['isin']
                                      new_name = isin_to_desc.get(isin)
                                      current_name = row.get('name')
@@ -220,7 +254,7 @@ def sync_transactions():
                                      # Update if different and new name is valid
                                      if new_name and new_name != current_name and len(new_name) > 2:
                                          if debug_mode: logger.debug(f"SYNC: Updating Asset Name for {isin}: '{current_name}' -> '{new_name}'")
-                                         supabase.table('assets').update({"name": new_name}).eq('id', row['id']).execute()
+                                         update_table('assets', {"name": new_name}, {'id': row['id']})
                 
                 # 3c. Identify and Create missing assets
                 missing_isins = target_isins - set(asset_map.keys())
@@ -249,9 +283,12 @@ def sync_transactions():
                             asset_payload["metadata"] = {"assetType": isin_to_type[isin]}
                         
                         new_assets_payload.append(asset_payload)
-                    res_new = supabase.table('assets').insert(new_assets_payload).execute()
-                    if res_new.data:
-                        for row in res_new.data:
+                    res_new = execute_request('assets', 'POST', body=new_assets_payload, headers={"Prefer": "return=representation"})
+                    
+                    new_assets_data = res_new.json() if (res_new and res_new.status_code in [200, 201]) else []
+                    
+                    if new_assets_data:
+                        for row in new_assets_data:
                             asset_map[row['isin']] = row['id']
                             if debug_mode: logger.debug(f"SYNC: Created asset {row['isin']} with name '{row['name']}'")
                             
@@ -277,17 +314,20 @@ def sync_transactions():
                                             # Merge LLM data into current metadata
                                             new_meta = {**current_meta, **llm_result['data']}
                                             
-                                            supabase.table('assets').update({
+                                            # Merge LLM data into current metadata
+                                            new_meta = {**current_meta, **llm_result['data']}
+                                            
+                                            update_table('assets', {
                                                 "metadata": new_meta,
                                                 "metadata_text": None
-                                            }).eq('id', row['id']).execute()
+                                            }, {'id': row['id']})
                                             if debug_mode: logger.debug(f"SYNC: Updated asset {row['isin']} with LLM JSON metadata")
                                         elif llm_result.get('response_type') == 'text':
                                             # Save text/markdown to metadata_text column
-                                            supabase.table('assets').update({
+                                            update_table('assets', {
                                                 "metadata": None,
                                                 "metadata_text": llm_result['data']
-                                            }).eq('id', row['id']).execute()
+                                            }, {'id': row['id']})
                                             if debug_mode: logger.debug(f"SYNC: Updated asset {row['isin']} with LLM text/markdown metadata")
                                     except Exception as llm_err:
                                         logger.error(f"SYNC: Failed to save LLM metadata for {row['isin']}: {llm_err}")
@@ -329,6 +369,9 @@ def sync_transactions():
                     asset_id = asset_map.get(isin)
                     
                     if asset_id:
+                        # DEBUG: Log the date being saved
+                        logger.info(f"SYNC DEBUG: Saving transaction for {isin}: date_val='{date_val}' (type: {type(date_val).__name__})")
+                        
                         valid_transactions.append({
                             "portfolio_id": portfolio_id,
                             "asset_id": asset_id,
@@ -365,11 +408,12 @@ def sync_transactions():
         trend_updates = data.get('trend_updates', [])
         if trend_updates:
             try:
-                supabase = get_supabase_client()
+                # supabase = get_supabase_client()
                 logger.info(f"SYNC: Processing {len(trend_updates)} trend updates...")
                 
                 # Batch update might be heavy, but let's loop for now (assets table isn't huge)
                 # Or better, we just update the ones provided.
+                from datetime import datetime
                 for trend in trend_updates:
                     isin = trend.get('isin')
                     variation = trend.get('variation_pct')
@@ -378,12 +422,13 @@ def sync_transactions():
                     if isin:
                          update_payload = {
                              'last_trend_variation': variation,
-                             'last_trend_ts': 'now()',
+                             'last_trend_ts': datetime.now().isoformat(),
                              'last_trend_days': days
                          }
                          # If days is None, it saves NULL, which is correct for cleared trend.
 
-                         supabase.table('assets').update(update_payload).eq('isin', isin).execute()
+                         # supabase.table('assets').update(update_payload).eq('isin', isin).execute()
+                         update_table('assets', update_payload, {'isin': isin})
                          
             except Exception as e:
                 logger.error(f"SYNC: Error updating trends: {e}")
@@ -394,7 +439,9 @@ def sync_transactions():
             return jsonify(error="Sync completed with errors", details=errors), 500
         
         if valid_transactions:
-            res = supabase.table('transactions').insert(valid_transactions).execute()
+            # res = supabase.table('transactions').insert(valid_transactions).execute()
+            upsert_table('transactions', valid_transactions) # Insert is effectively upsert without conflict key usually, or just POST
+            
             log_audit("SYNC_SUCCESS", f"Portfolio {portfolio_id}: {len(valid_transactions)} transactions, {len(prices)} prices.")
             return jsonify(message=f"Successfully synced. Prices: {len(prices)}. Trans: {len(valid_transactions)}"), 200
         else:
@@ -410,50 +457,137 @@ def sync_transactions():
 
 @app.route('/api/reset', methods=['POST', 'OPTIONS'])
 def reset_db_route():
+    """
+    USER RESET: Deletes currently logged-in user's portfolios and related data.
+    PRESERVES: Assets, Asset Prices (Master Data).
+    """
     from logger import log_audit
+    from db_helper import query_table # Assuming query_table is from db_helper
+    import traceback
     if request.method == 'OPTIONS':
         return jsonify(status="ok"), 200
 
-    logger.warning("RESET DB REQUEST RECEIVED")
+    logger.warning("USER RESET DB REQUEST RECEIVED")
     try:
         data = request.json
+        # In a real multi-tenant app, we'd get user_id from auth token.
+        # Here we rely on payload or 'all' logic scoped to user.
+        # But for now, we assume this request intends to wipe ONE specific portfolio or ALL user portfolios.
+        # If '0000...' is sent, we interpret it as "ALL MY PORTFOLIOS".
+        
         portfolio_id = data.get('portfolio_id')
-        
-        if not portfolio_id:
-            return jsonify(error="Missing portfolio_id"), 400
+        user_id = data.get('user_id') # New optional param if we want to be explicit
 
-        supabase = get_supabase_client()
+        # If we have a user_id, we should fetch all their portfolios.
+        # For this refactor, let's keep it simple:
+        # If portfolio_id is '0000...', it means "Reset ALL for User".
+        # But we need to know WHICH user.
+        # If user_id is NOT provided, we might be in trouble for strict multi-tenancy unless we require it.
+        # However, looking at current frontend usage, we might only have portfolio_id.
         
-        # Use a valid UUID comparison (gt with nil UUID matches all real UUIDs)
+        # STRATEGY: 
+        # 1. If portfolio_id is specific -> Delete just that portfolio.
+        # 2. If portfolio_id is NIL (Delete All) -> We need user_id to scope it.
+        #    If no user_id, we fallback to deleting ALL portfolios (Legacy behavior, but safer for assets).
+        
         nil_uuid = '00000000-0000-0000-0000-000000000000'
         
-        # NUCLEAR OPTION: Wipe everything except User/Portfolio structure.
-        # 1. Dependent Tables first
-        logger.info("RESET: Deleting ALL Transactions...")
-        supabase.table('transactions').delete().gt('id', nil_uuid).execute()
+        target_portfolios = []
         
-        logger.info("RESET: Deleting ALL Dividends...")
-        supabase.table('dividends').delete().gt('id', nil_uuid).execute()
-        
-        logger.info("RESET: Deleting ALL Snapshots...")
-        supabase.table('snapshots').delete().gt('id', nil_uuid).execute()
-        
-        # 2. Global Data
-        logger.info("RESET: Deleting ALL Asset Prices...")
-        # asset_prices PK is composite, but we can filter by non-null ISIN
-        supabase.table('asset_prices').delete().neq('isin', 'X_INVALID').execute()
-        
-        logger.info("RESET: Deleting ALL Assets...")
-        supabase.table('assets').delete().gt('id', nil_uuid).execute()
-        
-        logger.info("RESET: Deleting ALL Portfolios...")
-        supabase.table('portfolios').delete().gt('id', nil_uuid).execute()
+        if portfolio_id and portfolio_id != nil_uuid:
+            target_portfolios.append(portfolio_id)
+        else:
+             # Fetch all portfolios (optionally filter by user_id if we had it)
+             # For now, let's just get ALL IDs because the previous behavior was "Delete All".
+             # But we will NOT delete assets/prices.
+             # Ideally, frontend should pass user_id.
+             
+             # Fetch all portfolio IDs
+             all_ports = query_table('portfolios', 'id')
+             target_portfolios = [p['id'] for p in all_ports]
 
-        log_audit("RESET_DB", f"FULL WIPE COMPLETED for Portfolio {portfolio_id}")
-        return jsonify(status="ok", message="Database completely wiped (Portfolios, Assets, Prices, History, Transactions)."), 200
+        if not target_portfolios:
+            logger.info("RESET: No portfolios found to delete.")
+            return jsonify(message="No portfolios to delete"), 200
+
+        # Delete dependent data for EACH target portfolio
+        # We could optimize with 'in' queries but loop is safer for errors
+        
+        for pid in target_portfolios:
+            logger.info(f"RESET: Cleaning Portfolio {pid}...")
             
+            # Transactions
+            delete_table('transactions', {'portfolio_id': pid})
+            # Dividends
+            delete_table('dividends', {'portfolio_id': pid})
+            # Snapshots
+            delete_table('snapshots', {'portfolio_id': pid})
+            # Notes
+            delete_table('asset_notes', {'portfolio_id': pid})
+            # Settings
+            delete_table('portfolio_asset_settings', {'portfolio_id': pid})
+            
+            # Finally Delete Portfolio
+            if not delete_table('portfolios', {'id': pid}):
+                logger.error(f"RESET: Failed to delete portfolio {pid}")
+                # Don't raise, continue? Or abort?
+                # Abort to be safe
+                raise Exception(f"Failed to delete portfolio {pid}")
+                
+        log_audit("RESET_DB", f"USER WIPE COMPLETED. Deleted {len(target_portfolios)} portfolios.")
+        return jsonify(status="ok", message="User portfolios deleted. Assets preserved."), 200
+
     except Exception as e:
         logger.error(f"RESET FAIL: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify(error=str(e)), 500
+
+@app.route('/api/admin/reset-system', methods=['POST', 'OPTIONS'])
+def system_reset_route():
+    """
+    SYSTEM RESET: The 'Nuclear Option'. Deletes EVERYTHING.
+    Includes Assets, Prices, Configs (optional?).
+    """
+    from logger import log_audit
+    if request.method == 'OPTIONS':
+        return jsonify(status="ok"), 200
+        
+    logger.critical("SYSTEM RESET REQUEST RECEIVED")
+    try:
+        nil_uuid = '00000000-0000-0000-0000-000000000000'
+
+        # 1. Dependent Tables
+        logger.info("sys_reset: Transactions...")
+        if not delete_table('transactions', {'id.gt': nil_uuid}): raise Exception("Failed transactions")
+        
+        logger.info("sys_reset: Dividends...")
+        if not delete_table('dividends', {'id.gt': nil_uuid}): raise Exception("Failed dividends")
+        
+        logger.info("sys_reset: Snapshots...")
+        if not delete_table('snapshots', {'id.gt': nil_uuid}): raise Exception("Failed snapshots")
+        
+        logger.info("sys_reset: Asset Notes...")
+        delete_table('asset_notes', {'portfolio_id.neq': nil_uuid})
+
+        logger.info("sys_reset: Portfolio Settings...")
+        delete_table('portfolio_asset_settings', {'portfolio_id.neq': nil_uuid})
+        
+        # 2. Global Data
+        logger.info("sys_reset: Asset Prices...")
+        if not delete_table('asset_prices', {'isin.neq': 'X_INVALID'}): raise Exception("Failed asset_prices")
+        
+        logger.info("sys_reset: Assets...")
+        if not delete_table('assets', {'id.gt': nil_uuid}): raise Exception("Failed assets")
+        
+        logger.info("sys_reset: Portfolios...")
+        if not delete_table('portfolios', {'id.gt': nil_uuid}): raise Exception("Failed portfolios")
+
+        log_audit("SYSTEM_RESET", "FULL SYSTEM WIPE COMPLETED")
+        return jsonify(status="ok", message="System completely wiped."), 200
+        
+    except Exception as e:
+        logger.error(f"SYSTEM RESET FAIL: {e}")
         return jsonify(error=str(e)), 500
 
 @app.route('/api/ingest', methods=['POST', 'OPTIONS'])
@@ -489,150 +623,139 @@ def ingest_excel():
         portfolio_id = request.form.get('portfolio_id')
         debug_mode = check_debug_mode(portfolio_id)
         
+        # [NEW] Fetch current holdings for validation (Sales Check)
+        holdings_map = {}
+        if portfolio_id:
+             try:
+                 from db_helper import execute_request
+                 # Fetch all transactions to calculate current holdings manually (RPC does not exist)
+                 # We need: quantity, type, asset(isin)
+                 res = execute_request('transactions', 'GET', params={
+                     'select': 'quantity,type,assets(isin)',
+                     'portfolio_id': f'eq.{portfolio_id}'
+                 })
+                 
+                 if res and res.status_code == 200:
+                     tx_data = res.json()
+                     # Aggregate
+                     for t in tx_data:
+                         asset = t.get('assets')
+                         if not asset or not asset.get('isin'): continue
+                         
+                         isin = asset['isin']
+                         qty = float(t.get('quantity', 0))
+                         typ = t.get('type') # BUY / SELL
+                         
+                         if typ == 'BUY':
+                             holdings_map[isin] = holdings_map.get(isin, 0.0) + qty
+                         elif typ == 'SELL':
+                             holdings_map[isin] = holdings_map.get(isin, 0.0) - qty
+                     
+                     logger.info(f"INGEST DEBUG: Calculated holdings for {len(holdings_map)} assets from {len(tx_data)} transactions.")
+                     if holdings_map:
+                        logger.info(f"INGEST DEBUG: Sample Holdings: {list(holdings_map.items())[:3]}")
+                 else:
+                    logger.error(f"INGEST DEBUG: Transactions fetch failed. Status: {res.status_code}")
+             except Exception as e:
+                 logger.error(f"INGEST: Failed to fetch holdings/transactions: {e}")
+
+        logger.info(f"INGEST: Validating against {len(holdings_map)} existing assets.")
+        
         log_ingestion_start(file.filename)
 
-        parse_result = parse_portfolio_excel(file.stream, debug=debug_mode)
+        parse_result = parse_portfolio_excel(file.stream, holdings_map)
         
-        if "error" in parse_result:
+        if parse_result.get("error"):
             logger.error(f"INGEST FAIL: Parse Error - {parse_result['error']}")
             return jsonify(error=parse_result["error"]), 400
         
         # --- NEW: DIVIDEND FLOW ---
-        if parse_result.get('type') == 'KPI_DIVIDENDS':
+        if parse_result.get('type') == 'DIVIDENDS':
             return jsonify(
                 type='DIVIDENDS',
                 parsed_data=parse_result['data'],
-                message=parse_result.get('message')
+                message="Dividendi rilevati. Confermi l'importazione?"
             )
-        
-        # --- STANDARD PORTFOLIO FLOW ---
-        # portfolio_id handled above for debug check
-        
-        # Fetch DB Holdings
-        db_holdings = {}
-        if portfolio_id:
-            try:
-                supabase = get_supabase_client()
-                res = supabase.table('transactions').select("quantity, type, assets(isin, metadata)").eq('portfolio_id', portfolio_id).execute()
-                
-                if res.data:
-                    for t in res.data:
-                        isin = t['assets']['isin'] # Adjusting for nested object
-                        meta = t['assets'].get('metadata')
-                        
-                        qty = t['quantity']
-                        if t['type'] == 'SELL':
-                            qty = -qty
-                        
-                        # Store tuple: (qty, metadata)
-                        if isin not in db_holdings:
-                             db_holdings[isin] = {"qty": 0.0, "metadata": meta}
-                        
-                        db_holdings[isin]["qty"] += qty
-                        # Metadata should be same for same ISIN (global)
-                        if meta and not db_holdings[isin]["metadata"]:
-                             db_holdings[isin]["metadata"] = meta
-                
-                if debug_mode: logger.debug(f"Fetched holdings for {portfolio_id}: {len(db_holdings)} assets")
-                
-            except Exception as e:
-                logger.error(f"INGEST: Failed to fetch DB holdings: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-                pass
+            
+        # --- NEW: PRICES FLOW ---
+        # --- NEW: PRICES FLOW ---
+        if parse_result.get('type') == 'PRICES':
+             # Calculate Price Variations for Preview
+             from price_manager import calculate_projected_trend
+             from db_helper import get_config
+             
+             prices_data = parse_result['data']
+             price_variations = []
+             prices_to_save = [] # To mirror structure expected by frontend if needed?
+             # Frontend uses 'parsed_data' for "Assets Found" count probably.
+             # And 'price_variations' for the list of changes.
 
-        # Calculate Delta
-        delta = calculate_delta(parse_result['data'], db_holdings, debug=debug_mode)
-        
-        # Prepare Price Snapshots (Don't save yet)
-        prices_to_save = []
-        
-        # Metrics Calculation for Snapshot
-        total_value_eur = 0
-        total_invested_eur = 0
+             # 1. Config Threshold
+             # 1. Config Threshold (Portfolio Specific)
+             threshold = 0.1
+             try:
+                 # Priority: Portfolio Settings > Global Settings > Default
+                 found_setting = False
+                 if portfolio_id:
+                     from db_helper import query_table
+                     p_res = query_table('portfolios', 'settings', {'id': portfolio_id})
+                     if p_res and len(p_res) > 0:
+                         p_settings = p_res[0].get('settings') or {}
+                         if 'priceVariationThreshold' in p_settings:
+                             threshold = float(p_settings['priceVariationThreshold'])
+                             found_setting = True
+                             logger.info(f"INGEST: Using Portfolio Threshold: {threshold}")
+                 
+                 if not found_setting:
+                     asset_settings = get_config('asset_settings')
+                     if asset_settings:
+                        threshold = float(asset_settings.get('priceVariationThreshold', 0.1))
+                        logger.info(f"INGEST: Using Global Threshold: {threshold}")
+             except Exception as e:
+                 logger.warning(f"Error fetching threshold: {e}")
+                 threshold = 0.1
 
-        for row in parse_result['data']:
-            qty = row.get('quantity', 0)
+             # 2. Group by ISIN (handle historical/multiple prices)
+             isin_candidates = {} 
+             unique_assets_in_file = set()
+             
+             for item in prices_data:
+                 isin = item.get('isin')
+                 price = item.get('price') # Key fixed from ingest.py
+                 date_str = item.get('date')
+                 desc = item.get('description')
+                 
+                 if isin and price:
+                     if isin not in isin_candidates:
+                         isin_candidates[isin] = []
+                     isin_candidates[isin].append({'date': date_str, 'price': price})
+                     unique_assets_in_file.add(isin)
+                     
+                     prices_to_save.append({
+                        "isin": isin,
+                        "price": price,
+                        "date": date_str,
+                        "description": desc,
+                        "source": "Manual Upload"
+                     })
             
-            # Market Value calculation
-            # Market Value calculation
-            curr_price = row.get('current_price')
-            
-            # [MODIFIED] Always save price if present, regardless of quantity
-            if curr_price:
-                 # Collect individual price for later saving
-                 prices_to_save.append({
-                     "isin": row['isin'],
-                     "price": curr_price,
-                     "date": row.get('date'), # Might be None, handled by backend
-                     "source": "Manual Upload" 
-                 })
+             # 3. Detect Historical Mode
+             is_historical_reconstruction = any(len(cands) > 1 for cands in isin_candidates.values())
 
-            if curr_price and qty:
-                 total_value_eur += (qty * curr_price)
-            
-            # Invested Capital calculation
-            avg_cost = row.get('avg_price_eur')
-            if avg_cost and qty:
-                 total_invested_eur += (qty * avg_cost)
-        
-        # --- [NEW] PRICE VARIATION SUMMARY LOGIC ---
-        real_transactions = [d for d in delta if d['type'] not in ['METADATA_UPDATE', 'ERROR_QTY_MISMATCH_NO_OP', 'ERROR_INCOMPLETE_OP']]
-        price_variations = []
-        threshold = 0.1  # Default value
-        is_historical_reconstruction = False
-        unique_assets_in_file = set()
-        
-        if len(real_transactions) == 0 and len(prices_to_save) > 0:
-            if debug_mode: logger.debug("INGEST: No transactions detected. Calculating Price Variations...")
-            from price_manager import calculate_projected_trend
-            
-            # [USER REQUEST] Filter out variations smaller than configured threshold
-            try:
-                supabase = get_supabase_client()
-                config_res = supabase.table('app_config').select('value').eq('key', 'asset_settings').execute()
-                threshold = 0.1
-                if config_res.data:
-                    threshold = float(config_res.data[0]['value'].get('priceVariationThreshold', 0.1))
-            except Exception as e:
-                logger.error(f"Error fetching config, using default threshold 0.1: {e}")
-                threshold = 0.1
-
-            # [NEW] Detect if we have multiple prices for the same ISIN (Historical Reconstruction)
-            isin_candidates = {} # Map ISIN -> List of {date, price}
-            
-            for item in parse_result['data']:
-                isin = item.get('isin')
-                price = item.get('current_price')
-                date_str = item.get('date') or datetime.now().strftime("%Y-%m-%d")
-                
-                if isin and price:
-                    if isin not in isin_candidates:
-                        isin_candidates[isin] = []
-                    isin_candidates[isin].append({'date': date_str, 'price': price})
-                    unique_assets_in_file.add(isin)
-            
-            # [USER REQUEST] If ANY ISIN appears multiple times, the ENTIRE file is historical reconstruction
-            # BUT we now use the SAME LOGIC for everything.
-            has_duplicate_isins = any(len(cands) > 1 for cands in isin_candidates.values())
-            
-            is_historical_reconstruction = has_duplicate_isins
-
-            if debug_mode: logger.debug(f"INGEST: Processing {len(unique_assets_in_file)} unique assets. Historical Mode: {is_historical_reconstruction}")
-
-            for isin in unique_assets_in_file:
+             # 4. Calculate Trends
+             if debug_mode: logger.info(f"PRICES FLOW: Calculating trends for {len(unique_assets_in_file)} assets...")
+             
+             for isin in unique_assets_in_file:
                 candidates = isin_candidates.get(isin, [])
                 if not candidates: continue
 
-                # Calculate projected trend
                 trend_data = calculate_projected_trend(isin, candidates)
-                
                 if not trend_data:
                     continue
-
-                # Prepare the variation object
-                desc = next((d.get('description') for d in parse_result['data'] if d.get('isin') == isin), isin)
                 
+                # Get description (optional) from first item matching ISIN
+                desc = next((d.get('description') for d in prices_data if d.get('isin') == isin and d.get('description')), isin)
+
                 variation_obj = {
                     "name": desc,
                     "isin": isin,
@@ -643,117 +766,112 @@ def ingest_excel():
                     "is_hidden": False,
                     "price_count": len(candidates)
                 }
-
-                # Threshold Logic
+                
                 if abs(trend_data['variation_pct']) < threshold:
-                     variation_obj['variation_pct'] = 0.0
                      variation_obj['is_hidden'] = True
-                     
-                # [USER REQUEST] Sold Assets Logic: If final quantity is 0, set trend to null (None)
-                # Calculate final quantity: Current Holding + Delta
-                current_qty = db_holdings.get(isin, {}).get('qty', 0)
                 
-                # Calculate delta for this ISIN from actual transactions
-                isin_delta = 0
-                for d in real_transactions:
-                    if d.get('isin') == isin:
-                         # Sales are negative in delta? Check logic.
-                         # In ingest_file logic (lines 450+), logic is:
-                         # If found in file (qty_file) vs existing (qty_db).
-                         # delta = qty_file - qty_db.
-                         # So final_qty SHOULD be qty_file (if full snapshot mode) ??
-                         # But wait, ingest handles "delta" for transactions.
-                         # Use the 'quantity' from the file row if available?
-                         # Or just check if the parsed data has quantity 0?
-                         pass
-                
-                # Simpler approach: Check the parsed item for this ISIN.
-                # If the file says quantity is 0, then it's 0.
-                # If the file doesn't have quantity (only price update), we rely on DB.
-                # But if we assume the file reflects the portfolio state...
-                
-                # Let's start with: Is there an item in the file with Quantity = 0?
-                # Actually, ingest logic (lines 480+) calculates delta based on difference.
-                # If we rely on valid_transactions? No, that's for saving.
-                
-                # Let's peek at the 'final' quantity perceived by the ingest logic.
-                # 'existing_holdings' is the DB state.
-                # 'delta' contains the change.
-                # final_qty = existing_found + change.
-                
-                # Find delta for this ISIN
-                d_item = next((x for x in delta if x.get('isin') == isin), None)
-                final_qty = current_qty
-                if d_item:
-                    final_qty = current_qty + d_item.get('quantity_change', 0)
-                
-                # Also check if it's a direct price update with quantity in the file
-                # The file row might allow us to be more precise if delta logic is complex.
-                # But delta logic IS what generates transactions.
-                
-                if final_qty <= 0.001: # Float safety
-                     variation_obj['variation_pct'] = None
-                     variation_obj['days_delta'] = None
-                     variation_obj['is_hidden'] = True # Don't show in modal either?
-                     # The user said "Non deve essere visualizzato nulla a livello di UI".
-                     # If we hide it in modal, the user won't see "Trend Update: NULL".
-                     # But we DO want to send it to backend to update DB to NULL.
-                     # So is_hidden = True prevents Modal display.
-                     # But UploadForm logic sends trendUpdates based on priceModalData.variations.
-                     # If is_hidden is True, does it send it?
-                     # Let's check UploadForm.tsx logic soon (mental check).
-                     # Usually filtering is done for display, but we might filter for sending?
-                     # We need to ensure it IS sent.
-                     pass
-
-                price_variations.append(variation_obj)
-                
-                # If Historical, we still want to pass the data, the UI will decide how to show it.
-                # But typically historical mode shows a simpler table.
-                # However, the USER asked to use this logic "whenever there are price injections".
-                # So we pass the full object.
                 price_variations.append(variation_obj)
 
-            # Sort by absolute variation for user visibility (or just variation)
-            price_variations.sort(key=lambda x: abs(x['variation_pct']), reverse=True)
+             price_variations.sort(key=lambda x: abs(x['variation_pct'] or 0), reverse=True)
+
+             return jsonify(
+                type='PRICES',
+                parsed_data=prices_data,
+                price_variations=price_variations,
+                prices=prices_to_save, # Frontend might look at this too?
+                is_historical_reconstruction=is_historical_reconstruction,
+                threshold=threshold,
+                message=f"Rilevati {len(prices_data)} aggiornamenti prezzo. Analizzate {len(price_variations)} variazioni."
+             )
+        
+        # --- STANDARD PORTFOLIO FLOW (TRANSACTIONS) ---
+        # With the new ingest.py refactoring, parse_result['data'] ALREADY contains the validated transactions
+        # or prices depending on the type. We handled DIVIDENDS and PRICES above (partially).
+        # But wait, the PRICES flow above just returns JSON to UI. Same for DIVIDENDS.
+        # For TRANSACTIONS, we also want to return JSON to UI for confirmation usually?
+        # The original code proceeded to save or calculate delta.
+        
+        # New Logic:
+        # If type is TRANSACTIONS, we return them to the frontend for preview/confirmation.
+        # The frontend will then call /api/sync (or similar) to actually save them.
+        # OR, if the user expects "one-shot" upload, we save them now.
+        # Given the previous flow calculated delta and returned it, it implies the Frontend
+        # shows a preview ("Azione Suggerita").
+        
+        # Since we now have explicit transactions from the file:
+        if parse_result.get('type') == 'TRANSACTIONS':
+            # Calculate Delta with correct pre/post quantities using holdings_map
+            delta = []
+            # Use holdings_map or empty dict (safety)
+            temp_holdings = holdings_map.copy() if holdings_map else {}
             
-            if debug_mode: logger.debug(f"INGEST: Calculated {len(price_variations)} variations. Historical={is_historical_reconstruction}")
+            for t in parse_result['data']:
+                isin = t['isin']
+                try:
+                    qty_change = float(t['quantity'])
+                except:
+                    qty_change = 0.0
+                
+                op = t['operation'] # Acquisto / Vendita
+                
+                # [NEW] Handle specific error flagging from ingest
+                if op == 'ERROR_NEGATIVE_QTY':
+                     start_qty = temp_holdings.get(isin, 0.0)
+                     delta.append({
+                        "isin": isin,
+                        "type": 'ERROR_NEGATIVE_QTY',
+                        "quantity_change": qty_change,
+                        "current_db_qty": start_qty,
+                        "new_total_qty": start_qty, # No change executed
+                        "excel_price": t.get('price'),
+                        "excel_description": t.get('description'),
+                        "asset_type_proposal": t.get('asset_type'),
+                        "details": f"ERRORE: Saldo insufficiente. Disp: {start_qty:.4f}",
+                        "excel_date": t.get('date')
+                    })
+                    # Skip balance update
+                     continue
+
+                start_qty = temp_holdings.get(isin, 0.0)
+                
+                if op == 'Acquisto':
+                    end_qty = start_qty + qty_change
+                else: # Vendita
+                    # Avoid negative for display (validation logic handled this already)
+                    end_qty = max(0.0, start_qty - qty_change)
+                
+                # Update temp for next op (in case of multiple ops for same isin)
+                temp_holdings[isin] = end_qty
+
+                # Add to delta
+                delta.append({
+                    "isin": isin,
+                    "type": op,
+                    "quantity_change": qty_change,
+                    "current_db_qty": start_qty,
+                    "new_total_qty": end_qty,
+                    "excel_price": t['price'],
+                    "excel_description": t['description'],
+                    "asset_type_proposal": t['asset_type'],
+                    "details": f"{op} {qty_change} (Saldo: {start_qty} -> {end_qty})", # fallback details
+                    "excel_date": t['date']
+                })
+
+            return jsonify(
+                type='PORTFOLIO', 
+                parsed_data=parse_result['data'],
+                delta=delta,
+                prices=[],
+                snapshot_proposal=None,
+                price_variations=[],
+                threshold=0.1,
+                is_historical_reconstruction=False,
+                unique_assets_count=len(set(t['isin'] for t in parse_result['data']))
+            )
+
+        # Fallback / Error
+        return jsonify(error="Tipo file non riconosciuto o non gestito"), 400
         
-        # Prepare Snapshot Record (Don't save yet)
-        
-        # Prepare Snapshot Record (Don't save yet)
-        snapshot_proposal = None
-        if portfolio_id:
-             snapshot_proposal = {
-                "portfolio_id": portfolio_id,
-                "file_name": file.filename,
-                "upload_date": datetime.now().isoformat(), # Proposed date
-                "status": "PROCESSED",
-                "total_eur": total_value_eur,
-                "total_invested": total_invested_eur,
-                "log_summary": f"Imported {len(parse_result['data'])} rows. Value: {total_value_eur:.2f}€"
-            }
-
-        # [DEBUG] Log the outgoing details
-        if debug_mode:
-            logger.debug(f"INGEST DEBUG: Sending Response. Delta Len: {len(delta)}, Prices Len: {len(prices_to_save)}")
-            if len(delta) > 0:
-                 logger.debug(f"INGEST DEBUG: Delta Sample: {delta[0]}")
-
-        log_ingestion_summary(len(parse_result['data']), len(delta), 0) # Missing count legacy
-
-        return jsonify(
-            type='PORTFOLIO',
-            parsed_data=parse_result['data'],
-            delta=list(delta),
-            prices=prices_to_save,
-            snapshot_proposal=snapshot_proposal,
-            price_variations=price_variations,
-            threshold=threshold,
-            is_historical_reconstruction=is_historical_reconstruction,
-            unique_assets_count=len(unique_assets_in_file)
-        )
-
     except Exception as e:
         logger.error(f"INGEST CRASH: {str(e)}")
         import traceback
@@ -792,6 +910,7 @@ def calculate_xirr_route():
 @app.route('/api/portfolios', methods=['GET', 'POST', 'OPTIONS'])
 def manage_portfolios():
     from logger import log_audit
+    import requests
     try:
         if request.method == 'OPTIONS':
              return jsonify(status="ok"), 200
@@ -800,9 +919,34 @@ def manage_portfolios():
             if not user_id:
                 return jsonify(error="Missing user_id"), 400
             
-            supabase = get_supabase_client()
-            res = supabase.table('portfolios').select('id, name, description, user_id, created_at').eq('user_id', user_id).order('created_at', desc=True).execute()
-            return jsonify(portfolios=res.data if res.data else []), 200
+            supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+            service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+
+            if not supabase_url or not service_key:
+                return jsonify(error="Missing credentials"), 500
+            
+            # Use direct HTTP to bypass Supabase client issues
+            from db_helper import query_table
+            # query_table supports simple equality filters, but we need ordering.
+            # Let's use custom request here for ordering, or update query_table?
+            # Custom request is safer for specific ordering needs.
+            
+            headers = {
+                "apikey": service_key,
+                "Authorization": f"Bearer {service_key}",
+                "Content-Type": "application/json"
+            }
+            
+            resp = requests.get(
+                f"{supabase_url}/rest/v1/portfolios?user_id=eq.{user_id}&select=id,name,description,user_id,created_at&order=created_at.desc",
+                headers=headers,
+                timeout=10
+            ) 
+            
+            if resp.status_code != 200:
+                 return jsonify(error=f"DB Error: {resp.status_code}"), 500
+                 
+            return jsonify(portfolios=resp.json()), 200
 
         # POST (Create)
         data = request.json
@@ -812,19 +956,48 @@ def manage_portfolios():
         if not name or not user_id:
             return jsonify(error="Missing name or user_id"), 400
 
-        supabase = get_supabase_client()
-        res = supabase.table('portfolios').insert({
-            "user_id": user_id,
-            "name": name
-        }).execute()
+        # Use db_helper.upsert_table (which handles both insert and upsert)
+        # However, for pure insert and getting the ID back, we need 'return=representation'
+        # db_helper.upsert_table does that.
+        # But upsert_table might try to merge duplicates. Here we want a new entry.
+        # If we don't provide ID, it should be fine.
         
-        if res.data:
-            new_portfolio = res.data[0]
-            log_audit("PORTFOLIO_CREATED", f"ID={new_portfolio['id']}, Name='{name}'")
-            return jsonify(new_portfolio), 200
+        from db_helper import upsert_table
+        
+        # We can't easily get the returned data from upsert_table as it returns bool.
+        # Let's use direct requests here to get the new OBJECT back.
+        
+        supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        
+        headers = {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation"
+        }
+        
+        post_resp = requests.post(
+             f"{supabase_url}/rest/v1/portfolios",
+             headers=headers,
+             json={
+                "user_id": user_id,
+                "name": name
+             },
+             timeout=10
+        )
+        
+        if post_resp.status_code in [200, 201]:
+            data = post_resp.json()
+            if data and len(data) > 0:
+                new_portfolio = data[0]
+                log_audit("PORTFOLIO_CREATED", f"ID={new_portfolio['id']}, Name='{name}'")
+                return jsonify(new_portfolio), 200
+            else:
+                 return jsonify(error="Created but no data returned"), 500
         else:
-            logger.error(f"PORTFOLIO CREATE FAIL: Supabase returned no data")
-            return jsonify(error="Failed to create portfolio"), 500
+            logger.error(f"PORTFOLIO CREATE FAIL: {post_resp.text}")
+            return jsonify(error=f"Failed to create portfolio: {post_resp.status_code}"), 500
 
     except Exception as e:
         logger.error(f"PORTFOLIO MANAGE FAIL: {e}")
@@ -834,14 +1007,16 @@ def manage_portfolios():
 def delete_portfolio(portfolio_id):
     from logger import log_audit
     try:
-        supabase = get_supabase_client()
+        import requests
         
         # Verify existence
-        res_exists = supabase.table('portfolios').select('name').eq('id', portfolio_id).execute()
-        if not res_exists.data:
+        from db_helper import query_table
+        res_exists = query_table('portfolios', select='name', filters={'id': portfolio_id})
+        
+        if not res_exists:
              return jsonify(error="Portfolio not found"), 404
         
-        p_name = res_exists.data[0]['name']
+        p_name = res_exists[0]['name']
 
         # Delete (Cascade should handle transactions if config is set, but let's be safe)
         # Actually transactions have FK to portfolios usually. 
@@ -849,7 +1024,25 @@ def delete_portfolio(portfolio_id):
         # Let's trust DB or manual delete transactions first if needed. 
         # For now, let's try direct delete.
         
-        res = supabase.table('portfolios').delete().eq('id', portfolio_id).execute()
+        # Custom DELETE request
+        supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        
+        headers = {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json"
+        }
+        
+        del_resp = requests.delete(
+            f"{supabase_url}/rest/v1/portfolios?id=eq.{portfolio_id}",
+            headers=headers,
+            timeout=10
+        )
+        
+        if del_resp.status_code not in [200, 204]:
+             logger.error(f"PORTFOLIO DELETE FAIL: {del_resp.text}")
+             return jsonify(error=f"Delete failed: {del_resp.status_code}"), 500
         
         log_audit("PORTFOLIO_DELETED", f"ID={portfolio_id}, Name='{p_name}'")
         return jsonify(message="Portfolio deleted"), 200
@@ -924,38 +1117,94 @@ def validate_model_route():
 
 @app.route('/api/admin/users', methods=['GET', 'OPTIONS'])
 def list_users_route():
+    """
+    Lists all users via Supabase Auth Admin API.
+    Uses direct HTTP calls to bypass supabase-py limitations with opaque tokens.
+    Works for both local (sb_...) and production (eyJ...) keys.
+    """
+    import requests
     try:
         if request.method == 'OPTIONS':
              return jsonify(status="ok"), 200
 
-        supabase = get_supabase_client()
-        # list_users() returns UserResponse object which has 'users' property (list of User objects)
-        response = supabase.auth.admin.list_users() 
+        # Get credentials directly from env
+        supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
         
-        # We need to serialize User objects to dicts
+        if not supabase_url or not service_key:
+            return jsonify(error="Missing Supabase credentials"), 500
+        
+        # Direct HTTP call to GoTrue admin endpoint
+        auth_url = f"{supabase_url}/auth/v1/admin/users"
+        headers = {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.get(auth_url, headers=headers, timeout=10)
+        
+        if response.status_code != 200:
+            logger.error(f"ADMIN LIST USERS FAIL: HTTP {response.status_code} - {response.text}")
+            return jsonify(error=f"Auth API error: {response.status_code}"), 500
+        
+        data = response.json()
+        
+        # GoTrue returns { users: [...] } or just [...] depending on version
+        users_raw = data.get('users', data) if isinstance(data, dict) else data
+        
         users_list = []
-        for u in response:
+        for u in users_raw:
             users_list.append({
-                "id": u.id,
-                "email": u.email,
-                "created_at": u.created_at,
-                "last_sign_in_at": u.last_sign_in_at
+                "id": u.get("id"),
+                "email": u.get("email"),
+                "created_at": u.get("created_at"),
+                "last_sign_in_at": u.get("last_sign_in_at")
             })
             
         return jsonify(users=users_list), 200
+    except requests.exceptions.RequestException as e:
+        logger.error(f"ADMIN LIST USERS FAIL (Network): {e}")
+        return jsonify(error=str(e)), 500
     except Exception as e:
         logger.error(f"ADMIN LIST USERS FAIL: {e}")
         return jsonify(error=str(e)), 500
 
 @app.route('/api/admin/users/<user_id>', methods=['DELETE', 'OPTIONS'])
 def delete_user_route(user_id):
+    """
+    Deletes a user via direct HTTP call to Supabase Auth Admin API.
+    Works for both local (sb_...) and production (eyJ...) keys.
+    """
+    import requests
     try:
         if request.method == 'OPTIONS':
              return jsonify(status="ok"), 200
-        supabase = get_supabase_client()
-        supabase.auth.admin.delete_user(user_id)
+        
+        supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        
+        if not supabase_url or not service_key:
+            return jsonify(error="Missing Supabase credentials"), 500
+        
+        auth_url = f"{supabase_url}/auth/v1/admin/users/{user_id}"
+        headers = {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.delete(auth_url, headers=headers, timeout=10)
+        
+        if response.status_code not in [200, 204]:
+            logger.error(f"ADMIN DELETE USER FAIL: HTTP {response.status_code} - {response.text}")
+            return jsonify(error=f"Auth API error: {response.status_code}"), 500
+        
         logger.info(f"ADMIN: Deleted user {user_id}")
         return jsonify(message="User deleted"), 200
+    except requests.exceptions.RequestException as e:
+        logger.error(f"ADMIN DELETE USER FAIL (Network): {e}")
+        return jsonify(error=str(e)), 500
     except Exception as e:
         logger.error(f"ADMIN DELETE USER FAIL: {e}")
         return jsonify(error=str(e)), 500
@@ -963,50 +1212,91 @@ def delete_user_route(user_id):
 @app.route('/api/admin/users/<user_id>/reset_password', methods=['POST', 'OPTIONS'])
 def reset_password_route(user_id):
     """
-    Triggers Supabase's password reset email flow.
+    Triggers Supabase's password reset email flow via direct HTTP.
     SECURITY: First invalidates the old password, then sends reset link.
+    Works for both local and production environments.
     """
+    import requests
+    import secrets
     try:
-        import secrets
+        if request.method == 'OPTIONS':
+             return jsonify(status="ok"), 200
         
-        supabase = get_supabase_client()
+        supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        
+        if not supabase_url or not service_key:
+            return jsonify(error="Missing Supabase credentials"), 500
+        
+        headers = {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json"
+        }
         
         # 1. Get user email
-        user_res = supabase.auth.admin.get_user_by_id(user_id)
-        if not user_res.user or not user_res.user.email:
-            return jsonify(error="User not found or has no email"), 404
+        user_url = f"{supabase_url}/auth/v1/admin/users/{user_id}"
+        user_res = requests.get(user_url, headers=headers, timeout=10)
         
-        user_email = user_res.user.email
+        if user_res.status_code != 200:
+            return jsonify(error="User not found"), 404
+        
+        user_data = user_res.json()
+        user_email = user_data.get('email')
+        
+        if not user_email:
+            return jsonify(error="User has no email"), 404
         
         # 2. SECURITY: Immediately invalidate old password by setting a random one
-        # This ensures the old password cannot be used while waiting for reset
         random_password = secrets.token_urlsafe(32)
-        supabase.auth.admin.update_user_by_id(
-            user_id,
-            {"password": random_password}
+        update_url = f"{supabase_url}/auth/v1/admin/users/{user_id}"
+        update_res = requests.put(
+            update_url,
+            headers=headers,
+            json={"password": random_password},
+            timeout=10
         )
-        logger.info(f"ADMIN: Old password invalidated for user {user_id}")
         
-        # 3. Send password reset email using Supabase's built-in method
-        # This actually sends the email (unlike generate_link which only generates)
-        supabase.auth.reset_password_for_email(user_email)
+        if update_res.status_code not in [200, 204]:
+            logger.error(f"ADMIN: Failed to invalidate password for {user_id}")
+        else:
+            logger.info(f"ADMIN: Old password invalidated for user {user_id}")
         
-        logger.info(f"ADMIN: Password reset email sent to {user_email} for user {user_id}")
+        # 3. Send password reset email
+        # Note: This uses the public endpoint, not admin (for email sending)
+        reset_url = f"{supabase_url}/auth/v1/recover"
+        reset_res = requests.post(
+            reset_url,
+            headers={"apikey": service_key, "Content-Type": "application/json"},
+            json={"email": user_email},
+            timeout=10
+        )
+        
+        if reset_res.status_code not in [200, 204]:
+            logger.warning(f"ADMIN: Reset email may not have been sent: {reset_res.text}")
+        
+        logger.info(f"ADMIN: Password reset initiated for {user_email} (user {user_id})")
         
         return jsonify(
             message=f"Password invalidata. Email di reset inviata a {user_email}",
             email=user_email
         ), 200
         
+    except requests.exceptions.RequestException as e:
+        logger.error(f"ADMIN PASSWORD RESET FAIL (Network): {e}")
+        return jsonify(error=str(e)), 500
     except Exception as e:
         logger.error(f"ADMIN PASSWORD RESET FAIL: {e}")
         return jsonify(error=str(e)), 500
 
 @app.route('/api/user/change_password', methods=['POST'])
 def user_change_password_route():
-    """Endpoint for authenticated users to change their own password.
-    This also clears the needs_password_change flag from app_metadata.
     """
+    Endpoint for authenticated users to change their own password via direct HTTP.
+    This also clears the needs_password_change flag from app_metadata.
+    Works for both local and production environments.
+    """
+    import requests
     try:
         data = request.json
         new_password = data.get('password')
@@ -1018,19 +1308,40 @@ def user_change_password_route():
         if not user_id:
             return jsonify(error="Missing user_id"), 400
 
-        supabase = get_supabase_client()
+        supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        
+        if not supabase_url or not service_key:
+            return jsonify(error="Missing Supabase credentials"), 500
         
         # Update password AND clear the app_metadata flag
-        supabase.auth.admin.update_user_by_id(
-            user_id, 
-            {
+        update_url = f"{supabase_url}/auth/v1/admin/users/{user_id}"
+        headers = {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.put(
+            update_url,
+            headers=headers,
+            json={
                 "password": new_password,
                 "app_metadata": {"needs_password_change": False}
-            }
+            },
+            timeout=10
         )
+        
+        if response.status_code not in [200, 204]:
+            logger.error(f"USER PASSWORD CHANGE FAIL: HTTP {response.status_code} - {response.text}")
+            return jsonify(error=f"Auth API error: {response.status_code}"), 500
+        
         logger.info(f"USER: Password changed for user {user_id}, cleared needs_password_change flag")
         
         return jsonify(message="Password updated successfully"), 200
+    except requests.exceptions.RequestException as e:
+        logger.error(f"USER PASSWORD CHANGE FAIL (Network): {e}")
+        return jsonify(error=str(e)), 500
     except Exception as e:
         logger.error(f"USER PASSWORD CHANGE FAIL: {e}")
         return jsonify(error=str(e)), 500
@@ -1054,30 +1365,58 @@ da siti di settore affidabili ed inseriscile nel formato JSON seguente senza cam
 
 @app.route('/api/settings/log-config', methods=['GET'])
 def get_log_config():
-    """Get current log configuration for a specific user."""
+    """
+    Get current log configuration for a specific user.
+    Uses direct HTTP to bypass RLS with opaque tokens.
+    """
+    import requests
     try:
         user_id = request.args.get('user_id')
         if not user_id:
             return jsonify(error="Missing user_id"), 400
-            
-        supabase = get_supabase_client()
-        config_key = f'log_config_{user_id}'
-        res = supabase.table('app_config').select('value').eq('key', config_key).single().execute()
         
-        if res.data and res.data.get('value'):
-            config = res.data['value']
-        else:
-            # Default: disabled
-            config = {'enabled': False}
-            
-        return jsonify(config), 200
+        supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        
+        if not supabase_url or not service_key:
+            return jsonify(enabled=False), 200
+        
+        config_key = f'log_config_{user_id}'
+        rest_url = f"{supabase_url}/rest/v1/app_config"
+        headers = {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation"
+        }
+        
+        # Query for specific key
+        response = requests.get(
+            f"{rest_url}?key=eq.{config_key}&select=value",
+            headers=headers,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data and len(data) > 0 and data[0].get('value'):
+                config = data[0]['value']
+                return jsonify(config), 200
+        
+        # Default: disabled
+        return jsonify(enabled=False), 200
+        
     except Exception as e:
         logger.error(f"GET LOG CONFIG FAIL: {e}")
         return jsonify(enabled=False), 200
 
 @app.route('/api/settings/log-config', methods=['POST'])
 def set_log_config():
-    """Set log configuration for a specific user."""
+    """
+    Set log configuration for a specific user.
+    Uses direct HTTP to bypass RLS with opaque tokens.
+    """
+    import requests
     try:
         data = request.json
         enabled = data.get('enabled', False)
@@ -1086,15 +1425,42 @@ def set_log_config():
         if not user_id:
             return jsonify(error="Missing user_id"), 400
         
-        supabase = get_supabase_client()
+        supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        
+        if not supabase_url or not service_key:
+            return jsonify(error="Missing Supabase credentials"), 500
+        
         config_key = f'log_config_{user_id}'
-        supabase.table('app_config').upsert({
-            'key': config_key,
-            'value': {'enabled': enabled}
-        }).execute()
+        rest_url = f"{supabase_url}/rest/v1/app_config"
+        headers = {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates,return=representation"
+        }
+        
+        # Upsert the config
+        response = requests.post(
+            rest_url,
+            headers=headers,
+            json={
+                'key': config_key,
+                'value': {'enabled': enabled}
+            },
+            timeout=10
+        )
+        
+        if response.status_code not in [200, 201]:
+            logger.error(f"SET LOG CONFIG FAIL: HTTP {response.status_code} - {response.text}")
+            return jsonify(error=f"Database error: {response.status_code}"), 500
         
         logger.info(f"LOG CONFIG: File logging for user {user_id} set to {enabled}")
         return jsonify(message="Log configuration saved", enabled=enabled), 200
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"SET LOG CONFIG FAIL (Network): {e}")
+        return jsonify(error=str(e)), 500
     except Exception as e:
         logger.error(f"SET LOG CONFIG FAIL: {e}")
         return jsonify(error=str(e)), 500
@@ -1102,15 +1468,15 @@ def set_log_config():
 @app.route('/api/dev/prompt', methods=['GET'])
 def get_dev_prompt():
     """Get the current LLM prompt template (from DB or default)."""
+    from db_helper import get_config
     try:
         if request.args.get('default') == 'true':
              return jsonify(prompt=DEFAULT_LLM_PROMPT, is_default=True), 200
 
-        supabase = get_supabase_client()
-        res = supabase.table('app_config').select('value').eq('key', 'llm_asset_prompt').single().execute()
+        config = get_config('llm_asset_prompt', None)
         
-        if res.data and res.data.get('value'):
-            prompt = res.data['value'].get('prompt', DEFAULT_LLM_PROMPT)
+        if config and config.get('prompt'):
+            prompt = config.get('prompt')
         else:
             prompt = DEFAULT_LLM_PROMPT
             
@@ -1123,6 +1489,7 @@ def get_dev_prompt():
 @app.route('/api/dev/prompt', methods=['POST'])
 def save_dev_prompt():
     """Save custom LLM prompt template to DB."""
+    from db_helper import set_config
     try:
         data = request.json
         prompt = data.get('prompt')
@@ -1130,14 +1497,13 @@ def save_dev_prompt():
         if not prompt:
             return jsonify(error="Missing prompt"), 400
         
-        supabase = get_supabase_client()
-        supabase.table('app_config').upsert({
-            'key': 'llm_asset_prompt',
-            'value': {'prompt': prompt}
-        }).execute()
+        success = set_config('llm_asset_prompt', {'prompt': prompt})
         
-        logger.info("DEV: LLM prompt template saved")
-        return jsonify(message="Prompt saved successfully"), 200
+        if success:
+            logger.info("DEV: LLM prompt template saved")
+            return jsonify(message="Prompt saved successfully"), 200
+        else:
+            return jsonify(error="Failed to save prompt"), 500
     except Exception as e:
         logger.error(f"DEV SAVE PROMPT FAIL: {e}")
         return jsonify(error=str(e)), 500
@@ -1161,15 +1527,15 @@ def test_llm_endpoint():
         if not template:
             return jsonify(error="Failed to load asset template"), 500
             
-        supabase = get_supabase_client()
-        
         # Use custom prompt or fetch from DB or use default
         if custom_prompt:
             prompt_template = custom_prompt
         else:
-            res = supabase.table('app_config').select('value').eq('key', 'llm_asset_prompt').single().execute()
-            if res.data and res.data.get('value'):
-                prompt_template = res.data['value'].get('prompt', DEFAULT_LLM_PROMPT)
+            from db_helper import get_config
+            prompt_config = get_config('llm_asset_prompt')
+            
+            if prompt_config and prompt_config.get('prompt'):
+                prompt_template = prompt_config['prompt']
             else:
                 prompt_template = DEFAULT_LLM_PROMPT
         
@@ -1177,10 +1543,10 @@ def test_llm_endpoint():
         asset_name = isin  # Default to ISIN if not found
         if '{nome_asset}' in prompt_template:
             try:
-                # Re-using supabase client
-                asset_res = supabase.table('assets').select('name').eq('isin', isin).single().execute()
-                if asset_res.data and asset_res.data.get('name'):
-                    asset_name = asset_res.data['name']
+                from db_helper import query_table
+                asset_res = query_table('assets', select='name', filters={'isin': isin})
+                if asset_res and len(asset_res) > 0 and asset_res[0].get('name'):
+                    asset_name = asset_res[0]['name']
                     logger.info(f"DEV TEST LLM: Resolved asset name for {isin}: {asset_name}")
             except Exception as e:
                 logger.warning(f"DEV TEST LLM: Could not fetch asset name for {isin}: {e}")
@@ -1189,7 +1555,8 @@ def test_llm_endpoint():
         final_prompt = prompt_template.replace('{isin}', isin).replace('{template}', template).replace('{nome_asset}', asset_name)
         
         # [NEW] Fetch Global AI Configuration
-        res_config = supabase.table('app_config').select('value').eq('key', 'openai_config').single().execute()
+        from db_helper import get_config
+        cfg = get_config('openai_config')
         
         # Default Config if missing
         model_to_use = 'gpt-4o-mini'
@@ -1198,8 +1565,7 @@ def test_llm_endpoint():
         reasoning_effort = None
         web_search_enabled = False
         
-        if res_config.data and res_config.data.get('value'):
-            cfg = res_config.data['value']
+        if cfg:
             model_to_use = cfg.get('model', 'gpt-4o-mini')
             temperature = float(cfg.get('temperature', 0.3))
             max_tokens = int(cfg.get('max_tokens', 4000))

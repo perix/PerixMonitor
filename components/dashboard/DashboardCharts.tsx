@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResponsiveContainer, Tooltip, Legend, LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine } from 'recharts';
-import { formatSwissMoney, formatSwissNumber } from "@/lib/utils";
+import { formatSwissMoney, formatSwissNumber, parseISODateLocal } from "@/lib/utils";
 
 
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#a855f7', '#ec4899', '#6366f1', '#14b8a6'];
@@ -41,13 +41,9 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
     const [viewMode, setViewMode] = useState<'mwr' | 'value'>('mwr');
     const [isPending, startTransition] = useTransition();
 
-    // Handler for viewing mode change with transition
+    // Handler for viewing mode change
     const handleViewModeChange = (checked: boolean) => {
-        const start = performance.now();
-
-        startTransition(() => {
-            setViewMode(checked ? 'value' : 'mwr');
-        });
+        setViewMode(checked ? 'value' : 'mwr');
     };
 
     // Tracking render time
@@ -99,34 +95,88 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
 
         const sortedDates = Array.from(allDates).sort();
 
-        // Single pass construction
-        return sortedDates.map(date => {
-            const item: any = { date, timestamp: new Date(date).getTime() };
+        // Single pass initial construction
+        const initialData = sortedDates.map((date) => {
+            const parsedDate = parseISODateLocal(date);
+            const timestamp = parsedDate ? parsedDate.getTime() : 0;
+            const item: any = { date, timestamp };
 
-            // Portfolio lookup
             const portVal = portfolioMap.get(date);
             if (portVal) {
-                // Determine what to put in "Portfolio" key
-                // For Value Mode: we want "Portfolio" to map to the Right Axis
-                // effectively the number is the same, but we might treat it differently in the chart config
                 item.Portfolio = viewMode === 'value' ? portVal.market_value : portVal.value;
+                item["Portafoglio Totale_pnl"] = (portVal as any).pnl ?? 0;
+            } else {
+                item.Portfolio = null;
+                item["Portafoglio Totale_pnl"] = null;
             }
 
-            // Series lookup
             history.series?.forEach(s => {
                 const sMap = seriesMaps.get(s.isin);
                 const val = sMap?.get(date);
+                const displayName = `${s.name} (${s.isin})`;
+
                 if (val) {
-                    const displayName = `${s.name} (${s.isin})`;
                     item[displayName] = viewMode === 'value' ? val.market_value : val.value;
                     item[`${displayName}_pnl`] = val.pnl;
-                    // Store raw values for external callbacks
                     item[`${displayName}_raw_mwr`] = val.value;
                     item[`${displayName}_raw_mv`] = val.market_value;
+                } else {
+                    item[displayName] = null;
+                    item[`${displayName}_pnl`] = null;
+                    item[`${displayName}_raw_mwr`] = null;
+                    item[`${displayName}_raw_mv`] = null;
                 }
             });
             return item;
         });
+
+        // 2nd pass: Linear Interpolation for MISSING values
+        // This ensures Tooltip shows data for all series even if they have "holes"
+        const keysToInterpolate = ["Portfolio", ...(history.series?.map(s => `${s.name} (${s.isin})`) || [])];
+
+        keysToInterpolate.forEach(key => {
+            let lastValidIdx = -1;
+            for (let i = 0; i < initialData.length; i++) {
+                if (initialData[i][key] !== null) {
+                    if (lastValidIdx !== -1 && i - lastValidIdx > 1) {
+                        // We found a gap! Fill it.
+                        const startVal = initialData[lastValidIdx][key];
+                        const endVal = initialData[i][key];
+                        const count = i - lastValidIdx;
+                        const step = (endVal - startVal) / count;
+
+                        // Also handle PnL and Raw values for callbacks
+                        const pnlKey = `${key}_pnl`;
+                        const startPnl = initialData[lastValidIdx][pnlKey] || 0;
+                        const endPnl = initialData[i][pnlKey] || 0;
+                        const pnlStep = (endPnl - startPnl) / count;
+
+                        for (let j = lastValidIdx + 1; j < i; j++) {
+                            const offset = j - lastValidIdx;
+                            initialData[j][key] = startVal + (step * offset);
+                            initialData[j][pnlKey] = startPnl + (pnlStep * offset);
+
+                            // Callback raw data (mv/mwr)
+                            const mvKey = `${key}_raw_mv`;
+                            const mwrKey = `${key}_raw_mwr`;
+                            if (initialData[lastValidIdx][mvKey] !== undefined) {
+                                const sMv = initialData[lastValidIdx][mvKey] || 0;
+                                const eMv = initialData[i][mvKey] || 0;
+                                initialData[j][mvKey] = sMv + ((eMv - sMv) / count) * offset;
+                            }
+                            if (initialData[lastValidIdx][mwrKey] !== undefined) {
+                                const sMwr = initialData[lastValidIdx][mwrKey] || 0;
+                                const eMwr = initialData[i][mwrKey] || 0;
+                                initialData[j][mwrKey] = sMwr + ((eMwr - sMwr) / count) * offset;
+                            }
+                        }
+                    }
+                    lastValidIdx = i;
+                }
+            }
+        });
+
+        return initialData;
     }, [history, viewMode]);
 
     // Compute min/max Y values from all data for the Y-axis slider bounds
@@ -182,7 +232,7 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
 
     // 2. Initialize ranges when data loads
     useEffect(() => {
-        if (rawChartData.length > 0 && !initializedRef.current) {
+        if (rawChartData.length > 0 && initialSettings !== null && !initializedRef.current) {
             // Restore Time Window
             if (initialSettings?.timeWindow !== undefined && initialSettings.timeWindow >= 0) {
                 const maxIdx = rawChartData.length - 1;
@@ -201,8 +251,7 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                 }
 
                 if (initialSettings.value) {
-                    // Force 0 start for value mode restoration
-                    setValueRange([0, initialSettings.value.yMax]);
+                    setValueRange([initialSettings.value.yMin, initialSettings.value.yMax]);
                 }
             }
 
@@ -324,12 +373,13 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
 
     // --- RIGHT AXIS TICKS (Portfolio, Static/Auto based on Max) ---
     const rightAxisTicks = useMemo(() => {
-        if (viewMode !== 'value') return [];
+        if (viewMode === 'mwr') return majorTicks;
 
         // Like standard calculation but for 0 -> portfolioMax
         const min = 0;
         const max = portfolioMax;
         const range = max;
+        // ... rest of logic for value mode
         const validRange = range === 0 ? 100 : range;
 
         const targetTickCount = 8;
@@ -352,7 +402,7 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
             safety++;
         }
         return ticks;
-    }, [portfolioMax, viewMode]);
+    }, [portfolioMax, viewMode, majorTicks]);
 
 
     // Custom tick component
@@ -565,7 +615,6 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                 */}
                                 {showMajorGrid && (
                                     <CartesianGrid
-
                                         strokeDasharray="0"
                                         stroke="#475569"
                                         opacity={0.5}
@@ -576,6 +625,19 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                         }}
                                     />
                                 )}
+
+                                {/* Gridlines Asse Destro (Portfolio) - Tratteggiate Ambra Tenue */}
+                                {showMajorGrid && rightAxisTicks.map((tick) => (
+                                    <ReferenceLine
+                                        key={`right-grid-${tick}`}
+                                        y={tick}
+                                        yAxisId="right"
+                                        stroke="#fbbf24"
+                                        strokeDasharray="5 5"
+                                        strokeOpacity={0.4}
+                                        strokeWidth={1.5}
+                                    />
+                                ))}
 
 
                                 {/* Minor Gridlines (MWR only) */}
@@ -608,17 +670,16 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                     fontSize={12}
                                     tickLine={false}
                                     axisLine={false}
-                                    tickFormatter={(val) => new Date(val).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                    tickFormatter={(val) => {
+                                        const d = parseISODateLocal(val);
+                                        return d ? d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+                                    }}
                                     dy={10}
                                     angle={-45}
                                     textAnchor="end"
                                     height={60}
                                 />
 
-                                {/* PRIMARY Y-AXIS (Left) 
-                                    MWR: Controls everything.
-                                    Value: Controls ASSETS only. Auto scaled.
-                                */}
                                 <YAxis
                                     yAxisId="left"
                                     orientation="left"
@@ -630,15 +691,13 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                     allowDataOverflow={true}
                                     ticks={viewMode === 'value' ? majorTicks : allTicks}
                                     tick={viewMode === 'value'
-                                        ? ({ x, y, payload }) => {
+                                        ? ({ x, y, payload }: any) => {
                                             const val = payload.value;
                                             let label = `€${formatSwissNumber(val, 0)}`;
                                             if (val >= 1000) {
                                                 label = `€${formatSwissNumber(val / 1000, 0)}k`;
                                             }
                                             if (val === 0) label = "€0";
-
-                                            // Don't show negative grid labels in Value mode if we force 0 min, but just in case
                                             return (
                                                 <text x={x} y={y} dy={4} fill="#94a3b8" fontSize={10} textAnchor="end">
                                                     {label}
@@ -649,26 +708,59 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                     }
                                 />
 
-                                {/* SECONDARY Y-AXIS REMOVED as per user request */}
+                                <YAxis
+                                    yAxisId="right"
+                                    orientation="right"
+                                    stroke="#ffffff"
+                                    tickLine={false}
+                                    axisLine={false}
+                                    domain={viewMode === 'mwr' ? [yRange[0], yRange[1]] : [0, portfolioMax]}
+                                    ticks={rightAxisTicks}
+                                    tick={({ x, y, payload }: any) => {
+                                        const val = payload.value;
+                                        let label = viewMode === 'value'
+                                            ? (val >= 1000 ? `€${formatSwissNumber(val / 1000, 0)}k` : `€${formatSwissNumber(val, 0)}`)
+                                            : `${val > 0 ? '+' : ''}${val}%`;
+                                        if (val === 0 && viewMode === 'value') label = "€0";
+
+                                        // Colore basato sul valore solo in modalità MWR
+                                        let color = "#ffffff";
+                                        if (viewMode === 'mwr') {
+                                            color = val === 0 ? "#ffffff" : val > 0 ? "#22c55e" : "#ef4444";
+                                        }
+
+                                        return (
+                                            <text x={x} y={y} dy={4} fill={color} fontSize={10} textAnchor="start">
+                                                {label}
+                                            </text>
+                                        );
+                                    }}
+                                />
 
                                 <Tooltip
+                                    shared={true}
                                     contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc', borderRadius: '8px' }}
                                     itemStyle={{ padding: 0 }}
                                     formatter={(value: number, name: string, props: any) => {
+                                        if (value === null || value === undefined) return ["-", name];
+
                                         const pnl = props.payload[`${name}_pnl`];
-                                        const pnlStr = pnl !== undefined ? ` \n(P&L: ${pnl > 0 ? '+' : ''}€${formatSwissMoney(pnl)})` : '';
+                                        const pnlStr = pnl !== null && pnl !== undefined ? ` (P&L: ${pnl > 0 ? '+' : ''}€${formatSwissMoney(pnl)})` : '';
                                         const valStr = viewMode === 'value'
                                             ? `€${formatSwissMoney(value)}`
                                             : `${value.toFixed(2)}%`;
                                         return [`${valStr}${pnlStr}`, name];
                                     }}
-                                    labelFormatter={(label) => new Date(label).toLocaleDateString(undefined, { dateStyle: 'medium' })}
+                                    labelFormatter={(label) => {
+                                        const d = parseISODateLocal(label);
+                                        return d ? d.toLocaleDateString('it-IT', { dateStyle: 'medium' }) : '';
+                                    }}
                                 />
 
                                 {/* Portfolio Line - Always on left axis now */}
                                 {!hidePortfolio && (
                                     <Line
-                                        yAxisId="left"
+                                        yAxisId="right"
                                         type="monotone"
                                         dataKey="Portfolio"
                                         stroke="#ffffff"
@@ -676,6 +768,7 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                         dot={false}
                                         activeDot={{ r: 6 }}
                                         name="Portafoglio Totale"
+                                        connectNulls={true}
                                     />
                                 )}
 
@@ -693,6 +786,7 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                             dot={false}
                                             strokeOpacity={0.8}
                                             name={displayName}
+                                            connectNulls={true}
                                         />
                                     );
                                 })}
@@ -704,9 +798,9 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                 {/* Time Window Slider */}
                 <div className="px-4 py-4 mt-2">
                     <div className="flex justify-between text-xs text-muted-foreground mb-2">
-                        <span>{rawChartData.length > 0 ? new Date(rawChartData[dateRange[0]]?.date).toLocaleDateString() : ''}</span>
+                        <span>{rawChartData.length > 0 ? (parseISODateLocal(rawChartData[dateRange[0]]?.date)?.toLocaleDateString() || '') : ''}</span>
                         <span>Filtro Temporale</span>
-                        <span>{rawChartData.length > 0 ? new Date(rawChartData[dateRange[1]]?.date || rawChartData[rawChartData.length - 1].date).toLocaleDateString() : ''}</span>
+                        <span>{rawChartData.length > 0 ? (parseISODateLocal(rawChartData[dateRange[1]]?.date || rawChartData[rawChartData.length - 1].date)?.toLocaleDateString() || '') : ''}</span>
                     </div>
                     <RangeSlider
                         min={0}

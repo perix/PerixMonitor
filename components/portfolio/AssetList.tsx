@@ -12,6 +12,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { usePortfolio } from "@/context/PortfolioContext";
 
 interface Asset {
     id: string;
@@ -43,14 +44,19 @@ function getAssetDisplayName(asset: Asset): string {
 }
 
 export function AssetList({ assets, selectedIsin, onSelect }: AssetListProps) {
+    const { selectedPortfolioId } = usePortfolio(); // Use context
     const [selectedType, setSelectedType] = useState<string>("ALL");
     const [threshold, setThreshold] = useState(0.1);
 
     useEffect(() => {
-        axios.get('/api/config/assets').then(res => {
+        if (!selectedPortfolioId) return;
+
+        axios.get('/api/config/assets', {
+            params: { portfolio_id: selectedPortfolioId }
+        }).then(res => {
             if (res.data?.priceVariationThreshold !== undefined) setThreshold(res.data.priceVariationThreshold);
         }).catch(err => console.error("Failed to load asset config", err));
-    }, []);
+    }, [selectedPortfolioId]);
 
     // Extract unique asset types
     const uniqueTypes = useMemo(() => {

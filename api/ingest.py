@@ -1,403 +1,585 @@
+"""
+Modulo Ingestion per PerixMonitor
+Gestisce 3 casi distinti:
+- CASO 1: Acquisti/Vendite (campo "Operazione" presente)
+- CASO 2: Cedole/Dividendi (campo "Valore Cedola (EUR)" presente)
+- CASO 3: Aggiornamento Prezzi (default)
+"""
+
 import pandas as pd
 import numpy as np
 from datetime import datetime
+from collections import defaultdict
+
 try:
     from .logger import log_ingestion_start, log_ingestion_summary, logger
 except ImportError:
     from logger import log_ingestion_start, log_ingestion_summary, logger
 
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
+
 def clean_money_value(val):
     """
-    Robustly parses money values from strings or numbers.
-    Handles:
+    Parsing robusto di valori monetari da stringhe o numeri.
+    Gestisce:
     - "5.05 €" -> 5.05
-    - "1.200,50" -> 1200.50 (IT format)
-    - "1,200.50" -> 1200.50 (US format)
+    - "1.200,50" -> 1200.50 (Formato IT)
+    - "1,200.50" -> 1200.50 (Formato US)
     - None/NaN -> 0.0
     """
     if pd.isna(val) or val is None:
         return 0.0
     
-    # If already a number, return float
     if isinstance(val, (int, float)):
         return float(val)
         
-    # Convert to string and strip symbols
     s = str(val).strip()
-    # Remove currency symbols and common non-numeric chars (except . , -)
-    # kept: numbers, ., ,, -
-    import re
-    # Remove euro, dollar, spaces, letters
-    s = re.sub(r'[^\d\.\,\-]', '', s)
+    s = s.replace('€', '').replace('$', '').strip()
     
-    if not s:
-        return 0.0
-        
-    try:
-        # Heuristic for Decimal Separator:
-        # If both . and , exist:
-        #  - Last one is decimal separator
-        # If only one exists:
-        #  - If usually 3 decimals (like 1.000) it might be thousands, but prices usually have 2 or 4.
-        #  - Standard IT: 1.000,00 -> dot is thousands, comma is decimal
-        #  - Standard US: 1,000.00 -> comma is thousands, dot is decimal
-        
-        if ',' in s and '.' in s:
-            if s.rfind(',') > s.rfind('.'):
-                # IT style: 1.000,50
-                s = s.replace('.', '').replace(',', '.')
-            else:
-                # US style: 1,000.50
-                s = s.replace(',', '') 
-        elif ',' in s:
-            # Ambiguous: "5,05" vs "1,200"
-            # If it has ONE comma and 2 digits after, it's likely decimal "5,05"
-            # If it has 3 digits after, it MIGHT be thousands "1,200" but could be precise price "1,234"
-            # Safest assumption for EUR context: Comma is DECIMAL.
+    # Euristiche per separatori
+    if ',' in s and '.' in s:
+        if s.rfind(',') > s.rfind('.'):  # 1.200,50
+            s = s.replace('.', '').replace(',', '.')
+        else:  # 1,200.50
+            s = s.replace(',', '')
+    elif ',' in s:
+        # Assumiamo standard IT: virgola = decimale
+        parts = s.split(',')
+        if len(parts) == 2 and len(parts[1]) == 2: 
             s = s.replace(',', '.')
-        
-        # If only dots, leaving as is usually works for US format/Standard float string
-        
+        else:
+            s = s.replace(',', '.')
+             
+    try:
         return float(s)
     except:
         return 0.0
 
-def parse_portfolio_excel(file_stream, debug=False):
-    # Expected columns for Portfolio: A-I (9 columns)
-    # Expected for Dividends: A-C (3 columns): ISIN, Amount, Date
-    
+
+def parse_date(raw_date):
+    """
+    Parsing robusto di date da vari formati.
+    Ritorna stringa YYYY-MM-DD o None se non parsabile.
+    """
+    if pd.isna(raw_date) or raw_date is None:
+        return None
+        
     try:
-        log_ingestion_start("Uploaded File Stream")
-        df = pd.read_excel(file_stream)
+        if isinstance(raw_date, datetime):
+            return raw_date.strftime("%Y-%m-%d")
         
-        # --- DIVIDEND/COUPON DETECTION MODE ---
-        # Heuristic: Check if column 3 (index 2) is specifically "Data Flusso"
-        # This allows for extra columns as long as we have the core structure.
-        is_dividend_file = False
-        if df.shape[1] >= 3:
-             # Check header of 3rd column (index 2)
-            col3_header = str(df.columns[2]).strip().lower()
-            if col3_header == "data flusso":
-                is_dividend_file = True
-                if debug: logger.info("Detected patterns for Dividend/Flow File (Header 'Data Flusso')")
-
-        if is_dividend_file:
-            dividends = []
-            for idx, row in df.iterrows():
-                # Expected: Col 0 = ISIN, Col 1 = Amount, Col 2 = Date
-                if pd.isna(row.iloc[0]): continue
-                
-                isin = str(row.iloc[0]).strip()
-                # [MODIFIED] Use clean_money_value
-                amount = clean_money_value(row.iloc[1])
-                date_val = row.iloc[2]
-                
-                # Date parsing
-                if pd.isna(date_val): 
-                    date_val = None
-                else:
-                    try:
-                        # [FIX] Use same logic for dividends
-                        if isinstance(date_val, (pd.Timestamp, datetime)):
-                             date_val = date_val.strftime('%Y-%m-%d')
-                        else:
-                             dt_obj = pd.to_datetime(date_val, dayfirst=True)
-                             date_val = dt_obj.strftime('%Y-%m-%d')
-                    except:
-                        date_val = None
-                
-                # [MODIFIED] Check amount is not 0 (allow negative)
-                if isin and abs(amount) > 0 and date_val:
-                    dividends.append({
-                        "isin": isin,
-                        "amount": amount,
-                        "date": date_val
-                    })
-            
-            return {"type": "KPI_DIVIDENDS", "data": dividends, "message": f"Rilevate {len(dividends)} cedole/dividendi/spese."}
-
-
-        # --- STANDARD PORTFOLIO INGESTION MODE ---
-        if df.shape[1] < 8:
-            columns_found = df.columns.tolist()
-            if debug: logger.error(f"PARSE FAIL: Insufficient columns. Found {len(columns_found)}: {columns_found}")
-            return {"error": f"Insufficient columns. Expected at least 8 (Portfolio) or 3 (Dividends), found {len(columns_found)}"}
-
-        data = []
-        for idx, row in df.iterrows():
-            if pd.isna(row.iloc[1]): 
-                continue
-            
-            isin = str(row.iloc[1]).strip()
-            # ... (parsing logic) ...
-            # Qty can be None (Price Update only) or float
-            qty = clean_money_value(row.iloc[2]) if not pd.isna(row.iloc[2]) else None
-            
-            # logger.debug(f"PARSED Row {idx+2}: Qty={qty} Op={row.iloc[6]}") # Silent in normal mode
-
-            # Handle NaT (Not a Time) converting to None
-            # [NEW] Parse Asset Type dynamically by column name or fallback to index 9
-            asset_type = None
-
-            # [FIX] Date Parsing Logic
-            # Force Day-First if string (dd/mm/yyyy -> Feb 1st, not Jan 2nd)
-            date_val = None
-            raw_date = row.iloc[5]
-            if not pd.isna(raw_date):
-                try:
-                    # If it's already a datetime object (Excel might have parsed it)
-                    if isinstance(raw_date, (pd.Timestamp, datetime)):
-                        date_val = raw_date.strftime('%Y-%m-%d')
-                    else:
-                        # It's a string, use dayfirst=True
-                        dt_obj = pd.to_datetime(raw_date, dayfirst=True)
-                        date_val = dt_obj.strftime('%Y-%m-%d')
-                except Exception as e:
-                    if debug: logger.warning(f"DATE PARSE ERROR (Row {idx}): {raw_date} -> {e}")
-                    date_val = None
-            
-            # 1. Try to find column by header name
-            type_col_idx = -1
-            for i, col_name in enumerate(df.columns):
-                c_str = str(col_name).lower().strip()
-                if "tipologia" in c_str or "asset class" in c_str or ("tipo" in c_str and "strumento" in c_str):
-                    type_col_idx = i
-                    break
-            
-            # Log debug info
-            if debug:
-                logger.info(f"INGEST DEBUG: Columns found: {df.columns.tolist()}")
-                logger.info(f"INGEST DEBUG: Asset Type Column Detection -> Index: {type_col_idx} (Name match)")
-            
-            # 2. Fallback to column index 9 (J) if specifically 10+ columns and no header matched
-            if type_col_idx == -1 and df.shape[1] > 9:
-                type_col_idx = 9
-                if debug: logger.info(f"INGEST DEBUG: Fallback to Index 9 for Asset Type")
-            
-            if type_col_idx != -1 and type_col_idx < df.shape[1]:
-                raw_type = row.iloc[type_col_idx]
-                if not pd.isna(raw_type):
-                    asset_type = str(raw_type).strip().capitalize()
-            
-            if debug and idx < 3: # Debug first 3 rows
-                 logger.info(f"INGEST DEBUG Row {idx}: ISIN={isin}, TypeRaw={row.iloc[type_col_idx] if type_col_idx != -1 else 'N/A'}, Extracted={asset_type}")
-
-            # [FIX] Sanitize NaN values for JSON compatibility
-            currency_val = row.iloc[3]
-            if pd.isna(currency_val): currency_val = None
-            else: currency_val = str(currency_val).strip()
-
-            op_val = row.iloc[6]
-            if pd.isna(op_val): op_val = None
-            else: op_val = str(op_val).strip()
-
-            entry = {
-                "description": row.iloc[0],
-                "isin": isin,
-                "quantity": qty,
-                "currency": currency_val,
-                "avg_price_eur": clean_money_value(row.iloc[4]),
-                "date": date_val, 
-                "operation": op_val,
-                "op_price_eur": clean_money_value(row.iloc[7]),
-                "current_price": clean_money_value(row.iloc[8]) if df.shape[1] > 8 else None,
-                "asset_type": asset_type
-            }
-            data.append(entry)
-            
-        result = {
-            "type": "PORTFOLIO_SYNC", 
-            "data": data
-        }
+        str_d = str(raw_date).strip()
         
-        if debug:
-            # Ensure debug info is also JSON safe
-            clean_columns = [str(c) for c in df.columns.tolist()]
-            result["debug"] = {
-                "columns_found": clean_columns,
-                "asset_type_col_index": int(type_col_idx)
-            }
-            
-        return result
-            
-    except Exception as e:
-        logger.error(f"PARSE EXCEPTION: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return {"error": f"Parse Error: {str(e)}"}
-
-def calculate_delta(excel_data, db_holdings, debug=False):
-    # db_holdings structure: {isin: {"qty": float, "metadata": dict}} OR {isin: float} (legacy fallback)
-    # [SIMPLIFIED LOGIC]
-    # 1. If column 'Operation' is "Acquisto"/"Vendita" -> Qty is TRANSACTION AMOUNT (Delta).
-    # 2. If 'Operation' is NOT present -> Price Update Only. Ignore Qty.
-    
-    delta_actions = []
-    
-    for row in excel_data:
-        isin = row['isin']
-        excel_qty = row['quantity'] # In this new logic, this is POTENTIALLY the transaction amount.
-        
-        # Unpack DB info safely
-        db_entry = db_holdings.get(isin)
-        db_qty = 0.0
-        db_type = None
-        
-        if isinstance(db_entry, dict):
-            db_qty = db_entry.get("qty", 0.0)
-            meta = db_entry.get("metadata") or {}
-            db_type = meta.get("assetType")
-        elif isinstance(db_entry, (int, float)):
-             db_qty = float(db_entry)
-        
-        # Check Operation
-        op_declared = row.get('operation')
-        op_str = str(op_declared).strip().lower() if op_declared else ""
-        is_explicit_buy = (op_str == 'acquisto' or op_str == 'buy')
-        is_explicit_sell = (op_str == 'vendita' or op_str == 'sell')
-        
-        # Logic Branching
-        diff = 0.0
-        new_total_qty = db_qty
-        action_type = None
-        is_price_only = False
-        
-        op_price = row.get('op_price_eur')
-        
-        if is_explicit_buy:
-            if excel_qty is None or not op_price:
-                 if debug: logger.debug(f"INGEST ITEM {isin}: ERROR_INCOMPLETE_OP - Buy Op missing Qty or Price")
-                 delta_actions.append({"isin": isin, "type": "ERROR_INCOMPLETE_OP", "quantity_change": 0, "current_db_qty": db_qty, "new_total_qty": db_qty, "details": "Operazione Acquisto incompleta (Manca Qta o Prezzo)."})
-                 continue
-                 
-            diff = excel_qty
-            new_total_qty = db_qty + excel_qty
-            action_type = "Acquisto"
-            
-        elif is_explicit_sell:
-            if excel_qty is None or not op_price:
-                 if debug: logger.debug(f"INGEST ITEM {isin}: ERROR_INCOMPLETE_OP - Sell Op missing Qty or Price")
-                 delta_actions.append({"isin": isin, "type": "ERROR_INCOMPLETE_OP", "quantity_change": 0, "current_db_qty": db_qty, "new_total_qty": db_qty, "details": "Operazione Vendita incompleta (Manca Qta o Prezzo)."})
-                 continue
-
-            # Validate: Cannot sell more than owned
-            if excel_qty > db_qty + 1e-6: # Tolerance
-                if debug: logger.debug(f"INGEST ITEM {isin}: ERROR_NEGATIVE_QTY - Attempt to sell {excel_qty} > Owned {db_qty}")
-                delta_actions.append({
-                    "isin": isin,
-                    "type": "ERROR_NEGATIVE_QTY",
-                    "quantity_change": excel_qty,
-                    "current_db_qty": db_qty,
-                    "new_total_qty": db_qty - excel_qty,
-                    "details": f"Tentativo di vendita ({excel_qty}) superiore alla quantità posseduta ({db_qty})."
-                })
-                continue
-            
-            diff = -excel_qty
-            
-            # [USER REQUEST] Avoid fictitious positive stocks due to rounding
-            # If remaining qty (db_qty - excel_qty) is negligible (< 0.01), clear it.
-            # "prendi il numero inferiore tra 0 e questa differenza"
-            remainder = db_qty - excel_qty
-            if abs(remainder) < 0.01:
-                # If remainder is 0.005 -> min(0, 0.005) = 0. New Total = 0.
-                # If remainder is -0.005 -> min(0, -0.005) = -0.005. New Total = -0.005.
-                adjusted_remainder = min(0.0, abs(remainder))
-                
-                # We must adjust 'diff' so that db_qty + diff = adjusted_remainder
-                # diff = adjusted_remainder - db_qty
-                
-                new_total_qty = adjusted_remainder
-                diff = new_total_qty - db_qty
-                
-                # If we forced remainder to 0, it means we sold EVERYTHING.
-                if new_total_qty == 0:
-                     action_type = "Vendita Totale (Auto-fix)"
-            else:
-                 new_total_qty = db_qty - excel_qty
-            
-            action_type = "Vendita"
-            
+        # Gestione formato con /
+        if '/' in str_d:
+            pd_date = pd.to_datetime(str_d, dayfirst=True)
         else:
-            # No Operation -> Price Update Only
-            # [STRICT CHECK] If Quantity differs from DB, it's an error.
-            # User might have forgotten to add "Acquisto"/"Vendita".
-            # EXCEPTION: If excel_qty is NONE (Empty cell), we IGNORE IT. It is NOT a mismatch.
+            pd_date = pd.to_datetime(str_d)
             
-            if excel_qty is not None:
-                diff = excel_qty - db_qty
-                if abs(diff) > 1e-6:
-                    if debug: logger.debug(f"INGEST ITEM {isin}: ERROR_MISMATCH_NO_OP - Qty mismatch {db_qty}->{excel_qty} but no Op.")
-                    delta_actions.append({
-                        "isin": isin,
-                        "type": "ERROR_QTY_MISMATCH_NO_OP",
-                        "quantity_change": diff,
-                        "current_db_qty": db_qty,
-                        "new_total_qty": excel_qty,
-                        "details": "Quantità diversa dal DB ma nessuna operazione specificata. Verificare se manca Acquisto/Vendita."
-                    })
-                    continue
+        return pd_date.strftime("%Y-%m-%d")
+    except:
+        return None
 
-            # If Qty matches (or is None), treat as Price Update.
-            is_price_only = True
-            if debug: logger.debug(f"INGEST ITEM {isin}: PRICE_UPDATE - No Op declared. Treating as Price Update only.")
 
-        # Metadata Check (Asset Type)
-        excel_type = row.get('asset_type')
-        if excel_type and excel_type != db_type:
-             if debug: logger.debug(f"INGEST ITEM {isin}: META_DIFF - Type change: DB='{db_type}' -> Excel='{excel_type}'")
-             # We always include metadata update if changed, even for Price Updates
-             # If it's Price Only, we generate a specific METADATA_UPDATE action if type changed
-             if is_price_only:
-                 delta_actions.append({
-                    "isin": isin,
-                    "type": "METADATA_UPDATE",
-                    "quantity_change": 0,
-                    "current_db_qty": db_qty,
-                    "new_total_qty": db_qty,
-                    "asset_type_proposal": excel_type,
-                    "excel_description": row.get('description'),
-                    "details": "Aggiornamento Anagrafica (Tipologia)"
-                 })
-        
-        if is_price_only:
-            continue # No transaction to record
+def find_column(df_columns, candidates):
+    """
+    Trova la prima colonna che matcha uno dei candidati.
+    Ritorna il nome della colonna o None.
+    """
+    for candidate in candidates:
+        if candidate in df_columns:
+            return candidate
+    return None
 
-        # Add Transaction Action
-        op_price = row.get('op_price_eur')
-        op_date = row.get('date')
-        
-        # New ISIN Check for Buying
-        if db_qty == 0 and action_type == "Acquisto":
-             # Ensure we have price and date for new asset
-             if not (op_price and op_price > 0 and op_date):
-                 if debug: logger.debug(f"INGEST ITEM {isin}: INCONSISTENT_NEW_ISIN - New ISIN buy missing price/date")
-                 delta_actions.append({
-                    "isin": isin,
-                    "type": "INCONSISTENT_NEW_ISIN",
-                    "quantity_change": excel_qty, 
-                    "current_db_qty": 0,
-                    "new_total_qty": excel_qty,
-                    "details": "Mancano dati operazione (Data/Prezzo) per nuovo titolo."
-                 })
-                 continue
 
-        action = {
-            "isin": isin,
-            "type": action_type,
-            "quantity_change": abs(diff),
-            "excel_operation_declared": op_declared,
-            "excel_price": op_price,
-            "excel_date": op_date,
-            "excel_description": row.get('description'), 
-            "asset_type_proposal": row.get('asset_type'),
-            "current_db_qty": db_qty,
-            "new_total_qty": new_total_qty
-        }
-        delta_actions.append(action)
-        if debug: logger.debug(f"INGEST ITEM {isin}: DELTA - {action_type} {abs(diff)} (NewTotal={new_total_qty})")
+def normalize_columns(df):
+    """Normalizza i nomi delle colonne: lowercase e strip."""
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    return df
 
-    # [SIMPLIFIED LOGIC] No Missing Check Loop.
+
+# =============================================================================
+# MAIN DISPATCHER
+# =============================================================================
+
+def parse_portfolio_excel(file_stream, holdings_map=None):
+    """
+    Dispatcher principale che analizza il file e delega al parser corretto.
     
-    log_ingestion_summary(len(excel_data), len(delta_actions), 0)
-    return delta_actions
+    Logica di identificazione:
+    1. Se presente "valore cedola (eur)" → CASO 2 (Cedole/Dividendi)
+    2. Se presente "operazione" → CASO 1 (Acquisti/Vendite)
+    3. Altrimenti → CASO 3 (Aggiornamento Prezzi)
+    
+    holdings_map: dict {isin: quantity} per validazione vendite.
+    """
+    try:
+        # Lettura file (Excel o CSV)
+        try:
+            df = pd.read_excel(file_stream)
+        except:
+            file_stream.seek(0)
+            df = pd.read_csv(file_stream, sep=None, engine='python')
+        
+        df = normalize_columns(df)
+        cols = set(df.columns)
+        
+        if df.empty:
+            return {"data": [], "error": "Il file è vuoto o non contiene dati leggibili."}
+        
+        logger.info(f"Colonne rilevate nel file: {list(cols)}")
+        
+        # CASO 2: Cedole/Dividendi (trigger: "valore cedola (eur)")
+        if "valore cedola (eur)" in cols:
+            logger.info("Tipo file rilevato: CEDOLE/DIVIDENDI")
+            return parse_dividends_file(df)
+        
+        # CASO 1: Acquisti/Vendite (trigger: "operazione")
+        if "operazione" in cols:
+            logger.info("Tipo file rilevato: ACQUISTI/VENDITE")
+            return parse_transactions_file(df, holdings_map)
+        
+        # CASO 3: Aggiornamento Prezzi (default)
+        logger.info("Tipo file rilevato: AGGIORNAMENTO PREZZI")
+        return parse_prices_file(df)
+        
+    except Exception as e:
+        logger.error(f"Errore parsing file: {e}")
+        return {"data": [], "error": str(e)}
+
+
+# =============================================================================
+# CASO 1: ACQUISTI E VENDITE
+# =============================================================================
+
+def parse_transactions_file(df, holdings_map=None):
+    """
+    Parser per file Acquisti/Vendite.
+    
+    Campi obbligatori:
+    - ISIN
+    - Descrizione Asset
+    - Quantità
+    - Data (acquisto/vendita)
+    - Prezzo Operazione (EUR)
+    - Operazione ("Acquisto" o "Vendita")
+    - Tipologia
+    
+    Validazioni:
+    - Operazione deve essere "Acquisto" o "Vendita"
+    - Ordine cronologico per validare che non si vendano asset non posseduti
+    - Quantità non può diventare negativa
+    """
+    col_map = {
+        'isin': ['isin', 'codice isin'],
+        'description': ['descrizione asset', 'descrizione', 'titolo', 'descrizione strumento', 'descrizione titolo'],
+        'quantity': ['quantità', 'quantity', 'q.tà', 'quantitÃ\xa0', 'quantitÃ'], # Handle potential encoding issues
+        'date': ['data (acquisto/vendita)', 'data', 'data operazione'],
+        'price': ['prezzo operazione (eur)', 'prezzo operazione'],
+        'operation': ['operazione'],
+        'asset_type': ['tipologia', 'tipo strumento', 'asset class', 'tipo']
+    }
+    
+    transactions = []
+    errors = []
+    
+    for index, row in df.iterrows():
+        row_num = index + 2  # +2 per header e 0-index
+        
+        try:
+            # 1. ISIN (Obbligatorio)
+            isin_col = find_column(df.columns, col_map['isin'])
+            if not isin_col or pd.isna(row[isin_col]):
+                errors.append(f"Riga {row_num}: ISIN mancante")
+                continue
+            isin = str(row[isin_col]).strip().upper()
+            if len(isin) < 5:
+                errors.append(f"Riga {row_num}: ISIN non valido '{isin}'")
+                continue
+            
+            # 2. Descrizione (Obbligatorio)
+            desc_col = find_column(df.columns, col_map['description'])
+            if not desc_col or pd.isna(row[desc_col]):
+                errors.append(f"Riga {row_num}: Descrizione mancante per ISIN {isin}")
+                continue
+            description = str(row[desc_col]).strip()
+            
+            # 3. Quantità (Obbligatorio)
+            qty_col = find_column(df.columns, col_map['quantity'])
+            if not qty_col:
+                errors.append(f"Riga {row_num}: Colonna Quantità non trovata")
+                continue
+            quantity = clean_money_value(row[qty_col])
+            if quantity <= 0:
+                errors.append(f"Riga {row_num}: Quantità deve essere positiva per ISIN {isin}")
+                continue
+            
+            # 4. Data (Obbligatorio)
+            date_col = find_column(df.columns, col_map['date'])
+            if not date_col:
+                errors.append(f"Riga {row_num}: Colonna Data non trovata")
+                continue
+            date = parse_date(row[date_col])
+            if not date:
+                errors.append(f"Riga {row_num}: Data non valida per ISIN {isin}")
+                continue
+            
+            # 5. Prezzo (Obbligatorio)
+            price_col = find_column(df.columns, col_map['price'])
+            if not price_col:
+                errors.append(f"Riga {row_num}: Colonna Prezzo Operazione non trovata")
+                continue
+            price = clean_money_value(row[price_col])
+            
+            # 6. Operazione (Obbligatorio: "Acquisto" o "Vendita")
+            op_col = find_column(df.columns, col_map['operation'])
+            if not op_col or pd.isna(row[op_col]):
+                errors.append(f"Riga {row_num}: Operazione mancante per ISIN {isin}")
+                continue
+            operation = str(row[op_col]).strip().lower()
+            if operation not in ['acquisto', 'vendita']:
+                errors.append(f"Riga {row_num}: Operazione '{row[op_col]}' non valida. Usare 'Acquisto' o 'Vendita'")
+                continue
+            operation = 'Acquisto' if operation == 'acquisto' else 'Vendita'
+            
+            # 7. Tipologia (Obbligatorio per Acquisto, Opzionale per Vendita)
+            asset_type = None
+            type_col = find_column(df.columns, col_map['asset_type'])
+            
+            if type_col and pd.notna(row[type_col]):
+                asset_type = str(row[type_col]).strip()
+            
+            if operation == 'Acquisto' and not asset_type:
+                 errors.append(f"Riga {row_num}: Tipologia obbligatoria per Acquisto (ISIN {isin})")
+                 continue
+            
+            transactions.append({
+                'isin': isin,
+                'description': description,
+                'quantity': quantity,
+                'date': date,
+                'price': price,
+                'operation': operation,
+                'asset_type': asset_type
+            })
+            
+        except Exception as e:
+            errors.append(f"Riga {row_num}: Errore parsing - {str(e)}")
+            continue
+    
+    if not transactions:
+        return {
+            "type": "TRANSACTIONS",
+            "data": [],
+            "error": "Nessuna transazione valida trovata. " + "; ".join(errors[:5])
+        }
+    
+    # Validazione cronologica
+    validation_result = validate_transactions_chronology(transactions, holdings_map)
+    if validation_result['error']:
+        return {
+            "type": "TRANSACTIONS",
+            "data": [],
+            "error": validation_result['error']
+        }
+    
+    # Log warnings se presenti
+    if errors:
+        logger.warning(f"Transazioni con warning: {errors[:10]}")
+    
+    return {
+        "type": "TRANSACTIONS",
+        "data": validation_result['validated_transactions'],
+        "warnings": errors if errors else None,
+        "error": None
+    }
+
+
+def validate_transactions_chronology(transactions, holdings_map=None):
+    """
+    Valida che le transazioni rispettino la cronologia:
+    - Non si può vendere più di quanto posseduto (considerando holdings opzionali e tolleranza 0.01)
+    - Ordina per data e verifica running balance
+    """
+    # Raggruppa per ISIN
+    by_isin = defaultdict(list)
+    for tx in transactions:
+        by_isin[tx['isin']].append(tx)
+    
+    validated = []
+    errors = []
+    
+    # Init mappa holdings se None
+    if holdings_map is None:
+        holdings_map = {}
+    
+    for isin, txs in by_isin.items():
+        # Ordina per data
+        txs_sorted = sorted(txs, key=lambda x: x['date'])
+        
+        # Init running quantity da DB se presente, altrimenti 0
+        running_qty = holdings_map.get(isin, 0.0)
+        logger.info(f"INGEST DEBUG: Validation {isin} - Start Qty: {running_qty}")
+        is_new = True 
+        
+        for tx in txs_sorted:
+            if tx['operation'] == 'Acquisto':
+                running_qty += tx['quantity']
+            else:  # Vendita
+                # Calcola rimanenza teorica
+                remaining = running_qty - tx['quantity']
+                
+                # Tolleranza: se < -0.01 -> ERRORE
+                # Tolleranza: se < -0.01 -> ERRORE
+                if remaining < -0.01:
+                    # Invece di bloccare tutto, segniamo questa transazione come ERRORE
+                    # e continuiamo, così l'utente lo vede nella tabella.
+                    logger.warning(f"INGEST: Negative Qty Error for {isin}. Remaining would be {remaining}")
+                    
+                    tx_copy = tx.copy()
+                    tx_copy['operation'] = 'ERROR_NEGATIVE_QTY' 
+                    # quantity is preserved
+                    # details/description can be enhanced in index.py
+                    
+                    # NON aggiorniamo running_qty. Assumiamo che la vendita non avvenga.
+                    # Ma dobbiamo decidere se le vendite successive falliranno.
+                    # Probabilmente sì, ma è corretto che l'utente veda tutto ciò che non va.
+                    
+                    validated.append(tx_copy)
+                    # Skip update of running_qty and appending normal tx
+                    continue
+                
+                # Se tra -0.01 e 0.01 -> considera 0
+                if abs(remaining) < 0.01:
+                    remaining = 0.0
+                
+                running_qty = remaining
+            
+            # Aggiungi info se è nuovo asset
+            tx_copy = tx.copy()
+            tx_copy['is_new_asset'] = is_new and tx['operation'] == 'Acquisto'
+            tx_copy['running_quantity'] = running_qty
+            validated.append(tx_copy)
+            
+            if tx['operation'] == 'Acquisto':
+                is_new = False
+    
+    return {
+        'error': None,
+        'validated_transactions': validated
+    }
+
+
+# =============================================================================
+# CASO 2: CEDOLE / DIVIDENDI
+# =============================================================================
+
+def parse_dividends_file(df):
+    """
+    Parser per file Cedole/Dividendi.
+    
+    Campi obbligatori:
+    - ISIN
+    - Valore Cedola (EUR) - può essere negativo (spese)
+    - Data Flusso
+    
+    Nota: L'ISIN deve esistere in portafoglio (validato a livello API)
+    """
+    col_map = {
+        'isin': ['isin', 'codice isin'],
+        'amount': ['valore cedola (eur)'],
+        'date': ['data flusso', 'data stacco', 'data']
+    }
+    
+    dividends = []
+    errors = []
+    
+    for index, row in df.iterrows():
+        row_num = index + 2
+        
+        try:
+            # 1. ISIN (Obbligatorio)
+            isin_col = find_column(df.columns, col_map['isin'])
+            if not isin_col or pd.isna(row[isin_col]):
+                errors.append(f"Riga {row_num}: ISIN mancante")
+                continue
+            isin = str(row[isin_col]).strip().upper()
+            if len(isin) < 5:
+                errors.append(f"Riga {row_num}: ISIN non valido '{isin}'")
+                continue
+            
+            # 2. Valore Cedola (Obbligatorio - può essere negativo)
+            amount_col = find_column(df.columns, col_map['amount'])
+            if not amount_col:
+                errors.append(f"Riga {row_num}: Colonna 'Valore Cedola (EUR)' non trovata")
+                continue
+            # NON usiamo abs() - ammessi valori negativi per spese
+            amount = clean_money_value(row[amount_col])
+            
+            # 3. Data Flusso (Obbligatorio)
+            date_col = find_column(df.columns, col_map['date'])
+            if not date_col:
+                errors.append(f"Riga {row_num}: Colonna Data Flusso non trovata")
+                continue
+            date = parse_date(row[date_col])
+            if not date:
+                errors.append(f"Riga {row_num}: Data non valida per ISIN {isin}")
+                continue
+            
+            dividends.append({
+                'isin': isin,
+                'amount': amount,
+                'date': date
+            })
+            
+        except Exception as e:
+            errors.append(f"Riga {row_num}: Errore parsing - {str(e)}")
+            continue
+    
+    if not dividends:
+        return {
+            "type": "DIVIDENDS",
+            "data": [],
+            "error": "Nessuna cedola/dividendo valido trovato. " + "; ".join(errors[:5])
+        }
+    
+    if errors:
+        logger.warning(f"Cedole con warning: {errors[:10]}")
+    
+    return {
+        "type": "DIVIDENDS",
+        "data": dividends,
+        "warnings": errors if errors else None,
+        "error": None
+    }
+
+
+# =============================================================================
+# CASO 3: AGGIORNAMENTO PREZZI
+# =============================================================================
+
+def parse_prices_file(df):
+    """
+    Parser per file Aggiornamento Prezzi.
+    
+    Campi obbligatori:
+    - ISIN
+    - Data
+    - Prezzo Corrente (EUR)
+    
+    Note:
+    - Più date per stesso ISIN ammesse
+    - Solo asset in portafoglio vengono salvati (validato a livello API)
+    - Stesso ISIN+data con prezzi diversi = warning
+    """
+    col_map = {
+        'isin': ['isin', 'codice isin'],
+        'date': ['data', 'date'],
+        'price': ['prezzo corrente (eur)', 'prezzo', 'chiusura', 'last', 'quotazione', 'ultimo']
+    }
+    
+    prices = []
+    errors = []
+    warnings = []
+    
+    # Traccia duplicati ISIN+data
+    seen_prices = {}  # (isin, date) -> price
+    
+    # Campo Opzionale: Descrizione
+    desc_keys = ['descrizione', 'titolo', 'descrizione asset', 'nome', 'descrizione titolo']
+    
+    for index, row in df.iterrows():
+        row_num = index + 2
+        
+        try:
+            # 1. ISIN (Obbligatorio)
+            isin_col = find_column(df.columns, col_map['isin'])
+            if not isin_col or pd.isna(row[isin_col]):
+                errors.append(f"Riga {row_num}: ISIN mancante")
+                continue
+            isin = str(row[isin_col]).strip().upper()
+            if len(isin) < 5:
+                errors.append(f"Riga {row_num}: ISIN non valido '{isin}'")
+                continue
+            
+            # 2. Data (Obbligatorio)
+            date_col = find_column(df.columns, col_map['date'])
+            if not date_col:
+                errors.append(f"Riga {row_num}: Colonna Data non trovata")
+                continue
+            date = parse_date(row[date_col])
+            if not date:
+                errors.append(f"Riga {row_num}: Data non valida per ISIN {isin}")
+                continue
+            
+            # 3. Prezzo (Obbligatorio)
+            price_col = find_column(df.columns, col_map['price'])
+            if not price_col:
+                errors.append(f"Riga {row_num}: Colonna Prezzo non trovata")
+                continue
+            price = clean_money_value(row[price_col])
+            
+            # [DEBUG] Log raw vs clean
+            # logger.debug(f"Row {row_num} ISIN {isin}: Raw price '{row[price_col]}' -> Clean {price}")
+
+            if price <= 0:
+                errors.append(f"Riga {row_num}: Prezzo deve essere positivo per ISIN {isin}")
+                continue
+            
+            # 4. Descrizione (Opzionale)
+            description = None
+            desc_col = find_column(df.columns, desc_keys)
+            if desc_col and pd.notna(row[desc_col]):
+                description = str(row[desc_col]).strip()
+
+            # Check duplicati ISIN+data con prezzi diversi
+            key = (isin, date)
+            if key in seen_prices:
+                if abs(seen_prices[key] - price) > 0.0001:
+                    warnings.append(
+                        f"ISIN {isin} data {date}: prezzi multipli rilevati "
+                        f"({seen_prices[key]} vs {price}). Usato ultimo valore."
+                    )
+                    seen_prices[key] = price  # Usa ultimo
+                continue  # Skip duplicato
+            
+            seen_prices[key] = price
+            
+            item = {
+                'isin': isin,
+                'date': date,
+                'price': price,
+                'source': 'Manual Upload'
+            }
+            if description:
+                item['description'] = description
+                
+            prices.append(item)
+            
+        except Exception as e:
+            errors.append(f"Riga {row_num}: Errore parsing - {str(e)}")
+            continue
+    
+    logger.info(f"[DEBUG_PRICES] Found {len(prices)} valid price entries.")
+    if prices:
+        logger.info(f"[DEBUG_PRICES] First entry: {prices[0]}")
+
+    if not prices:
+        return {
+            "type": "PRICES",
+            "data": [],
+            "error": "Nessun prezzo valido trovato. " + "; ".join(errors[:5])
+        }
+    
+    if errors:
+        logger.warning(f"Prezzi con errori: {errors[:10]}")
+    
+    return {
+        "type": "PRICES",
+        "data": prices,
+        "warnings": warnings if warnings else None,
+        "error": None
+    }

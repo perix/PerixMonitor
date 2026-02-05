@@ -105,14 +105,16 @@ export default function MemoryPage() {
         ? portfolioCache[selectedPortfolioId].name
         : "Portafoglio";
 
+    // Track which portfolios have been fetched this session
+    const fetchedPortfoliosRef = useRef<Set<string>>(new Set());
+
     useEffect(() => {
         const fetchData = async () => {
             if (!selectedPortfolioId) return;
 
-            // Check Cache (re-fetch if empty or simple check?)
-            // We'll trust cache for data, but re-fetch if needed.
-            // For now, simple cache check.
-            if (memoryCache[selectedPortfolioId]) {
+            // Skip if already fetched this session OR if cache has data
+            if (fetchedPortfoliosRef.current.has(selectedPortfolioId) ||
+                (memoryCache[selectedPortfolioId] && memoryCache[selectedPortfolioId].length > 0)) {
                 return;
             }
 
@@ -126,9 +128,13 @@ export default function MemoryPage() {
                 if (res.data && res.data.data) {
                     setMemoryCache(selectedPortfolioId, res.data.data);
                 }
+                // Mark as fetched regardless of result
+                fetchedPortfoliosRef.current.add(selectedPortfolioId);
             } catch (err: any) {
                 console.error("Error fetching memory data", err);
                 setError(err.response?.data?.error || err.message || "Errore sconosciuto");
+                // Mark as fetched even on error to prevent retry loop
+                fetchedPortfoliosRef.current.add(selectedPortfolioId);
             } finally {
                 setLoading(false);
             }
@@ -251,6 +257,7 @@ export default function MemoryPage() {
                             onColumnVisibilityChange={setColumnVisibility}
                             columnSizing={columnSizing}
                             onColumnSizingChange={setColumnSizing}
+                            portfolioId={selectedPortfolioId}
                         />
                     </CardContent>
                 </Card>

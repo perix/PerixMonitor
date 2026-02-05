@@ -152,14 +152,17 @@ export default function DashboardPage() {
                 return;
             }
 
-            // [PERSISTENCE] Load saved selection
-            const savedSelection = localStorage.getItem(`dashboard_selection_${selectedPortfolioId}`);
+            // [PERSISTENCE] Load saved selection from SETTINGS (DB)
+            // Was: localStorage.getItem(`dashboard_selection_${selectedPortfolioId}`);
             let initialSelection: Set<string> | null = null;
-            if (savedSelection) {
+
+            // Check settings from cache or initialSettings state
+            const loadedSettings = initialSettings || dashboardCache[selectedPortfolioId]?.settings;
+            if (loadedSettings && loadedSettings.dashboardSelection) {
                 try {
-                    initialSelection = new Set(JSON.parse(savedSelection));
+                    initialSelection = new Set(loadedSettings.dashboardSelection);
                 } catch (e) {
-                    console.error("Failed to parse saved selection", e);
+                    console.error("Failed to parse DB selection", e);
                 }
             }
 
@@ -277,13 +280,15 @@ export default function DashboardPage() {
 
     // [PERSISTENCE] Save selection on change
     useEffect(() => {
-        if (selectedPortfolioId && selectedAssets) {
-            // We only save if we have data loaded (to avoid saving empty set on initial render before fetch)
-            // But selectedAssets is init to empty set.
-            // We should check if history is loaded.
-            if (history?.series) {
-                localStorage.setItem(`dashboard_selection_${selectedPortfolioId}`, JSON.stringify(Array.from(selectedAssets)));
-            }
+        if (selectedPortfolioId && selectedAssets && history?.series) {
+            // Check if selection changed from what we loaded?
+            // Debounce save to DB
+            const timer = setTimeout(() => {
+                // Convert Set to Array
+                const selectionArray = Array.from(selectedAssets);
+                updateSettings({ dashboardSelection: selectionArray });
+            }, 1000);
+            return () => clearTimeout(timer);
         }
     }, [selectedAssets, selectedPortfolioId, history]);
 
@@ -329,6 +334,11 @@ export default function DashboardPage() {
                     const entry = dateMap.get(d.date)!;
                     entry.market_value += (d.market_value || 0);
                     entry.pnl += (d.pnl || 0);
+
+                    // Se c'è un solo asset, usiamo il suo MWR (% value) anche per il portafoglio sintetico
+                    if (selectedCount === 1) {
+                        entry.value = d.value || 0;
+                    }
                 });
             });
 

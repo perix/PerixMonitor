@@ -116,8 +116,7 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      {/* Expanded Width to max-w-7xl, lighter styling */}
-      <DialogContent className="w-[98vw] max-w-full h-[90vh] flex flex-col p-0 gap-0 bg-[#0A0A0A] border-white/40 text-gray-200">
+      <DialogContent className="w-auto max-w-[98vw] sm:max-w-[98vw] h-[90vh] flex flex-col p-0 gap-0 bg-[#0A0A0A] border-white/40 text-gray-200">
         <DialogHeader className="p-6 pb-4 border-b border-white/20 shrink-0">
           <DialogTitle className="text-xl font-medium text-white flex items-center gap-2">
             Riconciliazione Portafoglio
@@ -129,7 +128,7 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 scroll-smooth space-y-8">
+        <div className="flex-1 overflow-y-auto overflow-x-auto p-6 scroll-smooth space-y-8">
 
           {/* DIVIDENDS TABLE */}
           {hasDividends && (
@@ -139,20 +138,20 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
                 <h3 className="font-semibold">Cedole e Dividendi Rilevati</h3>
               </div>
               <div className="rounded-md border border-white/20 bg-white/5 overflow-hidden">
-                <Table>
+                <Table className="w-full">
                   <TableHeader className="bg-white/5 border-b border-white/20">
                     <TableRow className="hover:bg-transparent border-white/20">
-                      <TableHead className="text-gray-400">ISIN</TableHead>
-                      <TableHead className="text-gray-400 text-right">Data</TableHead>
-                      <TableHead className="text-gray-400 text-right">Importo</TableHead>
+                      <TableHead className="text-gray-400 whitespace-nowrap">ISIN</TableHead>
+                      <TableHead className="text-gray-400 text-right whitespace-nowrap">Data</TableHead>
+                      <TableHead className="text-gray-400 text-right whitespace-nowrap">Importo</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {dividends.map((div, idx) => (
                       <TableRow key={idx} className="border-white/10 hover:bg-white/5">
-                        <TableCell className="font-mono text-gray-300">{div.isin}</TableCell>
-                        <TableCell className="text-right text-gray-300">{div.date}</TableCell>
-                        <TableCell className="text-right font-medium text-emerald-400">
+                        <TableCell className="font-mono text-gray-300 whitespace-nowrap">{div.isin}</TableCell>
+                        <TableCell className="text-right text-gray-300 whitespace-nowrap">{div.date}</TableCell>
+                        <TableCell className={`text-right font-medium whitespace-nowrap ${div.amount >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                           {div.amount > 0 ? '+' : ''}{div.amount.toFixed(2)} €
                         </TableCell>
                       </TableRow>
@@ -168,14 +167,14 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
             <div className="space-y-3">
               <h3 className="font-semibold text-gray-200">Variazioni Portafoglio</h3>
               <div className="rounded-md border border-white/20 bg-white/5 overflow-hidden">
-                <Table>
+                <Table className="w-full">
                   <TableHeader className="bg-white/5 border-b border-white/20">
                     <TableRow className="hover:bg-transparent border-white/20">
-                      <TableHead className="min-w-[200px] text-gray-400">Asset / Descrizione</TableHead>
-                      <TableHead className="w-[100px] text-gray-400">Azione</TableHead>
-                      <TableHead className="text-right text-gray-400">Quantità</TableHead>
-                      <TableHead className="text-right text-gray-400">Dettagli</TableHead>
-                      {missingCount > 0 && <TableHead className="w-[260px] text-right text-gray-400">Risoluzione</TableHead>}
+                      <TableHead className="text-gray-400 font-bold min-w-[300px]">Asset / Descrizione</TableHead>
+                      <TableHead className="text-gray-400 font-bold whitespace-nowrap px-4">Azione</TableHead>
+                      <TableHead className="text-right text-gray-400 font-bold whitespace-nowrap px-4">Quantità</TableHead>
+                      <TableHead className="text-right text-gray-400 font-bold whitespace-nowrap px-4">Dettagli</TableHead>
+                      {missingCount > 0 && <TableHead className="text-right text-gray-400 font-bold whitespace-nowrap px-4">Risoluzione</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -184,19 +183,19 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
 
                       return (
                         <TableRow key={idx} className={`border-white/10 hover:bg-white/5 ${isMissing ? 'bg-orange-500/5' : ''}`}>
-                          <TableCell>
+                          <TableCell className="truncate pr-4">
                             <div>
-                              <div className="text-sm font-medium text-gray-200">{item.excel_description || item.isin}</div>
+                              <div className="text-sm font-medium text-gray-200 truncate" title={item.excel_description || item.isin}>{item.excel_description || item.isin}</div>
                               <div className="text-xs text-gray-500 font-mono mt-0.5">{item.isin}</div>
                             </div>
                           </TableCell>
                           <TableCell>{getBadges(item)}</TableCell>
-                          <TableCell className="text-right font-mono text-sm text-gray-300">
+                          <TableCell className="text-right font-mono text-sm text-gray-300 whitespace-nowrap">
                             {item.quantity_change !== 0 ? (
                               <div className="flex items-center justify-end gap-2">
-                                <span className="text-gray-500">{item.current_db_qty}</span>
+                                <span className="text-gray-500">{Number(item.current_db_qty).toFixed(4).replace(/\.?0+$/, '')}</span>
                                 <ArrowRight className="w-3 h-3 text-gray-600" />
-                                <span className="font-bold text-gray-200">{item.new_total_qty}</span>
+                                <span className="font-bold text-gray-200">{Number(item.new_total_qty).toFixed(4).replace(/\.?0+$/, '')}</span>
                               </div>
                             ) : <span className="text-gray-600">-</span>}
                           </TableCell>

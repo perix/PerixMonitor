@@ -1,6 +1,6 @@
 
 from flask import Blueprint, request, jsonify
-from supabase_client import get_supabase_client
+from db_helper import execute_request, upsert_table
 from logger import logger
 from finance import get_tiered_mwr
 import pandas as pd
@@ -28,28 +28,35 @@ def get_memory_data():
         mwr_t1 = int(request.args.get('mwr_t1', 30))
         mwr_t2 = int(request.args.get('mwr_t2', 365))
 
-        supabase = get_supabase_client()
+        # supabase = get_supabase_client() -> Removed
         
         # 1. Fetch Transactions (Optimized: Single Query)
-        res_trans = supabase.table('transactions').select(
-            'quantity, price_eur, type, date, asset_id, assets(isin, name, asset_class, metadata, last_trend_variation)'
-        ).eq('portfolio_id', portfolio_id).execute()
+        # res_trans = supabase.table('transactions').select(...).eq(...).execute()
+        res_trans = execute_request('transactions', 'GET', params={
+            'select': 'quantity,price_eur,type,date,asset_id,assets(isin,name,asset_class,metadata,last_trend_variation)',
+            'portfolio_id': f'eq.{portfolio_id}'
+        })
         
-        transactions = res_trans.data
+        transactions = res_trans.json() if (res_trans and res_trans.status_code == 200) else []
+        logger.info(f"MEMORY DEBUG: Portfolio {portfolio_id} - Fetched {len(transactions)} transactions. Status: {res_trans.status_code if res_trans else 'None'}")
         
         # 2. Fetch Dividends
-        res_divs = supabase.table('dividends').select(
-            'amount_eur, date, asset_id'
-        ).eq('portfolio_id', portfolio_id).execute()
-        
-        dividends = res_divs.data
+        # res_divs = supabase.table('dividends').select('amount_eur, date, asset_id').eq('portfolio_id', portfolio_id).execute()
+        res_divs = execute_request('dividends', 'GET', params={
+            'select': 'amount_eur,date,asset_id',
+            'portfolio_id': f'eq.{portfolio_id}'
+        })
+        dividends = res_divs.json() if (res_divs and res_divs.status_code == 200) else []
         
         # 3. Fetch Asset Notes
-        res_notes = supabase.table('asset_notes').select(
-            'asset_id, note'
-        ).eq('portfolio_id', portfolio_id).execute()
+        # res_notes = supabase.table('asset_notes').select('asset_id, note').eq('portfolio_id', portfolio_id).execute()
+        res_notes = execute_request('asset_notes', 'GET', params={
+            'select': 'asset_id,note',
+            'portfolio_id': f'eq.{portfolio_id}'
+        })
         
-        notes_map = {n['asset_id']: n['note'] for n in res_notes.data}
+        rows_notes = res_notes.json() if (res_notes and res_notes.status_code == 200) else []
+        notes_map = {n['asset_id']: n['note'] for n in rows_notes}
 
         # 4. Fetch Latest Prices (From asset_prices table)
         # We need prices for ALL assets in the portfolio.
@@ -68,16 +75,21 @@ def get_memory_data():
         
         price_map = {}
         if all_isins:
-            res_prices = supabase.table('asset_prices').select('isin, price, date')\
-                .in_('isin', list(all_isins))\
-                .order('date', desc=True)\
-                .execute()
+            # res_prices = supabase.table('asset_prices').select('isin, price, date').in_('isin', list(all_isins)).order('date', desc=True).execute()
+            in_filter = f"in.({','.join(list(all_isins))})"
+            res_prices = execute_request('asset_prices', 'GET', params={
+                'select': 'isin,price,date',
+                'isin': in_filter,
+                'order': 'date.desc'
+            })
+            
+            rows_prices = res_prices.json() if (res_prices and res_prices.status_code == 200) else []
             
             # Keep only the first (latest) price for each ISIN
             seen_isins = set()
-            for p in res_prices.data:
+            for p in rows_prices:
                 if p['isin'] not in seen_isins:
-                    price_map[p['isin']] = p['price']
+                    price_map[p['isin']] = {'price': float(p['price']), 'date': p['date']}
                     seen_isins.add(p['isin'])
 
         # --- Aggregation / Calculation in Python ---
@@ -163,7 +175,8 @@ def get_memory_data():
             isin = stats['isin']
             
             # Current Value
-            current_price = price_map.get(isin, 0.0)
+            price_info = price_map.get(isin, {})
+            current_price = price_info.get('price', 0.0) if isinstance(price_info, dict) else 0.0
             
             # Handle negligible quantities (float errors)
             if abs(qty) < 0.0001:
@@ -187,11 +200,21 @@ def get_memory_data():
                 # So we pass 0 as current value since it's already in cashflows
                 # For open positions, pass current_value
                 try:
+                    # Option A: Determine end_date for this asset to avoid dilution
+                    asset_end_date = datetime.now()
+                    if isinstance(price_info, dict) and price_info.get('date'):
+                        asset_end_date = datetime.strptime(price_info['date'], '%Y-%m-%d')
+                    
+                    # Check last cashflow date too
+                    last_cf_date = max(f['date'] for f in stats['cashflows']) if stats['cashflows'] else asset_end_date
+                    asset_end_date = max(asset_end_date, last_cf_date)
+
                     mwr_value, mwr_type = get_tiered_mwr(
                         stats['cashflows'], 
                         final_value,
                         t1=mwr_t1, 
-                        t2=mwr_t2
+                        t2=mwr_t2,
+                        end_date=asset_end_date
                     )
                 except Exception as e:
                     logger.error(f"XIRR calc error for asset {aid}: {e}")
@@ -243,15 +266,17 @@ def save_note():
         if not portfolio_id or not asset_id:
              return jsonify(error="Missing IDs"), 400
 
-        supabase = get_supabase_client()
+        # supabase = get_supabase_client() -> Removed
         
         # Upsert Note
-        res = supabase.table('asset_notes').upsert({
+        data = {
             "portfolio_id": portfolio_id,
             "asset_id": asset_id,
             "note": note,
             "updated_at": "now()"
-        }, on_conflict='portfolio_id, asset_id').execute()
+        }
+        # res = supabase.table('asset_notes').upsert(data, on_conflict='portfolio_id, asset_id').execute()
+        upsert_table('asset_notes', data, on_conflict='portfolio_id, asset_id')
         
         return jsonify(success=True, message="Note saved")
 
@@ -264,11 +289,12 @@ def memory_settings():
     """
     Saves/Loads table configuration (column visibility, sorting, filters)
     Key: memory_settings_{user_id}_{portfolio_id}
+    Uses db_helper for direct HTTP access to bypass RLS.
     """
+    from db_helper import get_config, set_config
     try:
         if request.method == 'OPTIONS':
              return jsonify(status="ok"), 200
-        supabase = get_supabase_client()
         
         if request.method == 'POST':
             data = request.json
@@ -281,13 +307,11 @@ def memory_settings():
                 
             key = f"memory_settings_{user_id}_{portfolio_id}"
             
-            supabase.table('app_config').upsert({
-                "key": key,
-                "value": settings,
-                "updated_at": "now()"
-            }).execute()
-            
-            return jsonify(success=True)
+            success = set_config(key, settings)
+            if success:
+                return jsonify(success=True)
+            else:
+                return jsonify(error="Failed to save settings"), 500
             
         elif request.method == 'GET':
             user_id = request.args.get('user_id')
@@ -297,11 +321,8 @@ def memory_settings():
                  return jsonify(error="Missing user/portfolio id"), 400
 
             key = f"memory_settings_{user_id}_{portfolio_id}"
-            res = supabase.table('app_config').select('value').eq('key', key).maybe_single().execute()
-            
-            if res and res.data:
-                return jsonify(settings=res.data['value'])
-            return jsonify(settings={}) # Empty default
+            settings = get_config(key, {})
+            return jsonify(settings=settings)
 
     except Exception as e:
         logger.error(f"MEMORY SETTINGS ERROR: {e}")
