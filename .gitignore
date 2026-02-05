@@ -55,3 +55,10 @@ env_*.txt
 # Secrets
 0. Requirements/API KEYS x Vercel.txt
 
+# Excel Data
+0. Dati Iniziali/**/*.xlsx
+0. Dati Iniziali/**/*.xlsm
+0. Dati Iniziali/**/*.xls
+0. Requirements/**/*.xlsx
+0. Requirements/**/*.xlsm
+0. Requirements/**/*.xls
