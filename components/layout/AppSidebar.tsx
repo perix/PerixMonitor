@@ -151,7 +151,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                                 </div>
                                 <div className="grid flex-1 text-left text-sm leading-tight">
                                     <span className="truncate font-semibold">Portfolio Monitor</span>
-                                    <span className="truncate text-xs">V1.0</span>
+                                    <span className="truncate text-xs">20260205_DebugGrafici_e_Soglie</span>
                                 </div>
                             </Link>
                         </SidebarMenuButton>

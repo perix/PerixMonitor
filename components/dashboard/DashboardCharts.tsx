@@ -627,7 +627,7 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                 )}
 
                                 {/* Gridlines Asse Destro (Portfolio) - Tratteggiate Ambra Tenue */}
-                                {showMajorGrid && rightAxisTicks.map((tick) => (
+                                {showMajorGrid && !hidePortfolio && rightAxisTicks.map((tick) => (
                                     <ReferenceLine
                                         key={`right-grid-${tick}`}
                                         y={tick}
@@ -708,34 +708,36 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                     }
                                 />
 
-                                <YAxis
-                                    yAxisId="right"
-                                    orientation="right"
-                                    stroke="#ffffff"
-                                    tickLine={false}
-                                    axisLine={false}
-                                    domain={viewMode === 'mwr' ? [yRange[0], yRange[1]] : [0, portfolioMax]}
-                                    ticks={rightAxisTicks}
-                                    tick={({ x, y, payload }: any) => {
-                                        const val = payload.value;
-                                        let label = viewMode === 'value'
-                                            ? (val >= 1000 ? `€${formatSwissNumber(val / 1000, 0)}k` : `€${formatSwissNumber(val, 0)}`)
-                                            : `${val > 0 ? '+' : ''}${val}%`;
-                                        if (val === 0 && viewMode === 'value') label = "€0";
+                                {!hidePortfolio && (
+                                    <YAxis
+                                        yAxisId="right"
+                                        orientation="right"
+                                        stroke="#ffffff"
+                                        tickLine={false}
+                                        axisLine={false}
+                                        domain={viewMode === 'mwr' ? [yRange[0], yRange[1]] : [0, portfolioMax]}
+                                        ticks={rightAxisTicks}
+                                        tick={({ x, y, payload }: any) => {
+                                            const val = payload.value;
+                                            let label = viewMode === 'value'
+                                                ? (val >= 1000 ? `€${formatSwissNumber(val / 1000, 0)}k` : `€${formatSwissNumber(val, 0)}`)
+                                                : `${val > 0 ? '+' : ''}${val}%`;
+                                            if (val === 0 && viewMode === 'value') label = "€0";
 
-                                        // Colore basato sul valore solo in modalità MWR
-                                        let color = "#ffffff";
-                                        if (viewMode === 'mwr') {
-                                            color = val === 0 ? "#ffffff" : val > 0 ? "#22c55e" : "#ef4444";
-                                        }
+                                            // Colore basato sul valore solo in modalità MWR
+                                            let color = "#ffffff";
+                                            if (viewMode === 'mwr') {
+                                                color = val === 0 ? "#ffffff" : val > 0 ? "#22c55e" : "#ef4444";
+                                            }
 
-                                        return (
-                                            <text x={x} y={y} dy={4} fill={color} fontSize={10} textAnchor="start">
-                                                {label}
-                                            </text>
-                                        );
-                                    }}
-                                />
+                                            return (
+                                                <text x={x} y={y} dy={4} fill={color} fontSize={10} textAnchor="start">
+                                                    {label}
+                                                </text>
+                                            );
+                                        }}
+                                    />
+                                )}
 
                                 <Tooltip
                                     shared={true}
