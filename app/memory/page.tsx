@@ -1,221 +1,106 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { Card, CardContent } from "@/components/ui/card";
-import { MemoryTable, MemoryData } from "@/components/memory/MemoryTable";
-import axios from "axios";
+import { MemoryTable } from "@/components/memory/MemoryTable";
 import { Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/utils/supabase/client";
 import { SortingState, ColumnFiltersState, VisibilityState } from "@tanstack/react-table";
+import { useMemoryData, useMemorySettings, useUpdateMemoryNotesBatch, useUpdateMemorySettings } from "@/hooks/useMemory";
+import { usePortfolioDetails } from "@/hooks/useDashboard";
+import axios from "axios";
 
 export default function MemoryPage() {
-    const { selectedPortfolioId, memoryCache, setMemoryCache, portfolioCache } = usePortfolio();
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const { selectedPortfolioId } = usePortfolio();
 
-    // Global Editing State
-    const [editedNotes, setEditedNotes] = useState<Record<string, string>>({});
-    const [isSaving, setIsSaving] = useState(false);
-
-    // --- Persistence State ---
+    // Auth State
     const [userId, setUserId] = useState<string | null>(null);
-    const [settingsLoaded, setSettingsLoaded] = useState(false);
+    const supabase = createClient();
 
+    useEffect(() => {
+        const getUser = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) setUserId(user.id);
+        };
+        getUser();
+    }, []);
+
+    // --- Queries ---
+    const { data: memoryData, isLoading: isLoadingData, error: dataError } = useMemoryData(selectedPortfolioId);
+    const { data: portfolioDetails } = usePortfolioDetails(selectedPortfolioId);
+
+    // Settings Query
+    const { data: settings } = useMemorySettings(selectedPortfolioId, userId);
+
+    // --- Mutations ---
+    const updateSettingsMutation = useUpdateMemorySettings();
+    const updateNotesMutation = useUpdateMemoryNotesBatch();
+
+    // --- Local State ---
     // Table State
     const [sorting, setSorting] = useState<SortingState>([]);
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
     const [columnSizing, setColumnSizing] = useState<Record<string, number>>({});
 
-    const supabase = createClient();
-
-    // 1. Get User ID
+    // Sync Settings to Local State
     useEffect(() => {
-        const getUser = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                setUserId(user.id);
-            }
-        };
-        getUser();
-    }, []);
-
-    // 2. Fetch Settings from DB
-    useEffect(() => {
-        const fetchSettings = async () => {
-            if (!userId || !selectedPortfolioId) return;
-
-            try {
-                const res = await axios.get('/api/memory/settings', {
-                    params: { user_id: userId, portfolio_id: selectedPortfolioId }
-                });
-
-                if (res.data && res.data.settings) {
-                    const s = res.data.settings;
-                    if (s.sorting) setSorting(s.sorting);
-                    if (s.columnFilters) setColumnFilters(s.columnFilters);
-                    if (s.columnVisibility) setColumnVisibility(s.columnVisibility);
-                    if (s.columnSizing) setColumnSizing(s.columnSizing);
-                }
-            } catch (e) {
-                console.error("Error fetching settings", e);
-            } finally {
-                setSettingsLoaded(true);
-            }
-        };
-
-        if (userId && selectedPortfolioId) {
-            setSettingsLoaded(false); // Reset before fetch
-            fetchSettings();
+        if (settings) {
+            setSorting(settings.sorting || []);
+            setColumnFilters(settings.columnFilters || []);
+            setColumnVisibility(settings.columnVisibility || {});
+            setColumnSizing(settings.columnSizing || {});
         }
-    }, [userId, selectedPortfolioId]);
+    }, [settings]);
 
-    // 3. Save Settings to DB (Debounced)
+    // Auto-Save Settings
     useEffect(() => {
-        // Don't save if not loaded yet or missing IDs
-        if (!settingsLoaded || !userId || !selectedPortfolioId) return;
+        if (!settings || !userId || !selectedPortfolioId) return;
 
-        const timer = setTimeout(async () => {
-            try {
-                const settings = {
+        const timer = setTimeout(() => {
+            updateSettingsMutation.mutate({
+                portfolioId: selectedPortfolioId,
+                userId,
+                settings: {
                     sorting,
                     columnFilters,
                     columnVisibility,
                     columnSizing
-                };
-
-                await axios.post('/api/memory/settings', {
-                    user_id: userId,
-                    portfolio_id: selectedPortfolioId,
-                    settings
-                });
-            } catch (e) {
-                console.error("Error saving settings", e);
-            }
+                }
+            });
         }, 1000); // 1 sec debounce
 
         return () => clearTimeout(timer);
-    }, [sorting, columnFilters, columnVisibility, columnSizing, userId, selectedPortfolioId, settingsLoaded]);
+    }, [sorting, columnFilters, columnVisibility, columnSizing, userId, selectedPortfolioId]);
 
+    // Editing State
+    const [editedNotes, setEditedNotes] = useState<Record<string, string>>({});
 
-    // Titolo dinamico - Carica il nome del portafoglio se non presente
-    const [dynamicPortfolioName, setDynamicPortfolioName] = useState<string | null>(null);
-
-    useEffect(() => {
-        const fetchPortfolioName = async () => {
-            if (!selectedPortfolioId) return;
-
-            // Try cache first
-            if (portfolioCache[selectedPortfolioId]) {
-                setDynamicPortfolioName(portfolioCache[selectedPortfolioId].name);
-                return;
-            }
-
-            try {
-                // Fetch directly if not in cache
-                const res = await axios.get('/api/portfolio/assets', {
-                    params: { portfolio_id: selectedPortfolioId }
-                });
-                if (res.data && res.data.name) {
-                    setDynamicPortfolioName(res.data.name);
-                } else {
-                    setDynamicPortfolioName("Portafoglio");
-                }
-            } catch (err) {
-                console.error("Error fetching portfolio name", err);
-                setDynamicPortfolioName("Portafoglio");
-            }
-        };
-
-        fetchPortfolioName();
-    }, [selectedPortfolioId]);
-
-    const portfolioName = dynamicPortfolioName || "Portafoglio";
-
-    // Track which portfolios have been fetched this session
-    const fetchedPortfoliosRef = useRef<Set<string>>(new Set());
-
-    useEffect(() => {
-        const fetchData = async () => {
-            if (!selectedPortfolioId) return;
-
-            // Fetch only if not in cache (cache is cleared on ingestion/sync)
-            if (memoryCache[selectedPortfolioId] && memoryCache[selectedPortfolioId].length > 0) {
-                return;
-            }
-
-            setLoading(true);
-            setError(null);
-            try {
-                const res = await axios.get('/api/memory/data', {
-                    params: { portfolio_id: selectedPortfolioId }
-                });
-
-                if (res.data && res.data.data) {
-                    setMemoryCache(selectedPortfolioId, res.data.data);
-                }
-                // Mark as fetched regardless of result
-                fetchedPortfoliosRef.current.add(selectedPortfolioId);
-            } catch (err: any) {
-                console.error("Error fetching memory data", err);
-                setError(err.response?.data?.error || err.message || "Errore sconosciuto");
-                // Mark as fetched even on error to prevent retry loop
-                fetchedPortfoliosRef.current.add(selectedPortfolioId);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchData();
-    }, [selectedPortfolioId, memoryCache, setMemoryCache]);
-
-    // Handle Note Change (Lifted State)
     const handleNoteChange = useCallback((id: string, value: string) => {
-        setEditedNotes(prev => ({
-            ...prev,
-            [id]: value
-        }));
+        setEditedNotes(prev => ({ ...prev, [id]: value }));
     }, []);
 
-    // Global Save Function request
-    const handleGlobalSave = async () => {
-        if (!selectedPortfolioId) return;
+    const handleGlobalSave = () => {
+        if (!selectedPortfolioId || Object.keys(editedNotes).length === 0) return;
 
-        setIsSaving(true);
-        try {
-            const updates = Object.entries(editedNotes);
-            const promises = updates.map(([assetId, note]) =>
-                axios.post('/api/memory/notes', {
-                    portfolio_id: selectedPortfolioId,
-                    asset_id: assetId,
-                    note: note
-                })
-            );
-
-            await Promise.all(promises);
-
-            // Update Context Cache locally
-            if (memoryCache[selectedPortfolioId]) {
-                const updatedCache = memoryCache[selectedPortfolioId].map((item: MemoryData) =>
-                    editedNotes[item.id] !== undefined ? { ...item, note: editedNotes[item.id] } : item
-                );
-                setMemoryCache(selectedPortfolioId, updatedCache);
+        updateNotesMutation.mutate({
+            portfolioId: selectedPortfolioId,
+            notes: editedNotes
+        }, {
+            onSuccess: () => {
+                setEditedNotes({});
+            },
+            onError: () => {
+                alert("Errore durante il salvataggio");
             }
-
-            // Clear edits
-            setEditedNotes({});
-
-        } catch (error) {
-            console.error("Global Save Error", error);
-            alert("Errore durante il salvataggio");
-        } finally {
-            setIsSaving(false);
-        }
+        });
     };
 
     const hasChanges = Object.keys(editedNotes).length > 0;
+    const isSaving = updateNotesMutation.isPending;
+    const portfolioName = portfolioDetails?.name || "Portafoglio";
 
     if (!selectedPortfolioId) {
         return (
@@ -225,8 +110,6 @@ export default function MemoryPage() {
             </div>
         )
     }
-
-    const data = memoryCache[selectedPortfolioId] || [];
 
     return (
         <div className="pl-1 pr-4 py-1 space-y-0 h-[calc(100vh-2rem)] flex flex-col">
@@ -260,20 +143,19 @@ export default function MemoryPage() {
                 </div>
             </div>
 
-            {loading ? (
+            {isLoadingData ? (
                 <div className="flex justify-center p-8">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
-            ) : error ? (
+            ) : dataError ? (
                 <div className="p-4 border border-red-200 bg-red-50 text-red-800 rounded-md">
-                    Errore: {error}
+                    Errore: {dataError instanceof Error ? dataError.message : "Errore sconosciuto"}
                 </div>
             ) : (
                 <Card className="flex-1 flex flex-col overflow-hidden border-0 shadow-none min-h-0">
                     <CardContent className="flex-1 flex flex-col p-0 pt-2 min-h-0">
-                        {/* We pass editedNotes to table to render correct inputs */}
                         <MemoryTable
-                            data={data}
+                            data={memoryData || []}
                             editedNotes={editedNotes}
                             onNoteChange={handleNoteChange}
                             // Persistence Props

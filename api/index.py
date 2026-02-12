@@ -462,9 +462,26 @@ def sync_transactions():
             upsert_table('transactions', valid_transactions) # Insert is effectively upsert without conflict key usually, or just POST
             
             log_audit("SYNC_SUCCESS", f"Portfolio {portfolio_id}: {len(valid_transactions)} transactions, {len(prices)} prices.")
+            
+            # [NEW] Refresh Materialized Views
+            try:
+                execute_request('rpc/refresh_materialized_views', 'POST')
+                if debug_mode: logger.debug("SYNC: Materialized views refreshed.")
+            except Exception as e_mv:
+                logger.error(f"SYNC: MV Refresh failed: {e_mv}")
+
             return jsonify(message=f"Successfully synced. Prices: {len(prices)}. Trans: {len(valid_transactions)}"), 200
         else:
             log_audit("SYNC_SUCCESS", f"Portfolio {portfolio_id}: {len(prices)} prices only.")
+            
+            # [NEW] Refresh Materialized Views (Prices might affect some logic, but mainly transactions do. 
+            # However, dividends or other changes might have happened too.)
+            try:
+                execute_request('rpc/refresh_materialized_views', 'POST')
+                if debug_mode: logger.debug("SYNC: Materialized views refreshed.")
+            except Exception as e_mv:
+                logger.error(f"SYNC: MV Refresh failed: {e_mv}")
+                
             return jsonify(message=f"Synced. Prices: {len(prices)}. No transactions."), 200
 
     except Exception as e:

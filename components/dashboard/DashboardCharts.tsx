@@ -20,6 +20,8 @@ interface DashboardChartsProps {
         value?: { yMin: number, yMax: number };
         // Legacy support
         yAxisScale?: number;
+        showMajorGrid?: boolean;
+        showMinorGrid?: boolean;
     };
     onSettingsChange?: (settings: any) => void;
     portfolioName?: string;
@@ -254,6 +256,14 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                 if (initialSettings.value) {
                     setValueRange([initialSettings.value.yMin, initialSettings.value.yMax]);
                 }
+
+                // Restore Grid Settings
+                if (initialSettings.showMajorGrid !== undefined) {
+                    setShowMajorGrid(initialSettings.showMajorGrid);
+                }
+                if (initialSettings.showMinorGrid !== undefined) {
+                    setShowMinorGrid(initialSettings.showMinorGrid);
+                }
             }
 
             initializedRef.current = true;
@@ -281,13 +291,15 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                     timeWindow: dateRange[0],
                     mwr: { yMin: mwrRange[0], yMax: mwrRange[1] },
                     value: { yMin: valueRange[0], yMax: valueRange[1] },
-                    yAxisScale: mwrRange[1]
+                    yAxisScale: mwrRange[1],
+                    showMajorGrid,
+                    showMinorGrid
                 });
             }, 1000);
 
             return () => clearTimeout(timer);
         }
-    }, [dateRange, mwrRange, valueRange]);
+    }, [dateRange, mwrRange, valueRange, showMajorGrid, showMinorGrid]);
 
     // 3. Filter data
     const chartData = useMemo(() => {

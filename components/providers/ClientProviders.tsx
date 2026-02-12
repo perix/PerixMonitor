@@ -3,6 +3,7 @@
 import { PortfolioProvider } from '@/context/PortfolioContext';
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/AppSidebar";
+import ReactQueryProvider from './ReactQueryProvider';
 import { usePathname } from 'next/navigation';
 
 export function ClientProviders({ children }: { children: React.ReactNode }) {
@@ -21,12 +22,14 @@ export function ClientProviders({ children }: { children: React.ReactNode }) {
 
     return (
         <PortfolioProvider>
-            <SidebarProvider>
-                <AppSidebar />
-                <main className="w-full relative h-screen flex flex-col overflow-y-auto">
-                    {children}
-                </main>
-            </SidebarProvider>
+            <ReactQueryProvider>
+                <SidebarProvider>
+                    <AppSidebar />
+                    <main className="w-full relative h-screen flex flex-col overflow-y-auto">
+                        {children}
+                    </main>
+                </SidebarProvider>
+            </ReactQueryProvider>
         </PortfolioProvider>
     );
 }

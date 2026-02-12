@@ -23,9 +23,7 @@ interface PortfolioContextType {
     selectedPortfolioId: string | null;
     setSelectedPortfolioId: (id: string | null) => void;
     // Caching
-    dashboardCache: Record<string, DashboardData>;
     portfolioCache: Record<string, PortfolioData>;
-    setDashboardCache: (portfolioId: string, data: Omit<DashboardData, 'timestamp'>) => void;
     setPortfolioCache: (portfolioId: string, data: Omit<PortfolioData, 'timestamp'>) => void;
 
     // New Caches
@@ -38,9 +36,6 @@ interface PortfolioContextType {
     assetSettingsCache: Record<string, Record<string, any>>;
     setAssetSettingsCache: (portfolioId: string, assetId: string, data: any) => void;
 
-    memoryCache: Record<string, any[]>;
-    setMemoryCache: (portfolioId: string, data: any[]) => void;
-
     invalidateCache: (portfolioId: string) => void;
     clearCache: () => void;
 }
@@ -51,12 +46,10 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
     const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null);
 
     // Caches
-    const [dashboardCache, setDashboardCacheState] = useState<Record<string, DashboardData>>({});
     const [portfolioCache, setPortfolioCacheState] = useState<Record<string, PortfolioData>>({});
     const [analysisCache, setAnalysisCacheState] = useState<Record<string, any>>({});
     const [assetHistoryCache, setAssetHistoryCacheState] = useState<Record<string, Record<string, any>>>({});
     const [assetSettingsCache, setAssetSettingsCacheState] = useState<Record<string, Record<string, any>>>({});
-    const [memoryCache, setMemoryCacheState] = useState<Record<string, any[]>>({});
 
     // Initial load from local storage - wrapped in useEffect to avoid Hydration Mismatch
     // Cache TTL: 5 minutes
@@ -92,7 +85,6 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
                 } catch (e) { console.warn(`Failed to load ${key}`, e); }
             };
 
-            loadCache('dashboardCache', setDashboardCacheState);
             loadCache('portfolioCache', setPortfolioCacheState);
 
             // Mark initialized so we can start syncing back
@@ -109,24 +101,13 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
     }, [selectedPortfolioId]);
 
     // [PERF] Sync caches to localStorage on change
-    useEffect(() => {
-        if (isCacheInitialized.current) {
-            localStorage.setItem('dashboardCache', JSON.stringify(dashboardCache));
-        }
-    }, [dashboardCache]);
+
 
     useEffect(() => {
         if (isCacheInitialized.current) {
             localStorage.setItem('portfolioCache', JSON.stringify(portfolioCache));
         }
     }, [portfolioCache]);
-
-    const setDashboardCache = (portfolioId: string, data: Omit<DashboardData, 'timestamp'>) => {
-        setDashboardCacheState(prev => ({
-            ...prev,
-            [portfolioId]: { ...data, timestamp: Date.now() }
-        }));
-    };
 
     const setPortfolioCache = (portfolioId: string, data: Omit<PortfolioData, 'timestamp'>) => {
         setPortfolioCacheState(prev => ({
@@ -162,19 +143,7 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
         }));
     };
 
-    const setMemoryCache = (portfolioId: string, data: any[]) => {
-        setMemoryCacheState(prev => ({
-            ...prev,
-            [portfolioId]: data
-        }));
-    };
-
     const invalidateCache = (portfolioId: string) => {
-        setDashboardCacheState(prev => {
-            const next = { ...prev };
-            delete next[portfolioId];
-            return next;
-        });
         setPortfolioCacheState(prev => {
             const next = { ...prev };
             delete next[portfolioId];
@@ -195,29 +164,20 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
             delete next[portfolioId];
             return next;
         });
-        setMemoryCacheState(prev => {
-            const next = { ...prev };
-            delete next[portfolioId];
-            return next;
-        });
     };
 
     const clearCache = () => {
-        setDashboardCacheState({});
         setPortfolioCacheState({});
         setAnalysisCacheState({});
         setAssetHistoryCacheState({});
         setAssetSettingsCacheState({});
-        setMemoryCacheState({});
     };
 
     return (
         <PortfolioContext.Provider value={{
             selectedPortfolioId,
             setSelectedPortfolioId,
-            dashboardCache,
             portfolioCache,
-            setDashboardCache,
             setPortfolioCache,
             analysisCache,
             setAnalysisCache,
@@ -225,8 +185,6 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
             setAssetHistoryCache,
             assetSettingsCache,
             setAssetSettingsCache,
-            memoryCache,
-            setMemoryCache,
             invalidateCache,
             clearCache
         }}>
