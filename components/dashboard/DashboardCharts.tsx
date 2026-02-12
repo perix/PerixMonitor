@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResponsiveContainer, Tooltip, Legend, LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine } from 'recharts';
 import { formatSwissMoney, formatSwissNumber, parseISODateLocal } from "@/lib/utils";
+import { CHART_STRINGS } from "@/constants/chartStrings";
 
 
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#a855f7', '#ec4899', '#6366f1', '#14b8a6'];
@@ -519,11 +520,18 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                         <div>
                             <div className="flex items-center gap-2">
                                 <CardTitle className="text-xl font-medium tracking-tight">
-                                    {viewMode === 'value' ? `Andamento Controvalore` : `Andamento MWR`} - {portfolioName || 'Portafoglio'}
+                                    {(() => {
+                                        const contextStrings = hidePortfolio ? CHART_STRINGS.asset : CHART_STRINGS.dashboard;
+                                        const title = viewMode === 'value' ? contextStrings.value.title : contextStrings.mwr.title;
+                                        return `${title} - ${portfolioName || 'Portafoglio'}`;
+                                    })()}
                                 </CardTitle>
                             </div>
                             <p className="text-sm text-muted-foreground">
-                                {viewMode === 'value' ? 'Controvalore dell\'asset' : 'Performance Money-Weighted dell\'asset'}
+                                {(() => {
+                                    const contextStrings = hidePortfolio ? CHART_STRINGS.asset : CHART_STRINGS.dashboard;
+                                    return viewMode === 'value' ? contextStrings.value.subtitle : contextStrings.mwr.subtitle;
+                                })()}
                             </p>
                         </div>
                         <div className="flex items-center gap-4">

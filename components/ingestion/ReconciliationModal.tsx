@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, CheckCircle2, Info, ArrowRight, Wallet } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, ArrowRight, Wallet, TrendingDown } from 'lucide-react';
 
 interface DeltaItem {
   isin: string;
@@ -25,15 +25,26 @@ interface DeltaItem {
 
 interface DividendItem {
   isin: string;
-  amount: number;
+  name?: string;
   date: string;
+  amount?: number;
+  type?: string; // 'DIVIDEND' | 'EXPENSE'
+  current_amount?: number;
+  new_amount?: number;
+  total_amount?: number;
+  operation?: string;
+  // Full DB totals for this asset
+  db_dividends_total?: number;
+  db_expenses_total?: number;
+  db_div_count?: number;
+  db_exp_count?: number;
 }
 
 interface ReconciliationModalProps {
   isOpen: boolean;
   onClose: () => void;
   delta: DeltaItem[];
-  dividends?: DividendItem[]; // New Prop
+  dividends?: DividendItem[];
   prices: any[];
   onConfirm: (resolutions: any[]) => void;
 }
@@ -42,7 +53,6 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
   const [resolutions, setResolutions] = useState<Record<string, { date: string, price: number }>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ... (Resolution Logic remains the same)
   const handleResolutionChange = (isin: string, field: 'date' | 'price', value: string | number) => {
     setResolutions(prev => ({
       ...prev,
@@ -55,7 +65,6 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
 
   const sortedItems = useMemo(() => {
     return [...delta].sort((a, b) => {
-      // Priority: Errors > Missing > Sells > Buys
       if (a.type === 'INCONSISTENT_NEW_ISIN') return -1;
       if (b.type === 'INCONSISTENT_NEW_ISIN') return 1;
       if (a.type === 'MISSING_FROM_UPLOAD') return -1;
@@ -94,11 +103,79 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
 
   const missingCount = delta.filter(d => d.type === 'MISSING_FROM_UPLOAD').length;
   const resolvedMissingCount = Object.keys(resolutions).filter(k => resolutions[k].date && resolutions[k].price).length;
-
-  // [NEW] Block submission if there are ANY functional errors
   const errorCount = delta.filter(d => d.type.startsWith('ERROR') || d.type === 'INCONSISTENT_NEW_ISIN').length;
-
   const canSubmit = errorCount === 0 && (missingCount === 0 || resolvedMissingCount === missingCount);
+
+  // ==========================================
+  // DIVIDEND/EXPENSE SUMMARY COMPUTATION
+  // ==========================================
+  const { dividendRows, expenseRows, flowType, headerTitle } = useMemo(() => {
+    if (!hasDividends) return { dividendRows: [], expenseRows: [], flowType: 'mixed' as const, headerTitle: '' };
+
+    // Separate by type
+    const divEntries = dividends.filter(d => (d.type || 'DIVIDEND') === 'DIVIDEND');
+    const expEntries = dividends.filter(d => d.type === 'EXPENSE');
+
+    // Build per-asset summaries for dividends
+    const buildSummary = (entries: DividendItem[]) => {
+      const assetMap: Record<string, {
+        isin: string; name: string; entries: number;
+        total_current: number; total_new: number; total_final: number;
+        has_existing: boolean;
+        // Full DB totals
+        db_total_all: number; db_count_all: number;
+      }> = {};
+
+      for (const div of entries) {
+        const key = div.isin;
+        const current = div.current_amount || 0;
+        const incoming = div.new_amount !== undefined ? div.new_amount : (div.amount || 0);
+        const total = div.total_amount !== undefined ? div.total_amount : (current + incoming);
+
+        if (!assetMap[key]) {
+          // Use appropriate DB totals based on entry type
+          const isExpense = div.type === 'EXPENSE';
+          assetMap[key] = {
+            isin: div.isin,
+            name: div.name || div.isin,
+            entries: 0,
+            total_current: 0,
+            total_new: 0,
+            total_final: 0,
+            has_existing: false,
+            db_total_all: isExpense ? (div.db_expenses_total || 0) : (div.db_dividends_total || 0),
+            db_count_all: isExpense ? (div.db_exp_count || 0) : (div.db_div_count || 0),
+          };
+        }
+
+        assetMap[key].entries += 1;
+        assetMap[key].total_current += current;
+        assetMap[key].total_new += incoming;
+        assetMap[key].total_final += total;
+        if (current !== 0) assetMap[key].has_existing = true;
+      }
+
+      return Object.values(assetMap);
+    };
+
+    const divRows = buildSummary(divEntries);
+    const expRows = buildSummary(expEntries);
+
+    // Determine flow type for adaptive wording
+    let ft: 'dividends' | 'expenses' | 'mixed' = 'mixed';
+    if (divEntries.length > 0 && expEntries.length === 0) ft = 'dividends';
+    else if (expEntries.length > 0 && divEntries.length === 0) ft = 'expenses';
+
+    let title = 'Riepilogo Flussi di Cassa';
+    if (ft === 'dividends') title = 'Riepilogo Cedole e Dividendi';
+    else if (ft === 'expenses') title = 'Riepilogo Spese e Costi';
+
+    return { dividendRows: divRows, expenseRows: expRows, flowType: ft, headerTitle: title };
+  }, [dividends, hasDividends]);
+
+  // Count totals for description
+  const totalFileEntries = dividends.length;
+  const totalAssets = new Set(dividends.map(d => d.isin)).size;
 
   const getBadges = (item: DeltaItem) => {
     switch (item.type) {
@@ -114,6 +191,89 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
     }
   };
 
+  // Renders a summary table section for dividends or expenses
+  const renderFlowTable = (
+    rows: typeof dividendRows,
+    isExpense: boolean
+  ) => {
+    if (rows.length === 0) return null;
+
+    const icon = isExpense
+      ? <TrendingDown className="w-5 h-5" />
+      : <Wallet className="w-5 h-5" />;
+    const sectionColor = isExpense ? 'text-orange-400' : 'text-indigo-400';
+    const sectionTitle = isExpense ? 'Spese e Costi' : 'Cedole e Dividendi';
+    const labelDb = isExpense ? 'Spese in Archivio' : 'Cedole in Archivio';
+    const labelNew = isExpense ? 'Nuovi Costi' : 'Nuovi Incassi';
+    const labelFinal = 'Dopo Importazione';
+    const entryLabel = isExpense ? 'spese' : 'cedole';
+
+    return (
+      <div className="space-y-3">
+        <div className={`flex items-center gap-2 ${sectionColor}`}>
+          {icon}
+          <h3 className="font-semibold">{sectionTitle}</h3>
+        </div>
+        <div className="rounded-md border border-white/20 bg-white/5 overflow-hidden">
+          <Table className="w-full">
+            <TableHeader className="bg-white/5 border-b border-white/20">
+              <TableRow className="hover:bg-transparent border-white/20">
+                <TableHead className="text-gray-400 whitespace-nowrap">Asset</TableHead>
+                <TableHead className="text-gray-400 text-center whitespace-nowrap">{labelDb}</TableHead>
+                <TableHead className="text-gray-400 text-center whitespace-nowrap">{labelNew}</TableHead>
+                <TableHead className="text-gray-400 text-right whitespace-nowrap font-bold">{labelFinal}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row, idx) => {
+                // "Dopo Importazione" = existing DB total + new from file
+                const afterImport = row.db_total_all + row.total_new;
+
+                return (
+                  <TableRow key={idx} className="border-white/10 hover:bg-white/5">
+                    <TableCell className="text-gray-300">
+                      <div className="font-medium">{row.name}</div>
+                      <div className="text-xs text-gray-500 font-mono">{row.isin}</div>
+                    </TableCell>
+                    <TableCell className="text-center text-muted-foreground whitespace-nowrap">
+                      <div className="font-medium">
+                        {row.db_total_all !== 0 ? `${row.db_total_all.toFixed(2)} €` : '-'}
+                      </div>
+                      {row.db_count_all > 0 && (
+                        <div className="text-xs text-gray-600">
+                          ({row.db_count_all} {entryLabel})
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className={`text-center font-medium whitespace-nowrap ${isExpense ? 'text-orange-400' : 'text-blue-400'}`}>
+                      <div>
+                        {row.total_new > 0 ? '+' : ''}{row.total_new.toFixed(2)} €
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        ({row.entries} {entryLabel}{row.has_existing ? ', di cui alcune su date già presenti' : ''})
+                      </div>
+                    </TableCell>
+                    <TableCell className={`text-right font-bold whitespace-nowrap ${afterImport >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {afterImport.toFixed(2)} €
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+        {rows.some(r => r.has_existing) && (
+          <p className="text-xs text-amber-400/70 flex items-center gap-1.5">
+            <AlertTriangle className="w-3 h-3 shrink-0" />
+            {isExpense
+              ? 'Alcune spese verranno sommate a costi già registrati nelle stesse date.'
+              : 'Alcuni importi verranno sommati a cedole già presenti nelle stesse date.'}
+          </p>
+        )}
+      </div>
+    );
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="w-auto max-w-[98vw] sm:max-w-[98vw] h-[90vh] flex flex-col p-0 gap-0 bg-[#0A0A0A] border-white/40 text-gray-200">
@@ -123,42 +283,26 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
           </DialogTitle>
           <DialogDescription className="text-gray-400">
             {hasDividends
-              ? `Rilevate ${dividends.length} cedole da importare. Conferma per procedere.`
+              ? `Rilevati ${totalFileEntries} flussi per ${totalAssets} asset. Verifica il riepilogo e conferma.`
               : "Verifica le modifiche rilevate prima di sincronizzare."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto overflow-x-auto p-6 scroll-smooth space-y-8">
 
-          {/* DIVIDENDS TABLE */}
+          {/* === DIVIDEND/EXPENSE SECTIONS === */}
           {hasDividends && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-indigo-400">
-                <Wallet className="w-5 h-5" />
-                <h3 className="font-semibold">Cedole e Dividendi Rilevati</h3>
-              </div>
-              <div className="rounded-md border border-white/20 bg-white/5 overflow-hidden">
-                <Table className="w-full">
-                  <TableHeader className="bg-white/5 border-b border-white/20">
-                    <TableRow className="hover:bg-transparent border-white/20">
-                      <TableHead className="text-gray-400 whitespace-nowrap">ISIN</TableHead>
-                      <TableHead className="text-gray-400 text-right whitespace-nowrap">Data</TableHead>
-                      <TableHead className="text-gray-400 text-right whitespace-nowrap">Importo</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {dividends.map((div, idx) => (
-                      <TableRow key={idx} className="border-white/10 hover:bg-white/5">
-                        <TableCell className="font-mono text-gray-300 whitespace-nowrap">{div.isin}</TableCell>
-                        <TableCell className="text-right text-gray-300 whitespace-nowrap">{div.date}</TableCell>
-                        <TableCell className={`text-right font-medium whitespace-nowrap ${div.amount >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {div.amount > 0 ? '+' : ''}{div.amount.toFixed(2)} €
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+            <div className="space-y-6">
+              {/* Section header */}
+              {flowType === 'mixed' && (
+                <h2 className="text-lg font-semibold text-white">{headerTitle}</h2>
+              )}
+
+              {/* Dividends table */}
+              {renderFlowTable(dividendRows, false)}
+
+              {/* Expenses table */}
+              {renderFlowTable(expenseRows, true)}
             </div>
           )}
 
@@ -180,7 +324,6 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
                   <TableBody>
                     {sortedItems.map((item, idx) => {
                       const isMissing = item.type === 'MISSING_FROM_UPLOAD';
-
                       return (
                         <TableRow key={idx} className={`border-white/10 hover:bg-white/5 ${isMissing ? 'bg-orange-500/5' : ''}`}>
                           <TableCell className="truncate pr-4">
@@ -236,7 +379,7 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
                 <h3 className="text-sm font-semibold text-gray-300">Aggiornamenti Prezzi ({prices.length})</h3>
               </div>
               <div className="flex flex-wrap gap-2">
-                {prices.slice(0, 12).map((p, i) => (
+                {prices.slice(0, 12).map((p: any, i: number) => (
                   <div key={i} className="text-xs px-2 py-1 rounded bg-black/40 border border-white/20 text-gray-400 font-mono">
                     {p.isin}: <span className="text-gray-200">{p.price?.toFixed(2)}€</span>
                   </div>

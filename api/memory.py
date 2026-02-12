@@ -128,7 +128,8 @@ def get_memory_data():
             
             # Parse date for cashflows
             try:
-                tx_date = datetime.strptime(date_str, '%Y-%m-%d')
+                clean_date = date_str.replace('Z', '+00:00')
+                tx_date = datetime.fromisoformat(clean_date).replace(tzinfo=None)
             except:
                 tx_date = datetime.now()
             
@@ -158,7 +159,8 @@ def get_memory_data():
                 assets_stats[aid]['dividends'] += float(d['amount_eur'])
                 # Dividend = cash inflow (positive for XIRR)
                 try:
-                    div_date = datetime.strptime(d['date'], '%Y-%m-%d')
+                    clean_div_date = d['date'].replace('Z', '+00:00')
+                    div_date = datetime.fromisoformat(clean_div_date).replace(tzinfo=None)
                 except:
                     div_date = datetime.now()
                 assets_stats[aid]['cashflows'].append({'date': div_date, 'amount': float(d['amount_eur'])})
@@ -201,9 +203,12 @@ def get_memory_data():
                 # For open positions, pass current_value
                 try:
                     # Option A: Determine end_date for this asset to avoid dilution
-                    asset_end_date = datetime.now()
                     if isinstance(price_info, dict) and price_info.get('date'):
-                        asset_end_date = datetime.strptime(price_info['date'], '%Y-%m-%d')
+                        try:
+                            clean_price_date = price_info['date'].replace('Z', '+00:00')
+                            asset_end_date = datetime.fromisoformat(clean_price_date).replace(tzinfo=None)
+                        except:
+                            asset_end_date = datetime.now()
                     
                     # Check last cashflow date too
                     last_cf_date = max(f['date'] for f in stats['cashflows']) if stats['cashflows'] else asset_end_date

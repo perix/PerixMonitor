@@ -100,10 +100,39 @@ export default function MemoryPage() {
     }, [sorting, columnFilters, columnVisibility, columnSizing, userId, selectedPortfolioId, settingsLoaded]);
 
 
-    // Get portfolio name from cache if available
-    const portfolioName = selectedPortfolioId && portfolioCache[selectedPortfolioId]
-        ? portfolioCache[selectedPortfolioId].name
-        : "Portafoglio";
+    // Titolo dinamico - Carica il nome del portafoglio se non presente
+    const [dynamicPortfolioName, setDynamicPortfolioName] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchPortfolioName = async () => {
+            if (!selectedPortfolioId) return;
+
+            // Try cache first
+            if (portfolioCache[selectedPortfolioId]) {
+                setDynamicPortfolioName(portfolioCache[selectedPortfolioId].name);
+                return;
+            }
+
+            try {
+                // Fetch directly if not in cache
+                const res = await axios.get('/api/portfolio/assets', {
+                    params: { portfolio_id: selectedPortfolioId }
+                });
+                if (res.data && res.data.name) {
+                    setDynamicPortfolioName(res.data.name);
+                } else {
+                    setDynamicPortfolioName("Portafoglio");
+                }
+            } catch (err) {
+                console.error("Error fetching portfolio name", err);
+                setDynamicPortfolioName("Portafoglio");
+            }
+        };
+
+        fetchPortfolioName();
+    }, [selectedPortfolioId]);
+
+    const portfolioName = dynamicPortfolioName || "Portafoglio";
 
     // Track which portfolios have been fetched this session
     const fetchedPortfoliosRef = useRef<Set<string>>(new Set());
@@ -112,9 +141,8 @@ export default function MemoryPage() {
         const fetchData = async () => {
             if (!selectedPortfolioId) return;
 
-            // Skip if already fetched this session OR if cache has data
-            if (fetchedPortfoliosRef.current.has(selectedPortfolioId) ||
-                (memoryCache[selectedPortfolioId] && memoryCache[selectedPortfolioId].length > 0)) {
+            // Fetch only if not in cache (cache is cleared on ingestion/sync)
+            if (memoryCache[selectedPortfolioId] && memoryCache[selectedPortfolioId].length > 0) {
                 return;
             }
 

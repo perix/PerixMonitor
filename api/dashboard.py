@@ -77,8 +77,14 @@ def register_dashboard_routes(app):
                     holdings[isin]["cost"] += (qty * price)
                     
                     # Cash Flow: Uscita (Negativo)
+                    try:
+                        clean_date = date_str.replace('Z', '+00:00')
+                        cf_date = datetime.fromisoformat(clean_date).replace(tzinfo=None)
+                    except:
+                        cf_date = datetime.now()
+
                     cash_flows.append({
-                        "date": datetime.fromisoformat(date_str).replace(tzinfo=None),
+                        "date": cf_date,
                         "amount": -(qty * price)
                     })
                     total_invested += (qty * price)
@@ -88,13 +94,43 @@ def register_dashboard_routes(app):
                     # Semplificazione: Invested è net cash flow qui.
                     
                     # Cash Flow: Entrata (Positivo)
+                    try:
+                        clean_date = date_str.replace('Z', '+00:00')
+                        cf_date = datetime.fromisoformat(clean_date).replace(tzinfo=None)
+                    except:
+                        cf_date = datetime.now()
+
                     cash_flows.append({
-                        "date": datetime.fromisoformat(date_str).replace(tzinfo=None),
+                        "date": cf_date,
                         "amount": (qty * price)
                     })
                     
                     # Per total_invested (Capitale Netto Investito):
                     total_invested -= (qty * price)
+
+            # --- 2b. Recupera Dividendi/Spese ---
+            res_div = execute_request('dividends', 'GET', params={
+                'portfolio_id': f'eq.{portfolio_id}'
+            })
+            dividends = res_div.json() if (res_div and res_div.status_code == 200) else []
+            
+            total_dividends = 0
+            for d in dividends:
+                amount = float(d['amount_eur'])
+                date_str = d['date']
+                total_dividends += amount
+                
+                # Includi nei flussi di cassa per XIRR
+                try:
+                    clean_div_date = date_str.replace('Z', '+00:00')
+                    div_date = datetime.fromisoformat(clean_div_date).replace(tzinfo=None)
+                except:
+                    div_date = datetime.now()
+
+                cash_flows.append({
+                    "date": div_date,
+                    "amount": amount
+                })
 
             # 3. Recupera Prezzi Correnti (OTTIMIZZATO: BATCH)
             # Filtra holdings con quantità > 0 (o negative se short)
@@ -191,7 +227,8 @@ def register_dashboard_routes(app):
                 if 'asset_id' in item: del item['asset_id']
 
             # 6. Metriche Sommario
-            pl_value = current_total_value - total_invested
+            # P&L Totale = (Valore Corrente - Netto Investito) + Totale Dividendi
+            pl_value = (current_total_value - total_invested) + total_dividends
             pl_percent = (pl_value / total_invested * 100) if total_invested > 0 else 0
 
             t_end = datetime.now()
@@ -239,6 +276,13 @@ def register_dashboard_routes(app):
             
             if not transactions:
                 return jsonify(history=[], assets=[])
+
+            # 1b. Recupera Dividendi per lo storico
+            res_div = execute_request('dividends', 'GET', params={
+                'portfolio_id': f'eq.{portfolio_id}',
+                'order': 'date.asc'
+            })
+            portfolio_dividends = res_div.json() if (res_div and res_div.status_code == 200) else []
 
             # Filtro asset opzionale
             assets_param = request.args.get('assets')
@@ -364,13 +408,23 @@ def register_dashboard_routes(app):
                 
                 last_xirr_guess = 0.1 
                 
+                # Dividendi per questo asset
+                asset_dividends = [d for d in portfolio_dividends if d['asset_id'] == sample_t['assets']['id']]
+                dividend_idx = 0
+                total_asset_dividends_acc = 0.0
+                
                 for cp in check_points:
                     cp_str = cp.strftime('%Y-%m-%d')
                     
                     # 1. Aggiungi cashflows fino a cp
                     while transaction_idx < len(asset_trans):
                         t = asset_trans[transaction_idx]
-                        t_date = datetime.fromisoformat(t['date']).replace(tzinfo=None)
+                        try:
+                            clean_date = t['date'].replace('Z', '+00:00')
+                            t_date = datetime.fromisoformat(clean_date).replace(tzinfo=None)
+                        except:
+                            t_date = datetime.now()
+
                         if t_date > cp:
                             break
                         
@@ -394,6 +448,23 @@ def register_dashboard_routes(app):
                             net_invested_for_pnl -= val
                         
                         transaction_idx += 1
+
+                    # 1b. Aggiungi dividendi fino a cp
+                    while dividend_idx < len(asset_dividends):
+                        d = asset_dividends[dividend_idx]
+                        try:
+                            clean_date = d['date'].replace('Z', '+00:00')
+                            d_date = datetime.fromisoformat(clean_date).replace(tzinfo=None)
+                        except:
+                            d_date = datetime.now()
+
+                        if d_date > cp:
+                            break
+                        
+                        amount = float(d['amount_eur'])
+                        total_asset_dividends_acc += amount
+                        current_cash_flows.append({"date": d_date, "amount": amount})
+                        dividend_idx += 1
                             
                     # 2. Valutazione al CP
                     if current_qty > 0.0001:
@@ -406,7 +477,7 @@ def register_dashboard_routes(app):
                         if price_at_cp == 0: continue
 
                         current_val = current_qty * price_at_cp
-                        pnl_at_cp = current_val - net_invested_for_pnl
+                        pnl_at_cp = (current_val - net_invested_for_pnl) + total_asset_dividends_acc
                         
                         calc_flows = current_cash_flows + [{"date": cp, "amount": current_val}]
                         
@@ -497,6 +568,11 @@ def register_dashboard_routes(app):
             for cp in check_points:
                 cp_str = cp.strftime('%Y-%m-%d')
                 
+                # 0. Global Portfolio Dividends Tracker
+                if 'port_dividend_idx' not in locals():
+                    port_dividend_idx = 0
+                    total_port_dividends_acc = 0.0
+
                 # 1. Update Cashflows & Holdings
                 while transaction_idx_p < len(transactions): 
                     t = transactions[transaction_idx_p]
@@ -528,6 +604,18 @@ def register_dashboard_routes(app):
                         current_port_cash_flows.append({"date": t_date, "amount": val})
                     
                     transaction_idx_p += 1
+
+                # 1b. Update Portfolio Dividends
+                while port_dividend_idx < len(portfolio_dividends):
+                    d = portfolio_dividends[port_dividend_idx]
+                    d_date = datetime.fromisoformat(d['date']).replace(tzinfo=None)
+                    if d_date > cp:
+                        break
+                    
+                    amount = float(d['amount_eur'])
+                    total_port_dividends_acc += amount
+                    current_port_cash_flows.append({"date": d_date, "amount": amount})
+                    port_dividend_idx += 1
 
                 # 2. Calcolo Valore Portafoglio al CP
                 port_value_at_cp = 0

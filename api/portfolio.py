@@ -141,10 +141,48 @@ def register_portfolio_routes(app):
                     holdings[isin]['qty'] -= qty
                     holdings[isin]['total_cost'] -= (qty * price)  # Reduce invested
                     # Cashflow: inflow (positive) for sells
+                    try:
+                        clean_date = trans_date.replace('Z', '+00:00')
+                        cf_date = datetime.fromisoformat(clean_date).replace(tzinfo=None)
+                    except:
+                        cf_date = datetime.now()
+
                     holdings[isin]['cashflows'].append({
-                        "date": datetime.fromisoformat(trans_date).replace(tzinfo=None),
+                        "date": cf_date,
                         "amount": (qty * price)
                     })
+
+            # Fetch all dividends for this portfolio
+            res_div = execute_request('dividends', 'GET', params={
+                'portfolio_id': f'eq.{portfolio_id}'
+            })
+            div_data = res_div.json() if (res_div and res_div.status_code == 200) else []
+            
+            # Map dividends to holdings
+            # We need asset_id -> isin map from previous transactions or fetch it
+            # Since we have asset object in trans_data, we can build a map
+            aid_to_isin = {}
+            for t in trans_data:
+                aid_to_isin[t['assets']['id']] = t['assets']['isin']
+            
+            for d in div_data:
+                isin = aid_to_isin.get(d['asset_id'])
+                if isin and isin in holdings:
+                    amount = float(d['amount_eur'])
+                    try:
+                        clean_div_date = d['date'].replace('Z', '+00:00')
+                        div_date = datetime.fromisoformat(clean_div_date).replace(tzinfo=None)
+                    except:
+                        div_date = datetime.now()
+                    
+                    # Add to cashflows for MWR
+                    holdings[isin]['cashflows'].append({
+                        "date": div_date,
+                        "amount": amount
+                    })
+                    
+                    # Track total dividends for P&L
+                    holdings[isin]['total_dividends'] = holdings[isin].get('total_dividends', 0) + amount
             
             # Filter to only active holdings (qty > 0) and calculate metrics
             result = []
@@ -183,8 +221,12 @@ def register_portfolio_routes(app):
                     
                     # Calculate P&L
                     invested = data['total_cost']
+                    total_div = data.get('total_dividends', 0)
                     asset_info['invested'] = round(invested, 2)
-                    pnl_value = current_value - invested
+                    asset_info['total_dividends'] = round(total_div, 2)
+                    
+                    # P&L including dividends: (Current Value - Net Invested) + Dividends
+                    pnl_value = (current_value - invested) + total_div
                     pnl_percent = (pnl_value / invested * 100) if invested > 0 else 0
                     asset_info['pnl_value'] = round(pnl_value, 2)
                     asset_info['pnl_percent'] = round(pnl_percent, 2)
@@ -205,8 +247,9 @@ def register_portfolio_routes(app):
                              try:
                                  # res_s = supabase.table('portfolios').select('settings').eq('id', portfolio_id).single().execute()
                                  # settings_cache = res_s.data.get('settings') or {}
-                                 res_s = execute_request('portfolios', 'GET', params={'select': 'settings', 'id': f'eq.{portfolio_id}'})
+                                 res_s = execute_request('portfolios', 'GET', params={'select': 'name,settings', 'id': f'eq.{portfolio_id}'})
                                  rows = res_s.json() if (res_s and res_s.status_code == 200) else []
+                                 portfolio_name = rows[0].get('name') or "Portafoglio" if rows else "Portafoglio"
                                  settings_cache = rows[0].get('settings') or {} if rows else {}
                              except:
                                  settings_cache = {}
@@ -247,7 +290,8 @@ def register_portfolio_routes(app):
             # Sort by name
             result.sort(key=lambda x: x.get('name', x.get('isin', '')))
             
-            return jsonify(assets=result)
+            p_name = portfolio_name if 'portfolio_name' in locals() else "Portafoglio"
+            return jsonify(assets=result, name=p_name)
 
         except Exception as e:
             logger.error(f"PORTFOLIO ASSETS ERROR: {str(e)}")

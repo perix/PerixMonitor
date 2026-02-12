@@ -29,6 +29,13 @@ def register_analysis_routes(app):
                 'portfolio_id': f'eq.{portfolio_id}'
             })
             transactions = res_trans.json() if (res_trans and res_trans.status_code == 200) else []
+
+            # 1b. Fetch Dividends
+            res_divs = execute_request('dividends', 'GET', params={
+                'select': 'amount_eur,date,asset_id',
+                'portfolio_id': f'eq.{portfolio_id}'
+            })
+            dividends = res_divs.json() if (res_divs and res_divs.status_code == 200) else []
             
             if not transactions:
                 return jsonify({
@@ -75,7 +82,11 @@ def register_analysis_routes(app):
                 qty = t['quantity']
                 price = t['price_eur'] # transaction price
                 date_str = t['date']
-                t_date = datetime.fromisoformat(date_str).replace(tzinfo=None)
+                try:
+                    clean_date = date_str.replace('Z', '+00:00')
+                    t_date = datetime.fromisoformat(clean_date).replace(tzinfo=None)
+                except:
+                    t_date = datetime.now()
                 is_buy = t['type'] == 'BUY'
                 
                 # Init component bucket
@@ -107,6 +118,42 @@ def register_analysis_routes(app):
                 components_data[component]["cash_flows"].append({
                     "date": t_date,
                     "amount": flow_amount
+                })
+
+            # 2b. Process Dividends into Components
+            # Map asset_id to component
+            aid_to_comp = {}
+            for t in transactions:
+                aid_to_comp[t['asset_id']] = get_component_from_asset_type(t['assets'].get('asset_class'))
+
+            for d in dividends:
+                aid = d['asset_id']
+                comp = aid_to_comp.get(aid, "Altro")
+                amount = float(d['amount_eur'])
+                date_str = d['date']
+                
+                try:
+                    clean_date = date_str.replace('Z', '+00:00')
+                    d_date = datetime.fromisoformat(clean_date).replace(tzinfo=None)
+                except:
+                    d_date = datetime.now()
+
+                if comp not in components_data:
+                    components_data[comp] = {
+                        "cash_flows": [],
+                        "current_value": 0,
+                        "invested_capital": 0,
+                        "assets_list": [],
+                        "total_dividends": 0.0
+                    }
+                
+                if "total_dividends" not in components_data[comp]:
+                    components_data[comp]["total_dividends"] = 0.0
+                
+                components_data[comp]["total_dividends"] += amount
+                components_data[comp]["cash_flows"].append({
+                    "date": d_date,
+                    "amount": amount
                 })
 
             # 3. Calculate Current Value per Component
@@ -202,7 +249,9 @@ def register_analysis_routes(app):
                 # Calculate Tiered MWR
                 mwr_val, mwr_type = get_tiered_mwr(cfs, curr_val, t1=mwr_t1, t2=mwr_t2)
                 
-                pl_val = curr_val - invested
+                # P&L including dividends: (Current Value - Net Invested) + Dividends
+                total_divs = data.get("total_dividends", 0.0)
+                pl_val = (curr_val - invested) + total_divs
                 pl_pct = (pl_val / invested * 100) if invested > 0 else 0
                 
                 # Percentage of portfolio (Value)

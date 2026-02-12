@@ -117,7 +117,7 @@ def sync_transactions():
         if not portfolio_id:
             return jsonify(error="Missing portfolio_id"), 400
         
-        if not changes and not data.get('prices') and not data.get('snapshot') and not data.get('trend_updates'):
+        if not changes and not data.get('prices') and not data.get('snapshot') and not data.get('trend_updates') and not data.get('dividends'):
             return jsonify(message="No data to sync"), 200
 
         # supabase = get_supabase_client() -> Removed
@@ -159,17 +159,18 @@ def sync_transactions():
                      for d in dividends:
                         a_id = asset_map_div.get(d['isin'])
                         if a_id:
+                            d_type = d.get('type', 'EXPENSE' if d['amount'] < 0 else 'DIVIDEND')
                             valid_dividends.append({
                                 "portfolio_id": portfolio_id,
                                 "asset_id": a_id,
                                 "amount_eur": d['amount'],
-                                "date": d['date'] # Original date from file
+                                "date": d['date'],
+                                "type": d_type
                             })
                      
                      if valid_dividends:
-                         # Upsert based on unique constraint (portfolio, asset, date)
-                         # supabase.table('dividends').upsert(valid_dividends, on_conflict='portfolio_id, asset_id, date').execute()
-                         upsert_table('dividends', valid_dividends, on_conflict='portfolio_id, asset_id, date')
+                         # Upsert based on unique constraint (portfolio, asset, date, type)
+                         upsert_table('dividends', valid_dividends, on_conflict='portfolio_id, asset_id, date, type')
                          if debug_mode: logger.debug(f"SYNC: Saved {len(valid_dividends)} dividends.")
             except Exception as e:
                  logger.error(f"SYNC: Dividend save failed: {e}")
@@ -671,11 +672,119 @@ def ingest_excel():
         
         # --- NEW: DIVIDEND FLOW ---
         if parse_result.get('type') == 'DIVIDENDS':
+            parsed_divs = parse_result['data']
+            
+            # [NEW] Comparison with DB for Aggregation Logic
+            div_delta = []
+            if portfolio_id and parsed_divs:
+                try:
+                    # 1. Collect needed ISINs to resolve Asset IDs
+                    div_isins = list({d['isin'] for d in parsed_divs})
+                    
+                    # 2. Get Asset IDs from ISINs
+                    from db_helper import execute_request
+                    in_filter = f"in.({','.join(div_isins)})"
+                    res_assets = execute_request('assets', 'GET', params={'select': 'id,isin,name', 'isin': in_filter})
+                    
+                    asset_map = {}   # isin -> asset_id
+                    asset_names = {} # isin -> name
+                    if res_assets and res_assets.status_code == 200:
+                        for row in res_assets.json():
+                            asset_map[row['isin']] = row['id']
+                            asset_names[row['isin']] = row.get('name', row['isin'])
+                    
+                    # 3. Fetch ALL Existing Dividends for these Assets in this Portfolio
+                    #    We fetch everything (all dates, all types) to show the full picture
+                    asset_ids = list(asset_map.values())
+                    db_divs_map = {}  # (asset_id, date, type) -> amount
+                    db_totals_by_asset = {}  # asset_id -> {dividends_total, expenses_total, div_count, exp_count}
+                    if asset_ids:
+                        in_assets = f"in.({','.join(asset_ids)})"
+                        res_db_divs = execute_request('dividends', 'GET', params={
+                            'select': 'asset_id,date,amount_eur,type', 
+                            'portfolio_id': f'eq.{portfolio_id}',
+                            'asset_id': in_assets
+                        })
+                        
+                        if res_db_divs and res_db_divs.status_code == 200:
+                            for r in res_db_divs.json():
+                                db_date = r['date']
+                                if isinstance(db_date, str) and 'T' in db_date:
+                                    db_date = db_date.split('T')[0]
+                                d_type = r.get('type', 'DIVIDEND')
+                                db_divs_map[(r['asset_id'], db_date, d_type)] = r['amount_eur']
+                                
+                                # Accumulate totals per asset for the "full picture"
+                                if r['asset_id'] not in db_totals_by_asset:
+                                    db_totals_by_asset[r['asset_id']] = {
+                                        'dividends_total': 0.0, 'expenses_total': 0.0,
+                                        'div_count': 0, 'exp_count': 0
+                                    }
+                                totals = db_totals_by_asset[r['asset_id']]
+                                if d_type == 'EXPENSE':
+                                    totals['expenses_total'] += r['amount_eur']
+                                    totals['exp_count'] += 1
+                                else:
+                                    totals['dividends_total'] += r['amount_eur']
+                                    totals['div_count'] += 1
+                    
+                    logger.info(f"INGEST DIVIDENDS: Found {len(db_divs_map)} existing entries in DB for {len(asset_ids)} assets.")
+                    
+                    # 4. Build Delta (Current vs New vs Total) per entry
+                    for d in parsed_divs:
+                        isin = d['isin']
+                        date_val = d['date']
+                        new_amount = d['amount']
+                        d_type = d.get('type', 'EXPENSE' if new_amount < 0 else 'DIVIDEND')
+                        
+                        a_id = asset_map.get(isin)
+                        current_amount = 0.0
+                        
+                        if a_id:
+                            current_amount = db_divs_map.get((a_id, date_val, d_type), 0.0)
+                        
+                        total_amount = current_amount + new_amount
+                        
+                        # Get overall DB totals for this asset
+                        asset_db_totals = db_totals_by_asset.get(a_id, {})
+                        
+                        div_delta.append({
+                            "isin": isin,
+                            "name": asset_names.get(isin, isin),
+                            "date": date_val,
+                            "type": d_type,
+                            "current_amount": current_amount,
+                            "new_amount": new_amount,
+                            "total_amount": total_amount,
+                            "operation": "INTEGRAZIONE" if current_amount != 0 else "NUOVO",
+                            # Full DB totals for this asset (all dates)
+                            "db_dividends_total": asset_db_totals.get('dividends_total', 0.0),
+                            "db_expenses_total": asset_db_totals.get('expenses_total', 0.0),
+                            "db_div_count": asset_db_totals.get('div_count', 0),
+                            "db_exp_count": asset_db_totals.get('exp_count', 0)
+                        })
+                        
+                except Exception as e:
+                    logger.error(f"INGEST DIVIDEND LOOKUP ERROR: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    # Fallback: build delta without DB info
+                    div_delta = [{
+                        "isin": d['isin'], "name": d['isin'], "date": d['date'],
+                        "type": d.get('type', 'EXPENSE' if d['amount'] < 0 else 'DIVIDEND'),
+                        "current_amount": 0, "new_amount": d['amount'], "total_amount": d['amount'],
+                        "operation": "NUOVO",
+                        "db_dividends_total": 0, "db_expenses_total": 0,
+                        "db_div_count": 0, "db_exp_count": 0
+                    } for d in parsed_divs]
+            
             return jsonify(
                 type='DIVIDENDS',
-                parsed_data=parse_result['data'],
-                message="Dividendi rilevati. Confermi l'importazione?"
+                parsed_data=parsed_divs,
+                delta=div_delta,
+                message=f"Analizzati {len(parsed_divs)} flussi per {len({d['isin'] for d in parsed_divs})} asset."
             )
+
             
         # --- NEW: PRICES FLOW ---
         # --- NEW: PRICES FLOW ---

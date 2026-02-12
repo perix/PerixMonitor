@@ -58,6 +58,7 @@ export interface MemoryData {
     value: number;
     note: string;
     last_trend_variation?: number;
+    total_divs?: number;
 }
 
 export interface MemoryTableProps {
@@ -284,6 +285,30 @@ export function MemoryTable({
             size: 100,
         },
         {
+            accessorKey: "total_divs",
+            header: ({ column }) => (
+                <div className="text-left w-full">
+                    <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} className="font-bold text-black pl-0 hover:bg-transparent hover:text-black">
+                        Dividendi <ArrowUpDown className="ml-2 h-4 w-4" />
+                    </Button>
+                </div>
+            ),
+            cell: ({ row }) => {
+                const amount = parseFloat(row.original.total_divs?.toString() || "0");
+                if (amount === 0) return <div className="text-right text-gray-500">-</div>;
+                const formatted = new Intl.NumberFormat("it-CH", {
+                    style: "decimal",
+                    minimumFractionDigits: 2,
+                }).format(amount);
+                return (
+                    <div className={`text-right font-medium ${amount >= 0 ? "text-green-500" : "text-red-400"}`}>
+                        {formatted}
+                    </div>
+                );
+            },
+            size: 100,
+        },
+        {
             accessorKey: "value",
             header: ({ column }) => (
                 <div className="text-left w-full">
@@ -404,6 +429,7 @@ export function MemoryTable({
                                     type: "Tipologia",
                                     pnl: "P&L",
                                     mwr: "MWR%",
+                                    total_divs: "Dividendi",
                                     value: "Controvalore",
                                     open_date: "Data Apertura",
                                     close_date: "Data Chiusura",
@@ -509,6 +535,16 @@ export function MemoryTable({
                                 })()}
                             </TableCell>
                             <TableCell className="border-r border-slate-300" style={{ width: table.getColumn('mwr')?.getSize() }}></TableCell>
+                            <TableCell className="border-r border-slate-300 text-right" style={{ width: table.getColumn('total_divs')?.getSize() }}>
+                                {(() => {
+                                    const totalDivs = table.getFilteredRowModel().rows.reduce((sum, row) => sum + (row.original.total_divs || 0), 0);
+                                    return (
+                                        <span className={totalDivs >= 0 ? "text-green-700" : "text-red-600"}>
+                                            {new Intl.NumberFormat("it-CH", { minimumFractionDigits: 2 }).format(totalDivs)}
+                                        </span>
+                                    );
+                                })()}
+                            </TableCell>
                             <TableCell className="border-r border-slate-300 text-right" style={{ width: table.getColumn('value')?.getSize() }}>
                                 {(() => {
                                     const totalVal = table.getFilteredRowModel().rows.reduce((sum, row) => sum + row.original.value, 0);

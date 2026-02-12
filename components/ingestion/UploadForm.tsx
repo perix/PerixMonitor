@@ -21,6 +21,7 @@ export const UploadForm = () => {
     const [error, setError] = useState<string | null>(null);
     const [delta, setDelta] = useState<any[] | null>(null);
     const [dividends, setDividends] = useState<any[] | null>(null);
+    const [dividendDelta, setDividendDelta] = useState<any[] | null>(null); // [NEW] Enriched dividend data
     const [pricesAndSnapshot, setPricesAndSnapshot] = useState<{ prices: any[], snapshot: any } | null>(null);
     // [REFACTORED] Combined state for Price Modal to ensure atomic updates
     const [priceModalData, setPriceModalData] = useState<{
@@ -61,6 +62,7 @@ export const UploadForm = () => {
         // Reset previous state
         setDelta(null);
         setDividends(null);
+        setDividendDelta(null); // [NEW] Reset
         setPricesAndSnapshot(null);
 
         const formData = new FormData();
@@ -76,8 +78,9 @@ export const UploadForm = () => {
             const data = response.data;
 
             if (data.type === 'DIVIDENDS') {
-                // Store dividends and show modal
+                // Store dividends and enriched delta
                 setDividends(data.parsed_data);
+                setDividendDelta(data.delta || null); // [NEW] Store enriched delta from backend
                 setShowModal(true);
             } else {
                 // Standard Portfolio
@@ -137,7 +140,13 @@ export const UploadForm = () => {
         try {
             await axios.post('/api/sync', {
                 changes: resolutions, // Delta resolutions
-                dividends: dividends || [], // Pass dividends if present
+                // [NEW] Send aggregated totals with type for correct upsert
+                dividends: dividendDelta ? dividendDelta.map(d => ({
+                    isin: d.isin,
+                    date: d.date,
+                    amount: d.total_amount, // Send the CALCULATED TOTAL to be saved
+                    type: d.type || (d.total_amount < 0 ? 'EXPENSE' : 'DIVIDEND')
+                })) : (dividends || []),
                 portfolio_id: selectedPortfolioId,
                 prices: pricesAndSnapshot?.prices || [],
                 snapshot: pricesAndSnapshot?.snapshot,
@@ -149,7 +158,8 @@ export const UploadForm = () => {
             clearCache();
             alert("Sincronizzazione completata con successo!");
             setShowModal(false);
-            setDividends(null); // Reset after sync
+            setDividends(null);
+            setDividendDelta(null); // [NEW] Reset
             setDelta(null);
         } catch (e: any) {
             console.error(e);
@@ -230,7 +240,7 @@ export const UploadForm = () => {
                     isOpen={showModal}
                     onClose={() => setShowModal(false)}
                     delta={delta || []} // Safe fallback
-                    dividends={dividends || []} // Pass dividends
+                    dividends={dividendDelta || []} // [NEW] Pass enriched delta instead of raw
                     prices={pricesAndSnapshot?.prices || []}
                     onConfirm={handleReconciliationConfirm}
                 />

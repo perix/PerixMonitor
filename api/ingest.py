@@ -439,6 +439,18 @@ def parse_dividends_file(df):
             errors.append(f"Riga {row_num}: Errore parsing - {str(e)}")
             continue
     
+    # [NEW] Aggregazione: Somma valori per stesso ISIN, Data e Tipo nel file
+    # Type is determined by sign: positive = DIVIDEND, negative = EXPENSE
+    if dividends:
+        from collections import defaultdict
+        aggregated = defaultdict(float)  # (isin, date, type) -> amount
+        for d in dividends:
+            d_type = 'EXPENSE' if d['amount'] < 0 else 'DIVIDEND'
+            key = (d['isin'], d['date'], d_type)
+            aggregated[key] += d['amount']
+        dividends = [{'isin': k[0], 'date': k[1], 'type': k[2], 'amount': v} for k, v in aggregated.items()]
+        logger.info(f"DIVIDENDS: Aggregated to {len(dividends)} unique (isin, date, type) entries.")
+
     if not dividends:
         return {
             "type": "DIVIDENDS",
