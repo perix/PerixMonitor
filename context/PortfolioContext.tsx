@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 
 // Define cache data types
 export interface DashboardData {
@@ -59,12 +59,44 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
     const [memoryCache, setMemoryCacheState] = useState<Record<string, any[]>>({});
 
     // Initial load from local storage - wrapped in useEffect to avoid Hydration Mismatch
+    // Cache TTL: 5 minutes
+    const CACHE_TTL = 5 * 60 * 1000;
+    const isCacheInitialized = useRef(false);
+
+    // Initial load from local storage
     useEffect(() => {
         if (typeof window !== 'undefined') {
             const stored = localStorage.getItem('selectedPortfolioId');
             if (stored) {
                 setSelectedPortfolioId(stored);
             }
+
+            // [PERF] Load persistent caches
+            const loadCache = (key: string, setter: any) => {
+                try {
+                    const storedData = localStorage.getItem(key);
+                    if (storedData) {
+                        const parsed = JSON.parse(storedData);
+                        const now = Date.now();
+                        const valid: any = {};
+                        let hasValid = false;
+                        for (const [pid, data] of Object.entries(parsed)) {
+                            // @ts-ignore
+                            if (now - (data.timestamp || 0) < CACHE_TTL) {
+                                valid[pid] = data;
+                                hasValid = true;
+                            }
+                        }
+                        if (hasValid) setter(valid);
+                    }
+                } catch (e) { console.warn(`Failed to load ${key}`, e); }
+            };
+
+            loadCache('dashboardCache', setDashboardCacheState);
+            loadCache('portfolioCache', setPortfolioCacheState);
+
+            // Mark initialized so we can start syncing back
+            isCacheInitialized.current = true;
         }
     }, []);
 
@@ -75,6 +107,19 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
             localStorage.removeItem('selectedPortfolioId');
         }
     }, [selectedPortfolioId]);
+
+    // [PERF] Sync caches to localStorage on change
+    useEffect(() => {
+        if (isCacheInitialized.current) {
+            localStorage.setItem('dashboardCache', JSON.stringify(dashboardCache));
+        }
+    }, [dashboardCache]);
+
+    useEffect(() => {
+        if (isCacheInitialized.current) {
+            localStorage.setItem('portfolioCache', JSON.stringify(portfolioCache));
+        }
+    }, [portfolioCache]);
 
     const setDashboardCache = (portfolioId: string, data: Omit<DashboardData, 'timestamp'>) => {
         setDashboardCacheState(prev => ({

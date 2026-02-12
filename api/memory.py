@@ -115,7 +115,8 @@ def get_memory_data():
                     'total_cost': 0.0,
                     'total_sales': 0.0,
                     'quantity': 0.0,
-                    'dividends': 0.0,
+                    'dividends': 0.0, # Net (includes expenses)
+                    'gross_dividends': 0.0, # Gross (only positive inflows, for display)
                     'note': notes_map.get(aid, ''),
                     'cashflows': []  # For XIRR calculation
                 }
@@ -156,14 +157,21 @@ def get_memory_data():
         for d in dividends:
             aid = d['asset_id']
             if aid in assets_stats:
-                assets_stats[aid]['dividends'] += float(d['amount_eur'])
-                # Dividend = cash inflow (positive for XIRR)
+                amount = float(d['amount_eur'])
+                # Net Dividends (for P&L)
+                assets_stats[aid]['dividends'] += amount
+                
+                # Gross Dividends (for Display Column - positive only)
+                if amount > 0:
+                    assets_stats[aid]['gross_dividends'] += amount
+                
+                # Dividend = cash inflow (positive or negative expense for XIRR)
                 try:
                     clean_div_date = d['date'].replace('Z', '+00:00')
                     div_date = datetime.fromisoformat(clean_div_date).replace(tzinfo=None)
                 except:
                     div_date = datetime.now()
-                assets_stats[aid]['cashflows'].append({'date': div_date, 'amount': float(d['amount_eur'])})
+                assets_stats[aid]['cashflows'].append({'date': div_date, 'amount': amount})
             else:
                 # Dividend for asset not in transactions? Unlikely but possible (if transactions deleted?)
                 # We ignore or fetch asset info? Let's ignore for safety if no transaction history exists.
@@ -188,7 +196,7 @@ def get_memory_data():
             
             # P&L Calculation (Absolute)
             # P&L = (Final Value + Sales + Dividends) - Cost
-            # Final Value is Current Value.
+            # Dividends here must be NET (i.e. include expenses)
             pnl = (current_value + stats['total_sales'] + stats['dividends']) - stats['total_cost']
             
             # MWR/XIRR Calculation using tiered logic
@@ -247,7 +255,7 @@ def get_memory_data():
                 "last_trend_variation": stats.get('last_trend_variation'),
                 # Extra debug info if needed
                 "qty": qty,
-                "total_divs": round(stats['dividends'], 2)
+                "total_divs": round(stats['gross_dividends'], 2) # Return Gross Dividends for Display
             })
 
         return jsonify(data=results)

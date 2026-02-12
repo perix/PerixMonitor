@@ -394,16 +394,34 @@ def sync_transactions():
         
         # --- 4. Process Prices (Now that Assets are ensured to exist) ---
         if prices:
-            from price_manager import save_price_snapshot
-            count_prices = 0
+            # [PERF] Batch upsert instead of loop (Step 2.1)
+            valid_prices = []
             for p in prices:
                  try:
-                     save_price_snapshot(p['isin'], p['price'], p.get('date'), p.get('source', 'Manual Upload'))
-                     count_prices += 1
-                 except Exception as p_err:
-                     logger.error(f"SYNC PRICE FAIL: {p['isin']} -> {p_err}")
+                     price_val = float(p.get('price', 0))
+                     if price_val > 0 and p.get('isin'):
+                         d_val = p.get('date')
+                         if not d_val:
+                             d_val = datetime.now().strftime("%Y-%m-%d")
+                             
+                         valid_prices.append({
+                             "isin": p['isin'],
+                             "price": price_val,
+                             "date": d_val,
+                             "source": p.get('source', 'Manual Upload')
+                         })
+                 except ValueError:
+                     logger.warning(f"SYNC: Invalid price for {p.get('isin')}: {p.get('price')}")
             
-            if debug_mode: logger.debug(f"SYNC: Saved {count_prices} price snapshots.")
+            count_prices = 0
+            if valid_prices:
+                # Batch upsert
+                if upsert_table('asset_prices', valid_prices, on_conflict='isin, date, source'):
+                     count_prices = len(valid_prices)
+                else:
+                     logger.error(f"SYNC: Failed to batch save {len(valid_prices)} prices")
+
+            if debug_mode: logger.debug(f"SYNC: Saved {count_prices} price snapshots (Batch).")
 
         # 3. Process Referentials/Trends (if any)
         trend_updates = data.get('trend_updates', [])
@@ -1795,6 +1813,29 @@ def test_llm_endpoint():
         logger.error(f"DEV TEST LLM FAIL: {e}")
         import traceback
         logger.error(traceback.format_exc())
+        return jsonify(error=str(e)), 500
+
+
+
+# --- ADMIN / MAINTENANCE ROUTES ---
+
+@app.route('/api/admin/compact-prices', methods=['POST'])
+def run_price_compaction():
+    """
+    Triggers the data compaction process for asset_prices.
+    Body: { "isin": "Optional ISIN", "dry_run": true/false }
+    """
+    try:
+        from data_compaction import compact_prices
+        
+        data = request.json or {}
+        dry_run = data.get('dry_run', True)
+        isin = data.get('isin')
+        
+        stats = compact_prices(isin=isin, dry_run=dry_run)
+        return jsonify(stats)
+    except Exception as e:
+        logger.error(f"ADMIN COMPACTION ERROR: {e}")
         return jsonify(error=str(e)), 500
 
 

@@ -1,7 +1,7 @@
 from flask import jsonify, request
 from db_helper import execute_request, update_table
 from logger import logger
-from price_manager import get_latest_price
+from price_manager import get_latest_price, get_latest_prices_batch
 from finance import xirr
 from datetime import datetime
 import traceback
@@ -186,13 +186,18 @@ def register_portfolio_routes(app):
             
             # Filter to only active holdings (qty > 0) and calculate metrics
             result = []
+            
+            # [PERF] Batch fetch latest prices for ALL active assets (2 HTTP calls instead of 2N)
+            active_isins = [isin for isin, d in holdings.items() if d['qty'] > 0.0001]
+            latest_prices_map = get_latest_prices_batch(active_isins)
+            
             for isin, data in holdings.items():
                 if data['qty'] > 0.0001:  # Small threshold for floating point
                     asset_info = data['asset'].copy()
                     current_qty = data['qty']
                     
-                    # Get latest price
-                    price_data = get_latest_price(isin)
+                    # Get latest price from batch map (was: get_latest_price(isin) per-asset)
+                    price_data = latest_prices_map.get(isin)
                     
                     latest_price = 0.0
                     if price_data:

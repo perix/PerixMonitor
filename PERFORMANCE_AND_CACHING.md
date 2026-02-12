@@ -98,3 +98,90 @@ Per garantire una fluidità del 100% nei grafici anche con dati sparsi e senza a
 L'azione più efficace a costo zero è:
 1.  **Spostare aggregazioni su SQL**: Smettere di scaricare tutte le transazioni in Python per le somme semplici. Usare query SQL dirette (es. `SUM`, `AVG`) per alleggerire la memoria delle Serverless Functions di Vercel (limite 1GB/10s).
 2.  **Adottare TanStack Query**: Migliorare la gestione della cache lato client (gratis) per evitare chiamate ripetute al server.
+
+---
+
+## 6. Ottimizzazioni Applicate (P0 — Febbraio 2026)
+
+Le seguenti ottimizzazioni sono state implementate per risolvere i colli di bottiglia critici identificati nell'analisi performance.
+
+### 6.1 Indici Database
+**Migration**: `20260212190000_add_performance_indexes.sql`
+
+Aggiunti indici sulle tabelle più interrogate per evitare full table scan:
+
+| Indice | Tabella | Colonne | Pattern Query |
+|---|---|---|---|
+| `idx_transactions_portfolio_date` | `transactions` | `(portfolio_id, date)` | Dashboard, History, Memory |
+| `idx_transactions_portfolio_asset` | `transactions` | `(portfolio_id, asset_id)` | Portfolio assets, XIRR |
+| `idx_dividends_portfolio` | `dividends` | `(portfolio_id)` | Dashboard, Portfolio |
+| `idx_dividends_portfolio_asset` | `dividends` | `(portfolio_id, asset_id)` | Memory, per-asset P&L |
+| `idx_pas_portfolio_asset` | `portfolio_asset_settings` | `(portfolio_id, asset_id)` | Colori, slider settings |
+| `idx_asset_notes_portfolio` | `asset_notes` | `(portfolio_id)` | Memory table |
+
+### 6.2 Batch Price Fetching in Portfolio
+**File**: `portfolio.py` → `get_portfolio_assets()`
+
+Sostituito il pattern N+1 (`get_latest_price(isin)` in loop) con `get_latest_prices_batch(active_isins)`.
+- **Prima**: 2 HTTP calls per ogni asset attivo (es. 20 asset = 40 calls)
+- **Dopo**: 2 HTTP calls totali (1 per `asset_prices`, 1 per `transactions`)
+
+### 6.3 Filtro Date Server-Side per Prezzi
+**File**: `price_manager.py` → `get_interpolated_price_history_batch()`
+
+Aggiunto filtro `date >= min_date` alle query su `asset_prices` e `transactions`. Senza filtro, tutte le righe storiche venivano scaricate anche per finestre temporali brevi.
+
+---
+
+## 7. Strategia Data Compaction (Pianificata)
+
+### Scopo
+Ridurre nel tempo la crescita di `asset_prices` eliminando i data point ridondanti (stessa area di prezzo, giorni consecutivi). I grafici rimangono identici grazie al LOCF (forward fill).
+
+### Parametri Configurabili
+
+```
+# ------- PARAMETRI DATA COMPACTION -------
+# Questi valori possono essere modificati per adattare la strategia
+# alle esigenze dell'utente o alla crescita dei dati.
+
+# Fascia 1: Nessuna compaction per dati recenti
+COMPACTION_RECENT_MONTHS = 6          # Mesi di "alta risoluzione" (default: 6)
+
+# Fascia 2: Rimozione punti ridondanti per dati meno recenti  
+COMPACTION_THRESHOLD_PCT = 0.5        # Variazione minima (%) per considerare un
+                                      # punto "significativo" (default: 0.5%)
+                                      # Punti con variazione < 0.5% rispetto ai
+                                      # vicini vengono rimossi.
+
+# Fascia 3: Decimazione aggressiva per dati molto vecchi
+COMPACTION_OLD_YEARS = 2              # Soglia "dati vecchi" in anni (default: 2)
+COMPACTION_OLD_MAX_FREQ = 'weekly'    # Frequenza massima per dati oltre la soglia
+                                      # Valori: 'daily', 'weekly', 'biweekly', 'monthly'
+
+# Punti protetti (MAI rimossi):
+# - Date coincidenti con transazioni BUY/SELL
+# - Date coincidenti con dividendi
+# - Massimi e minimi locali (inversioni di trend)
+# - Primo e ultimo punto per ogni ISIN
+```
+
+### Trigger di Esecuzione
+- **Manuale**: Endpoint `/api/admin/compact-prices` dalla pagina Manutenzione
+- **Automatico (opzionale)**: Post-sync, solo se `asset_prices` > 5000 righe
+### 6.4 Batch Price Sync (P1)
+**File**: `api/index.py`
+Sostituito il loop sequenziale di `upsert` con un'unica operazione batch alla fine del sync. Riduce drasticamente il tempo di I/O e previene timeout su Vercel Serverless.
+
+### 6.5 LocalStorage Caching (P1)
+**File**: `context/PortfolioContext.tsx`
+Implementata persistenza della cache del portafoglio e della dashboard su `localStorage` con TTL di 5 minuti. Mantiene i dati tra i refresh della pagina (F5).
+
+### 6.6 Data Compaction (P1)
+**File**: `api/data_compaction.py`, `api/index.py`
+Creato endpoint `/api/admin/compact-prices` per ottimizzare le dimensioni della tabella `asset_prices` eliminando dati ridondanti storici secondo la strategia tiered (Recent/Medium/Old).
+
+### 6.7 Aggregation Views (P1)
+**Migration**: `20260212190200_add_aggregation_views.sql`
+Create viste SQL (`portfolio_holdings`, `dividend_totals`, `portfolio_stats`) per spostare il calcolo delle aggregazioni dal livello applicativo al database.
+
