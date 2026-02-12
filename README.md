@@ -94,6 +94,7 @@ Prima di salvare qualsiasi modifica, il sistema mostra una `Preview` delle azion
 -   **Transazioni**: Acquisti/Vendite rilevati.
 -   **Aggiornamenti Prezzi**: Nuovi prezzi per asset esistenti.
 -   **Aggiornamenti Anagrafica**: Cambi di Tipologia o Descrizione.
+-   **Cedole/Dividendi e Spese/Costi**: Riepilogo separato per tipo, con colonne "In Archivio", "Nuovi Incassi/Costi" e "Dopo Importazione".
 -   **Errori**: Discrepanze o dati mancanti che impediscono il salvataggio.
 Solo confermando la preview i dati vengono scritti nel database.
 
@@ -123,3 +124,11 @@ Solo confermando la preview i dati vengono scritti nel database.
     - **Logica Unificata**: Il calcolo del trend (prezzo vs prezzo precedente) ora è coerente per qualsiasi tipo di operazione (singolo prezzo, sovrascrittura data, ricostruzione storica).
     - **Sold Assets**: Gestione automatica assets venduti (Quantità=0) -> Il trend viene forzato a `NULL` nel DB per pulizia visiva.
     - **Historical Fills**: Supporto robusto per iniezione massiva di prezzi storici senza corrompere l'indicatore "Ultima Variazione".
+
+### Gestione Cedole, Dividendi e Spese (12/02/2026)
+- **Classificazione Automatica per Tipo**:
+    - Importi positivi → `DIVIDEND` (cedole, dividendi, incassi).
+    - Importi negativi → `EXPENSE` (spese, costi, tasse).
+- **Aggregazione Intelligente**: Somma automatica di entries multiple per stesso ISIN/data/tipo, sia nel file uploadato che con i dati già in archivio.
+- **DB**: Nuova colonna `type` nella tabella `dividends` con vincolo di unicità aggiornato a `(portfolio_id, asset_id, date, type)`.
+- **Riconciliazione Separata**: Modal con sezioni distinte per Cedole/Dividendi (indaco) e Spese/Costi (arancione), ciascuna con colonne "In Archivio" | "Nuovi" | "Dopo Importazione".

@@ -47,8 +47,8 @@ Il file deve contenere **necessariamente** questi dati per ogni riga valida.
 
 ---
 
-## 2. Cedole e Dividendi
-File utilizzato per importare lo storico dei flussi di cassa o spese.
+## 2. Cedole e Dividendi / Spese e Costi
+File utilizzato per importare lo storico dei flussi di cassa (incassi e uscite).
 
 ### Identificazione
 Il sistema riconosce questo formato se trova la colonna **`Valore Cedola (EUR)`**.
@@ -58,9 +58,32 @@ Il sistema riconosce questo formato se trova la colonna **`Valore Cedola (EUR)`*
     *   Header: `isin`, `codice isin`
 2.  **Valore Cedola (EUR)**
     *   Header: `valore cedola (eur)`
-    *   Nota: Può contenere valori negativi (es. per spese o tasse).
+    *   Nota: Può contenere valori **positivi** (cedole, dividendi) e **negativi** (spese, costi, tasse).
 3.  **Data Flusso**
     *   Header: `data flusso`, `data stacco`, `data`
+
+### Classificazione Automatica per Tipo
+Il sistema classifica automaticamente ogni riga in base al **segno dell'importo**:
+*   **Importo positivo** → Tipo `DIVIDEND` (cedola, dividendo, incasso)
+*   **Importo negativo** → Tipo `EXPENSE` (spesa, costo, tassa)
+
+Questo permette di avere **entries separate** per cedole e spese sullo stesso asset nella stessa data (vincolo DB: `portfolio_id + asset_id + date + type`).
+
+### Aggregazione Automatica
+*   Se il file contiene **più righe** con lo stesso ISIN, stessa data e stesso tipo, gli importi vengono **sommati automaticamente** in un'unica entry prima dell'importazione.
+*   Se nel database esistono già entries per lo stesso asset/data/tipo, il sistema mostra il **totale attuale in archivio** e il **risultato finale** dopo l'importazione (somma).
+
+### Riconciliazione Visiva
+La modale di riconciliazione mostra un riepilogo per asset con **sezioni separate**:
+*   **Cedole e Dividendi** (icona indaco): per tutti i flussi positivi.
+*   **Spese e Costi** (icona arancione): per tutti i flussi negativi.
+
+Per ogni asset vengono mostrate le colonne:
+| Colonna | Significato |
+|---------|-------------|
+| In Archivio | Totale attualmente salvato nel DB per quel tipo |
+| Nuovi Incassi / Nuovi Costi | Importo proveniente dal file corrente |
+| Dopo Importazione | Totale risultante (archivio + nuovo) |
 
 ### Note
 *   L'ISIN deve corrispondere ad un asset già presente in portafoglio, altrimenti la riga verrà segnalata come errore.

@@ -124,7 +124,7 @@ Per garantire la massima protezione dei dati, il progetto implementa una **sicur
 - **Schema Aggiornato (v2)**:
     - `assets`: Anagrafica titoli (ISIN, Nome, Settore).
     - `transactions`: Storico operazioni (Acquisto, Vendita).
-    - `dividends`: Storico Flussi di Cassa in entrata (Cedole/Dividendi).
+    - `dividends`: Storico Flussi di Cassa (Cedole/Dividendi e Spese/Costi). Include colonna `type` (`DIVIDEND`/`EXPENSE`) e vincolo di unicità su `(portfolio_id, asset_id, date, type)`.
     - `portfolios`: Contenitore logico per utente.
     - `snapshots`: Storico aggregato degli upload Excel (Valore Totale, Capitale Investito, Data Upload).
     - `asset_prices`: Storico prezzi manuale (ISIN, Prezzo, Data, Fonte). Fonte primaria: Colonna I file Excel.
@@ -140,7 +140,7 @@ Il sistema adotta un approccio "Read-Preview-Write" per evitare contaminazione d
         - **Portfolio Full/Partial Sync**:
             -   Supporta "Partial Updates" (file con sole vendite): ignora asset mancanti senza venderli.
             -   Supporta "Strict Sync" per discrepanze: Segnala errore se la quantità cambia senza operazione esplicita.
-        -   **Dividend File**: Rileva automaticamente pattern [ISIN, Valore, Data] per importazione cedole.
+        -   **Dividend/Expense File**: Rileva automaticamente pattern [ISIN, Valore, Data] per importazione flussi di cassa. Classifica automaticamente le entries come `DIVIDEND` (importi positivi) o `EXPENSE` (importi negativi). Aggrega per (ISIN, Data, Tipo) e calcola delta vs DB.
     - **Nessun dato viene salvato nel DB**. L'API restituisce un JSON con le proposte di modifica (`delta`, `prices_to_save`, `snapshot_proposal`).
 
 2.  **Phase 2: Preview & Reconciliation**
@@ -184,8 +184,16 @@ Il sistema utilizza modelli OpenAI di ultima generazione per l'arricchimento aut
 ### Gestione Cedole, Dividendi e Spese
 - **Rilevamento File**: Identificazione automatica tramite intestazione colonna C ("Data Flusso") o struttura a 3 colonne.
 - **Formato Flessibile**: Supporta file con più di 3 colonne (le colonne extra vengono ignorate).
-- **Flussi Negativi**: Supporta importi negativi nella colonna B per registrare spese o uscite di cassa.
-- **Memorizzazione**: Dati salvati nella tabella `dividends` con riferimento all'asset e al portafoglio.
+- **Classificazione Automatica per Tipo**:
+    - Importi **positivi** → tipo `DIVIDEND` (cedole, dividendi, incassi).
+    - Importi **negativi** → tipo `EXPENSE` (spese, costi, tasse).
+- **Aggregazione In-File**: Entries multiple con stesso ISIN, stessa data e stesso tipo vengono sommate automaticamente prima del confronto col DB.
+- **Aggregazione con DB**: Il sistema confronta i dati del file con quelli esistenti in archivio, calcolando:
+    - `current_amount`: totale attuale in DB per quel tipo.
+    - `new_amount`: importo dal file corrente.
+    - `total_amount`: somma (current + new) che verrà salvata.
+- **Memorizzazione**: Dati salvati nella tabella `dividends` con riferimento all'asset, portafoglio e tipo. Vincolo di unicità su `(portfolio_id, asset_id, date, type)` — cedole e spese sullo stesso asset/data coesistono come record separati.
+- **Riconciliazione UI**: La modale mostra sezioni separate per Cedole/Dividendi e Spese/Costi con colonne: "In Archivio" | "Nuovi Incassi/Costi" | "Dopo Importazione".
 - **Utilizzo**: Partecipano al calcolo del MWRR (XIRR) come flussi di cassa (positivi o negativi).
 
 ### Metodologia di Calcolo MWR (Money Weighted Return)
@@ -231,7 +239,7 @@ Il grafico dell'andamento MWR non è uno storico salvato, ma viene **ricalcolato
 
 ### Funzionalità Completate
 - [x] **Safe Ingestion**: Implementato protocollo Read-Preview-Write.
-- [x] **Dividend Support**: Parsing file 3 colonne e tabella DB dedicata.
+- [x] **Dividend & Expense Support**: Parsing file 3 colonne con classificazione automatica per tipo (`DIVIDEND`/`EXPENSE`), aggregazione in-file e con DB, riconciliazione visiva separata.
 - [x] **Manual Prices**: Salvataggio storico prezzi da Excel.
 - [x] **Integrazione AI Avanzata**: Supporto GPT-5, Web Search e Reasoning Effort.
 - [x] **Audit Logging**: Sistema di tracciamento professionale delle operazioni.
