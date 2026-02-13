@@ -44,6 +44,7 @@ export default function MemoryPage() {
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
     const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
     const [columnSizing, setColumnSizing] = useState<Record<string, number>>({});
+    const [selectedTrend, setSelectedTrend] = useState<string>("ALL");
 
     // Sync Settings to Local State
     useEffect(() => {
@@ -52,6 +53,7 @@ export default function MemoryPage() {
             setColumnFilters(settings.columnFilters || []);
             setColumnVisibility(settings.columnVisibility || {});
             setColumnSizing(settings.columnSizing || {});
+            if (settings.selectedTrend) setSelectedTrend(settings.selectedTrend);
         }
     }, [settings]);
 
@@ -67,13 +69,14 @@ export default function MemoryPage() {
                     sorting,
                     columnFilters,
                     columnVisibility,
-                    columnSizing
+                    columnSizing,
+                    selectedTrend
                 }
             });
         }, 1000); // 1 sec debounce
 
         return () => clearTimeout(timer);
-    }, [sorting, columnFilters, columnVisibility, columnSizing, userId, selectedPortfolioId]);
+    }, [sorting, columnFilters, columnVisibility, columnSizing, selectedTrend, userId, selectedPortfolioId]);
 
     // Editing State
     const [editedNotes, setEditedNotes] = useState<Record<string, string>>({});
@@ -168,6 +171,8 @@ export default function MemoryPage() {
                             columnSizing={columnSizing}
                             onColumnSizingChange={setColumnSizing}
                             portfolioId={selectedPortfolioId}
+                            selectedTrend={selectedTrend}
+                            onTrendChange={setSelectedTrend}
                         />
                     </CardContent>
                 </Card>

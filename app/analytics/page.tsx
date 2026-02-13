@@ -9,7 +9,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Loader2, TrendingUp, TrendingDown, DollarSign, PieChart as PieChartIcon, Activity } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatSwissMoney } from "@/lib/utils";
+import { usePortfolioSettings, useUpdatePortfolioSettings } from "@/hooks/useDashboard";
 
 // Palette for specific components requested by user
 const COMPONENT_COLORS: Record<string, string> = {
@@ -59,6 +61,10 @@ export default function AnalyticsPage() {
     const [loading, setLoading] = useState(false);
     const [selectedSlice, setSelectedSlice] = useState<ComponentData | null>(null);
     const [threshold, setThreshold] = useState(0.1);
+    const [selectedTrend, setSelectedTrend] = useState<string>("ALL");
+
+    const { data: settings } = usePortfolioSettings(selectedPortfolioId);
+    const updateSettingsMutation = useUpdatePortfolioSettings();
 
     useEffect(() => {
         if (!selectedPortfolioId) {
@@ -134,11 +140,9 @@ export default function AnalyticsPage() {
 
             setData(displayData);
 
-            // [PERSISTENCE] Restore selection (logic duplicated for cache hit)
-            const savedSelectionName = localStorage.getItem(`analysis_selection_${selectedPortfolioId}`);
-            if (savedSelectionName && displayData.components) {
-                const found = displayData.components.find((c: any) => c.name === savedSelectionName);
-                // If the selected component was Liquidità and we just removed it? Handle gracefully.
+            // [PERSISTENCE] Restore selection from DB settings
+            if (settings?.selectedSlice && displayData.components) {
+                const found = displayData.components.find((c: any) => c.name === settings.selectedSlice);
                 if (found) {
                     setSelectedSlice(found);
                 }
@@ -156,10 +160,9 @@ export default function AnalyticsPage() {
                 // Save to Cache
                 setAnalysisCache(selectedPortfolioId, res.data);
 
-                // [PERSISTENCE] Restore selection
-                const savedSelectionName = localStorage.getItem(`analysis_selection_${selectedPortfolioId}`);
-                if (savedSelectionName && res.data.components) {
-                    const found = res.data.components.find((c: any) => c.name === savedSelectionName);
+                // [PERSISTENCE] Restore selection from DB settings
+                if (settings?.selectedSlice && res.data.components) {
+                    const found = res.data.components.find((c: any) => c.name === settings.selectedSlice);
                     if (found) {
                         setSelectedSlice(found);
                     }
@@ -184,19 +187,23 @@ export default function AnalyticsPage() {
         }).catch(err => console.error("Failed to load asset config", err));
     }, []);
 
-    // [PERSISTENCE] Save selection
+    // [PERSISTENCE] Save selection to DB
     useEffect(() => {
-        if (selectedPortfolioId && selectedSlice) {
-            localStorage.setItem(`analysis_selection_${selectedPortfolioId}`, selectedSlice.name);
-        } else if (selectedPortfolioId && selectedSlice === null && !loading && data) {
-            // Only clear if data is loaded (user deliberately deselected, if possible?)
-            // Actually, current UI allows clicking selected one to maybe deselect? Or clicking outside?
-            // If app logic allows 'null', we might want to save null (remove item).
-            // But let's check if 'null' is a valid user state or just init.
-            // If user selects 'null', we remove key.
-            localStorage.removeItem(`analysis_selection_${selectedPortfolioId}`);
+        if (selectedPortfolioId && selectedSlice && settings) {
+            // Only update if different
+            if (settings.selectedSlice !== selectedSlice.name) {
+                updateSettingsMutation.mutate({
+                    portfolioId: selectedPortfolioId,
+                    settings: { selectedSlice: selectedSlice.name }
+                });
+            }
+        } else if (selectedPortfolioId && selectedSlice === null && !loading && data && settings?.selectedSlice) {
+            updateSettingsMutation.mutate({
+                portfolioId: selectedPortfolioId,
+                settings: { selectedSlice: null }
+            });
         }
-    }, [selectedSlice, selectedPortfolioId, loading, data]);
+    }, [selectedSlice, selectedPortfolioId, loading, data, settings]);
 
     // Prepare chart data with colors
     const chartData = useMemo(() => data?.components.map((c, i) => ({
@@ -275,48 +282,72 @@ export default function AnalyticsPage() {
                     {selectedSlice && (
                         <div className="absolute top-6 bottom-6 right-4 w-[53%] z-20 flex flex-col">
                             <Card className="bg-slate-950/80 backdrop-blur-md border-white/40 shadow-2xl h-full flex flex-col">
-                                <CardHeader className="py-3 px-4 border-b border-white/40 bg-white/5">
+                                <CardHeader className="py-3 px-4 border-b border-white/40 bg-white/5 flex flex-row items-center justify-between">
                                     <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                                         Lista asset Componente - <span style={{ color: getComponentColor(selectedSlice.name, 0) }}>{selectedSlice.name}</span>
                                     </CardTitle>
+
+                                    {/* Filter by Trend */}
+                                    <div className="w-[120px]">
+                                        <Select value={selectedTrend} onValueChange={setSelectedTrend}>
+                                            <SelectTrigger className="h-8 w-full border-slate-600 bg-transparent text-xs text-slate-200">
+                                                <SelectValue placeholder="Trend" />
+                                            </SelectTrigger>
+                                            <SelectContent align="end">
+                                                <SelectItem value="ALL">Tutti</SelectItem>
+                                                <SelectItem value="POSITIVE">Positivo</SelectItem>
+                                                <SelectItem value="NEGATIVE">Negativo</SelectItem>
+                                                <SelectItem value="NEUTRAL">Neutro</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
                                 </CardHeader>
                                 <CardContent className="p-5 overflow-y-auto custom-scrollbar flex-1">
-                                    {selectedSlice.assets && selectedSlice.assets.map((asset) => (
-                                        <div key={asset.isin} className="flex items-center justify-between p-3 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
-                                            <div className="flex items-center gap-3 overflow-hidden">
-                                                {/* Check icon (fake) */}
-                                                <div className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/50">
-                                                    <div className="w-1.5 h-2.5 border-r-2 border-b-2 border-emerald-400 rotate-45 -mt-0.5" />
+                                    {selectedSlice.assets && selectedSlice.assets
+                                        .filter(asset => {
+                                            if (selectedTrend === "ALL") return true;
+                                            const variation = asset.last_trend_variation || 0;
+                                            if (selectedTrend === "POSITIVE") return variation >= threshold;
+                                            if (selectedTrend === "NEGATIVE") return variation <= -threshold;
+                                            if (selectedTrend === "NEUTRAL") return Math.abs(variation) < threshold;
+                                            return true;
+                                        })
+                                        .map((asset) => (
+                                            <div key={asset.isin} className="flex items-center justify-between p-3 border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
+                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                    {/* Check icon (fake) */}
+                                                    <div className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/50">
+                                                        <div className="w-1.5 h-2.5 border-r-2 border-b-2 border-emerald-400 rotate-45 -mt-0.5" />
+                                                    </div>
+                                                    {(() => {
+                                                        const variation = asset.last_trend_variation || 0;
+                                                        const isSignificant = Math.abs(variation) >= threshold;
+                                                        const colorClass = isSignificant
+                                                            ? (variation > 0 ? "text-green-500" : "text-red-500")
+                                                            : "text-slate-200";
+
+                                                        const formatPct = (val: number) => {
+                                                            const sign = val >= 0 ? '+' : '';
+                                                            return `${sign}${val.toFixed(2)}%`;
+                                                        };
+                                                        const tooltipTitle = `${asset.name}\nDelta: ${formatPct(variation)}`;
+
+                                                        return (
+                                                            <span className={`text-sm truncate ${colorClass}`} title={tooltipTitle}>
+                                                                <span className="font-medium">{asset.name}</span>
+                                                                <span className="ml-1 text-slate-400 font-normal">({asset.isin})</span>
+                                                            </span>
+                                                        );
+                                                    })()}
                                                 </div>
-                                                {(() => {
-                                                    const variation = asset.last_trend_variation || 0;
-                                                    const isSignificant = Math.abs(variation) >= threshold;
-                                                    const colorClass = isSignificant
-                                                        ? (variation > 0 ? "text-green-500" : "text-red-500")
-                                                        : "text-slate-200";
-
-                                                    const formatPct = (val: number) => {
-                                                        const sign = val >= 0 ? '+' : '';
-                                                        return `${sign}${val.toFixed(2)}%`;
-                                                    };
-                                                    const tooltipTitle = `${asset.name}\nDelta: ${formatPct(variation)}`;
-
-                                                    return (
-                                                        <span className={`text-sm truncate ${colorClass}`} title={tooltipTitle}>
-                                                            <span className="font-medium">{asset.name}</span>
-                                                            <span className="ml-1 text-slate-400 font-normal">({asset.isin})</span>
-                                                        </span>
-                                                    );
-                                                })()}
+                                                <div className="text-right flex-shrink-0 text-xs text-muted-foreground">
+                                                    <span className="font-mono text-white mr-1">
+                                                        €{formatSwissMoney(asset.value)}
+                                                    </span>
+                                                    <span>({asset.percent_of_component}%)</span>
+                                                </div>
                                             </div>
-                                            <div className="text-right flex-shrink-0 text-xs text-muted-foreground">
-                                                <span className="font-mono text-white mr-1">
-                                                    €{formatSwissMoney(asset.value)}
-                                                </span>
-                                                <span>({asset.percent_of_component}%)</span>
-                                            </div>
-                                        </div>
-                                    ))}
+                                        ))}
                                     {(!selectedSlice.assets || selectedSlice.assets.length === 0) && (
                                         <div className="p-4 text-center text-sm text-muted-foreground">
                                             Nessun dettaglio asset disponibile.

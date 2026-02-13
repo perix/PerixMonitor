@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dialog"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { usePortfolio } from '@/context/PortfolioContext';
 import {
     Table,
     TableBody,
@@ -54,11 +55,212 @@ interface User {
     last_sign_in_at: string;
 }
 
+// Restore Component
+function RestoreBackupArea({ userId }: { userId: string | null }) {
+    const [file, setFile] = useState<File | null>(null);
+    const [analyzing, setAnalyzing] = useState(false);
+    const [analysisResult, setAnalysisResult] = useState<any>(null);
+    const [restoreModalOpen, setRestoreModalOpen] = useState(false);
+    const [restoring, setRestoring] = useState(false);
+    const [newName, setNewName] = useState("");
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            const selectedFile = e.target.files[0];
+            setFile(selectedFile);
+            handleAnalyze(selectedFile);
+        }
+    };
+
+    const handleAnalyze = async (fileToAnalyze: File) => {
+        setAnalyzing(true);
+        const formData = new FormData();
+        formData.append('file', fileToAnalyze);
+
+        try {
+            const res = await axios.post('/api/backup/analyze', formData);
+            setAnalysisResult(res.data);
+            setNewName(res.data.proposed_name);
+            setRestoreModalOpen(true);
+        } catch (error: any) {
+            console.error("Analysis failed", error);
+            alert("Errore analisi file: " + (error.response?.data?.error || error.message));
+            setFile(null);
+        } finally {
+            setAnalyzing(false);
+        }
+    };
+
+    const handleRestore = async () => {
+        if (!analysisResult || !newName) return;
+
+        setRestoring(true);
+        try {
+            // We need to send the JSON content directly or upload file again?
+            // Sending JSON content is easier if we have it from analysis preview, 
+            // BUT for large files verify if analysis returns data. 
+            // In backup_service.py we returned `data_preview`.
+
+            await axios.post('/api/backup/restore', {
+                backup_content: analysisResult.data_preview,
+                new_name: newName,
+                user_id: userId
+            });
+
+            alert("Ripristino completato con successo!");
+            setRestoreModalOpen(false);
+            setFile(null);
+            setAnalysisResult(null);
+            window.location.reload(); // Refresh to see new portfolio? Or dispatch event
+        } catch (error: any) {
+            console.error("Restore failed", error);
+            alert("Errore ripristino: " + (error.response?.data?.error || error.message));
+        } finally {
+            setRestoring(false);
+        }
+    };
+
+    return (
+        <div>
+            <div className="flex items-center gap-4">
+                <div className="grid w-full max-w-sm items-center gap-1.5">
+                    <Label htmlFor="backup-file" className="cursor-pointer">
+                        <div className="flex items-center justify-center w-full h-32 px-4 transition bg-slate-900 border-2 border-slate-700 border-dashed rounded-md appearance-none cursor-pointer hover:border-slate-500 focus:outline-none">
+                            <span className="flex items-center space-x-2">
+                                {analyzing ? (
+                                    <Loader2 className="w-6 h-6 text-slate-400 animate-spin" />
+                                ) : (
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                    </svg>
+                                )}
+                                <span className="font-medium text-slate-400">
+                                    {analyzing ? "Analisi in corso..." : "Clicca per caricare il backup"}
+                                </span>
+                            </span>
+                            <input id="backup-file" type="file" accept=".json" className="hidden" onChange={handleFileChange} disabled={analyzing} />
+                        </div>
+                    </Label>
+                </div>
+            </div>
+
+            <Dialog open={restoreModalOpen} onOpenChange={setRestoreModalOpen}>
+                <DialogContent className="bg-slate-900 border-white/10 text-white max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Anteprima Ripristino</DialogTitle>
+                        <DialogDescription className="text-slate-400">
+                            Verifica i dettagli del backup prima di procedere.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {analysisResult && (
+                        <div className="space-y-6 py-4">
+                            {/* Summary Metadata */}
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div className="p-3 bg-slate-800 rounded-lg">
+                                    <p className="text-slate-500">Nome Originale</p>
+                                    <p className="font-medium text-white">{analysisResult.original_name}</p>
+                                </div>
+                                <div className="p-3 bg-slate-800 rounded-lg">
+                                    <p className="text-slate-500">Data Backup</p>
+                                    <p className="font-medium text-white">
+                                        {new Date(analysisResult.backup_date).toLocaleString()}
+                                    </p>
+                                </div>
+                                <div className="p-3 bg-slate-800 rounded-lg">
+                                    <p className="text-slate-500">Valore Iniziale</p>
+                                    <p className="font-medium text-white">
+                                        € {Number(analysisResult.report.initial_value).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                                    </p>
+                                </div>
+                                <div className="p-3 bg-slate-800 rounded-lg">
+                                    <p className="text-slate-500">Valore Finale</p>
+                                    <p className="font-medium text-white">
+                                        € {Number(analysisResult.report.final_value).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                                    </p>
+                                </div>
+                                <div className="p-3 bg-slate-800 rounded-lg border border-indigo-500/30">
+                                    <p className="text-indigo-400 font-semibold">MWR Periodo</p>
+                                    <p className="font-bold text-white text-lg">
+                                        {Number(analysisResult.report.overall_mwr).toLocaleString('it-IT', { minimumFractionDigits: 2 })}%
+                                    </p>
+                                </div>
+                                <div className="p-3 bg-slate-800 rounded-lg">
+                                    <p className="text-slate-500">Periodo Attività</p>
+                                    <p className="font-medium text-white text-xs">
+                                        {analysisResult.report.first_activity ? new Date(analysisResult.report.first_activity).toLocaleDateString() : '-'}
+                                        {' -> '}
+                                        {analysisResult.report.last_activity ? new Date(analysisResult.report.last_activity).toLocaleDateString() : '-'}
+                                    </p>
+                                </div>
+                                <div className="p-3 bg-slate-800 rounded-lg">
+                                    <p className="text-slate-500">Asset Inclusi</p>
+                                    <p className="font-medium text-white">{analysisResult.report.asset_count}</p>
+                                </div>
+                                <div className="p-3 bg-slate-800 rounded-lg">
+                                    <p className="text-slate-500">Dati Storici</p>
+                                    <p className="font-medium text-white text-[11px]">
+                                        {analysisResult.report.total_transactions} Transazioni, {analysisResult.report.total_dividends} Dividendi
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Assets List Preview */}
+                            <div>
+                                <p className="text-sm font-medium mb-2 text-slate-400">Asset Inclusi ({analysisResult.report.asset_count})</p>
+                                <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 h-32 overflow-y-auto text-xs text-slate-300 font-mono">
+                                    <ul className="space-y-1">
+                                        {analysisResult.report.assets_list.map((a: string, i: number) => (
+                                            <li key={i}>• {a}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* Name Input */}
+                            <div className="space-y-2 pt-4 border-t border-slate-800">
+                                <Label htmlFor="new-name" className="text-indigo-400">Nome Nuovo Portafoglio</Label>
+                                <input
+                                    id="new-name"
+                                    value={newName}
+                                    onChange={(e) => setNewName(e.target.value)}
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-md p-2 text-white focus:ring-1 focus:ring-indigo-500"
+                                />
+                                <p className="text-xs text-slate-500">
+                                    Verrà creato un nuovo portafoglio con questo nome.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    <DialogFooter>
+                        <Button variant="ghost" onClick={() => setRestoreModalOpen(false)}>Annulla</Button>
+                        <Button onClick={handleRestore} disabled={restoring} className="bg-indigo-600 hover:bg-indigo-700">
+                            {restoring && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                            Conferma Ripristino
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </div>
+    );
+}
+
 export default function SystemMaintenancePanel() {
     const supabase = createClient();
     const [resetLoading, setResetLoading] = useState<boolean>(false);
     const [users, setUsers] = useState<User[]>([]);
     const [loadingUsers, setLoadingUsers] = useState<boolean>(false);
+
+    // BACKUP STATE
+    const { selectedPortfolioId } = usePortfolio();
+    const [portfolios, setPortfolios] = useState<any[]>([]);
+
+    const [selectedPortfolioBackup, setSelectedPortfolioBackup] = useState<string>(selectedPortfolioId || "");
+    const [backupPreviewData, setBackupPreviewData] = useState<any>(null);
+    const [backupPreviewOpen, setBackupPreviewOpen] = useState(false);
+    const [preparingBackup, setPreparingBackup] = useState(false);
+    const [backupCustomFilename, setBackupCustomFilename] = useState("");
 
     // User Action States
     const [deletingUser, setDeletingUser] = useState<string | null>(null);
@@ -74,7 +276,15 @@ export default function SystemMaintenancePanel() {
     useEffect(() => {
         fetchCurrentUser();
         fetchUsers();
+        fetchPortfolios();
     }, []);
+
+    // Set default backup portfolio if not set
+    useEffect(() => {
+        if (selectedPortfolioId && !selectedPortfolioBackup) {
+            setSelectedPortfolioBackup(selectedPortfolioId);
+        }
+    }, [selectedPortfolioId]);
 
     useEffect(() => {
         if (currentUserId) {
@@ -87,6 +297,11 @@ export default function SystemMaintenancePanel() {
         if (user) {
             setCurrentUserId(user.id);
         }
+    };
+
+    const fetchPortfolios = async () => {
+        const { data } = await supabase.from('portfolios').select('id, name');
+        if (data) setPortfolios(data);
     };
 
     const fetchUsers = async () => {
@@ -129,6 +344,42 @@ export default function SystemMaintenancePanel() {
         } finally {
             setSavingLogConfig(false);
         }
+    };
+
+    const handlePrepareBackup = async () => {
+        if (!selectedPortfolioBackup) return;
+        setPreparingBackup(true);
+        try {
+            const res = await axios.get(`/api/backup/download?portfolio_id=${selectedPortfolioBackup}`);
+            setBackupPreviewData(res.data);
+
+            // Set default filename
+            const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            const pName = res.data.portfolio?.name || 'Portfolio';
+            setBackupCustomFilename(`${dateStr}-${pName.replace(/\s+/g, '_')}.json`);
+
+            setBackupPreviewOpen(true);
+        } catch (e: any) {
+            console.error("Backup fetch failed", e);
+            alert("Errore preparazione backup: " + e.message);
+        } finally {
+            setPreparingBackup(false);
+        }
+    };
+
+    const handleConfirmDownload = () => {
+        if (!backupPreviewData) return;
+        const jsonString = JSON.stringify(backupPreviewData, null, 2);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = backupCustomFilename || 'backup.json';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        setBackupPreviewOpen(false);
     };
 
     const handleResetDatabase = async () => {
@@ -205,7 +456,7 @@ export default function SystemMaintenancePanel() {
                 </div>
                 <div>
                     <h2 className="text-2xl font-bold tracking-tight text-white">Manutenzione Sistema</h2>
-                    <p className="text-slate-400 mt-1">Gestione utenti e reset del database</p>
+                    <p className="text-slate-400 mt-1">Gestione utenti, backup e reset del database</p>
                 </div>
             </div>
 
@@ -338,6 +589,75 @@ export default function SystemMaintenancePanel() {
                                 </Table>
                             </div>
                         )}
+                    </CardContent>
+                </Card>
+
+                {/* BACKUP & RESTORE */}
+                <Card className="bg-card/50 backdrop-blur-md border-white/40">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-foreground">
+                            <span className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500">
+                                <FileText className="w-4 h-4" />
+                            </span>
+                            Backup & Ripristino
+                        </CardTitle>
+                        <CardDescription>Esporta i tuoi dati in locale o ripristina un portafoglio da file</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+
+                        {/* BACKUP SECTION */}
+                        <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center p-4 rounded-lg border border-white/20 bg-white/5">
+                            <div className="space-y-1">
+                                <Label className="text-sm font-medium text-slate-200">Esegui Backup</Label>
+                                <p className="text-xs text-slate-400 max-w-sm">
+                                    Scarica un file JSON completo contenente tutti i dati del portafoglio selezionato.
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2 w-full md:w-auto">
+                                <select
+                                    className="h-9 w-full md:w-48 rounded-md border border-slate-700 bg-slate-900 px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500 text-slate-200"
+                                    onChange={(e) => setSelectedPortfolioBackup(e.target.value)}
+                                    value={selectedPortfolioBackup}
+                                >
+                                    <option value="" disabled>Seleziona Portafoglio</option>
+                                    {portfolios.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                </select>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 gap-2"
+                                    disabled={!selectedPortfolioBackup}
+                                    onClick={handlePrepareBackup}
+                                >
+                                    {preparingBackup ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                                    Genera Backup
+                                </Button>
+                            </div>
+                        </div>
+
+                        <div className="relative">
+                            <div className="absolute inset-0 flex items-center">
+                                <span className="w-full border-t border-slate-700" />
+                            </div>
+                            <div className="relative flex justify-center text-xs uppercase">
+                                <span className="bg-slate-900 px-2 text-slate-500">Oppure</span>
+                            </div>
+                        </div>
+
+                        {/* RESTORE SECTION */}
+                        <div className="space-y-4">
+                            <div className="space-y-1">
+                                <Label className="text-sm font-medium text-slate-200">Ripristina da File</Label>
+                                <p className="text-xs text-slate-400">
+                                    Carica un file di backup (.json) per creare un nuovo portafoglio con i dati importati.
+                                </p>
+                            </div>
+
+                            <RestoreBackupArea userId={currentUserId} />
+                        </div>
+
                     </CardContent>
                 </Card>
 
@@ -477,6 +797,105 @@ export default function SystemMaintenancePanel() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* PREVIEW BACKUP DIALOG */}
+            <Dialog open={backupPreviewOpen} onOpenChange={setBackupPreviewOpen}>
+                <DialogContent className="bg-slate-900 border-white/10 text-white max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Anteprima Backup</DialogTitle>
+                        <DialogDescription className="text-slate-400">
+                            Ecco i dati che verranno salvati nel file di backup.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {backupPreviewData && backupPreviewData.report && (
+                        <div className="space-y-6 py-4">
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div className="p-3 bg-slate-800 rounded-lg">
+                                    <p className="text-slate-500">Portafoglio</p>
+                                    <p className="font-medium text-white">{backupPreviewData.portfolio.name}</p>
+                                </div>
+                                <div className="p-3 bg-slate-800 rounded-lg">
+                                    <p className="text-slate-500">Data Creazione</p>
+                                    <p className="font-medium text-white">
+                                        {new Date(backupPreviewData.metadata.created_at).toLocaleString()}
+                                    </p>
+                                </div>
+                                <div className="p-3 bg-slate-800 rounded-lg">
+                                    <p className="text-slate-500">Valore Iniziale</p>
+                                    <p className="font-medium text-white">
+                                        € {Number(backupPreviewData.report.initial_value).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                                    </p>
+                                </div>
+                                <div className="p-3 bg-slate-800 rounded-lg">
+                                    <p className="text-slate-500">Valore Finale</p>
+                                    <p className="font-medium text-white">
+                                        € {Number(backupPreviewData.report.final_value).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                                    </p>
+                                </div>
+                                <div className="p-3 bg-slate-800 rounded-lg border border-indigo-500/30">
+                                    <p className="text-indigo-400 font-semibold">MWR Periodo</p>
+                                    <p className="font-bold text-white text-lg">
+                                        {Number(backupPreviewData.report.overall_mwr).toLocaleString('it-IT', { minimumFractionDigits: 2 })}%
+                                    </p>
+                                </div>
+                                <div className="p-3 bg-slate-800 rounded-lg">
+                                    <p className="text-slate-500">Periodo Attività</p>
+                                    <p className="font-medium text-white text-xs">
+                                        {backupPreviewData.report.first_activity ? new Date(backupPreviewData.report.first_activity).toLocaleDateString() : '-'}
+                                        {' -> '}
+                                        {backupPreviewData.report.last_activity ? new Date(backupPreviewData.report.last_activity).toLocaleDateString() : '-'}
+                                    </p>
+                                </div>
+                                <div className="p-3 bg-slate-800 rounded-lg">
+                                    <p className="text-slate-500">Asset Inclusi</p>
+                                    <p className="font-medium text-white">{backupPreviewData.report.asset_count}</p>
+                                </div>
+                                <div className="p-3 bg-slate-800 rounded-lg">
+                                    <p className="text-slate-500">Dati Storici</p>
+                                    <p className="font-medium text-white text-[11px]">
+                                        {backupPreviewData.report.total_transactions} Transazioni, {backupPreviewData.report.total_dividends} Dividendi
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div>
+                                <p className="text-sm font-medium mb-2 text-slate-400">Elenco Asset</p>
+                                <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 h-32 overflow-y-auto text-xs text-slate-300 font-mono">
+                                    <ul className="space-y-1">
+                                        {backupPreviewData.report.assets_list.map((a: string, i: number) => (
+                                            <li key={i}>• {a}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2 pt-4 border-t border-slate-800">
+                                <Label htmlFor="backup-filename" className="text-indigo-400">Nome File di Backup</Label>
+                                <div className="flex gap-2">
+                                    <input
+                                        id="backup-filename"
+                                        value={backupCustomFilename}
+                                        onChange={(e) => setBackupCustomFilename(e.target.value)}
+                                        className="flex-1 bg-slate-950 border border-slate-700 rounded-md p-2 text-white text-sm focus:ring-1 focus:ring-indigo-500 outline-none"
+                                    />
+                                </div>
+                                <p className="text-[10px] text-slate-500">
+                                    Puoi cambiare il nome del file prima del download. Estensione .json consigliata.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    <DialogFooter>
+                        <Button variant="ghost" onClick={() => setBackupPreviewOpen(false)}>Annulla</Button>
+                        <Button onClick={handleConfirmDownload} className="bg-emerald-600 hover:bg-emerald-700">
+                            <FileText className="w-4 h-4 mr-2" />
+                            Scarica File JSON
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

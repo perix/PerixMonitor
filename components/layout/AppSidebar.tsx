@@ -18,7 +18,8 @@ import {
     BarChart3,
     Upload,
     LogOut,
-    LayoutDashboard
+    LayoutDashboard,
+    Loader2
 } from "lucide-react"
 
 import {
@@ -39,6 +40,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { createClient } from "@/utils/supabase/client";
 import { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
+import { usePortfolio } from "@/context/PortfolioContext";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
+import { Briefcase } from "lucide-react"
 
 interface NavItem {
     title: string;
@@ -91,7 +101,7 @@ const data = {
             title: "Settings",
             items: [
                 {
-                    title: "Configurazione",
+                    title: "Configurazioni",
                     url: "/settings",
                     icon: Settings,
                 },
@@ -104,13 +114,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     const pathname = usePathname();
     const router = useRouter();
     const supabase = createClient();
-    const [user, setUser] = React.useState<{ name?: string, email?: string } | null>(null);
+    const [user, setUser] = React.useState<{ id?: string, name?: string, email?: string } | null>(null);
+    const { selectedPortfolioId, setSelectedPortfolioId } = usePortfolio();
+    const [portfolios, setPortfolios] = React.useState<any[]>([]);
+    const [loadingPortfolios, setLoadingPortfolios] = React.useState(false);
 
     React.useEffect(() => {
         const getUser = async () => {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
                 setUser({
+                    id: user.id,
                     name: user.user_metadata?.full_name || user.email?.split('@')[0],
                     email: user.email,
                 });
@@ -121,6 +135,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
             if (session?.user) {
                 setUser({
+                    id: session.user.id,
                     name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0],
                     email: session.user.email,
                 });
@@ -131,6 +146,36 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
         return () => subscription.unsubscribe();
     }, []);
+
+    // Fetch portfolios when user changes
+    React.useEffect(() => {
+        if (user?.id) {
+            fetchPortfolios();
+        }
+    }, [user?.id]);
+
+    const fetchPortfolios = async () => {
+        setLoadingPortfolios(true);
+        try {
+            const { data, error } = await supabase
+                .from('portfolios')
+                .select('id, name')
+                .order('name');
+
+            if (error) throw error;
+            if (data) {
+                setPortfolios(data);
+                // If only one portfolio and none selected, select it
+                if (data.length > 0 && !selectedPortfolioId) {
+                    setSelectedPortfolioId(data[0].id);
+                }
+            }
+        } catch (e) {
+            console.error("Error fetching portfolios for sidebar:", e);
+        } finally {
+            setLoadingPortfolios(false);
+        }
+    };
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
@@ -151,11 +196,39 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                                 </div>
                                 <div className="grid flex-1 text-left text-sm leading-tight">
                                     <span className="truncate font-semibold">Portfolio Monitor</span>
-                                    <span className="truncate text-xs">20260205_DebugGrafici_e_Soglie</span>
+                                    <span className="truncate text-xs">Il tuo portfolio monitor personale</span>
                                 </div>
                             </Link>
                         </SidebarMenuButton>
                     </SidebarMenuItem>
+
+                    {/* PORTFOLIO SELECTOR */}
+                    <div className="px-2 pb-2 group-data-[collapsible=icon]:hidden">
+                        <Select
+                            value={selectedPortfolioId || ""}
+                            onValueChange={setSelectedPortfolioId}
+                        >
+                            <SelectTrigger className="w-full bg-white/5 border-white/40 hover:bg-white/10 text-slate-200 h-9 transition-all backdrop-blur-sm">
+                                <Briefcase className="w-4 h-4 mr-2 text-indigo-400" />
+                                <SelectValue placeholder="Seleziona Portafoglio" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-slate-900 border-white/10 text-slate-200">
+                                {portfolios.map((p) => (
+                                    <SelectItem key={p.id} value={p.id} className="focus:bg-indigo-500/20 focus:text-indigo-300">
+                                        {p.name}
+                                    </SelectItem>
+                                ))}
+                                {portfolios.length === 0 && !loadingPortfolios && (
+                                    <div className="p-2 text-xs text-slate-500">Nessun portafoglio trovato</div>
+                                )}
+                                {loadingPortfolios && (
+                                    <div className="p-2 text-xs text-slate-500 flex items-center gap-2">
+                                        <Loader2 className="w-3 h-3 animate-spin" /> Caricamento...
+                                    </div>
+                                )}
+                            </SelectContent>
+                        </Select>
+                    </div>
                 </SidebarMenu>
             </SidebarHeader>
             <SidebarContent>

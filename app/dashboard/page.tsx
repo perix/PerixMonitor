@@ -5,11 +5,11 @@ import { PanelHeader } from "@/components/layout/PanelHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { ArrowUpRight, Euro, Wallet, Activity, Loader2 } from "lucide-react";
-import { formatSwissMoney } from "@/lib/utils";
+import { formatSwissMoney, getAccessibleColor } from "@/lib/utils";
 import { useEffect, useState, useMemo } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useDashboardSummary, useDashboardHistory, usePortfolioSettings, useUpdatePortfolioSettings } from "@/hooks/useDashboard";
+import { useDashboardSummary, useDashboardHistory, usePortfolioSettings, useUpdatePortfolioSettings, usePortfolioDetails } from "@/hooks/useDashboard";
 import { useQueryClient } from "@tanstack/react-query";
 
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#a855f7', '#ec4899', '#6366f1', '#14b8a6'];
@@ -17,6 +17,9 @@ const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#a855f7', '#ec4899'
 export default function DashboardPage() {
     const { selectedPortfolioId } = usePortfolio();
     const queryClient = useQueryClient();
+
+    // Portfolio Details (Name)
+    const { data: portfolioDetails } = usePortfolioDetails(selectedPortfolioId);
 
     // --- State ---
     const [mwrT1, setMwrT1] = useState(30);
@@ -36,13 +39,6 @@ export default function DashboardPage() {
     const { data: settings, isLoading: isLoadingSettings } = usePortfolioSettings(selectedPortfolioId);
 
     // 2. Data (Main)
-    // We pass selectedAssets ONLY if we want server-side filtering. 
-    // BUT the original code did client-side filtering logic mixed with server side for "subset".
-    // Let's stick to valid server-side filtering for simplicity and correctness if we have hooks.
-    // However, the original code had a "filteredSummary" separate from "summary".
-    // "Summary" is ALWAYS the full portfolio. "Filtered" is the subset.
-    // So we need TWO queries if we want to show both (Total vs Selection).
-
     const { data: summary, isLoading: isLoadingSummary } = useDashboardSummary(selectedPortfolioId, mwrT1, mwrT2, undefined, xirrMode);
     const { data: history, isLoading: isLoadingHistory } = useDashboardHistory(selectedPortfolioId, mwrT1, mwrT2, undefined, xirrMode);
 
@@ -88,6 +84,10 @@ export default function DashboardPage() {
             // Restore selection
             if (settings.dashboardSelection && Array.isArray(settings.dashboardSelection)) {
                 setSelectedAssets(new Set(settings.dashboardSelection));
+            }
+
+            if (settings.xirrMode) {
+                setXirrMode(settings.xirrMode);
             }
         }
     }, [settings]);
@@ -179,20 +179,9 @@ export default function DashboardPage() {
         }
     };
 
-    // We can get portfolio name from context or settings or summary?
-    // Summary doesn't have name usually.
-    // Context has it.
-    // Let's use the one from `usePortfolio` context or just empty if not there.
-    // `usePortfolio` doesn't expose name directly on the context interface I saw earlier, 
-    // only `portfolioCache` had it.
-    // We can fetch it or just ignore it for now. 
-    // The previous code tried to get it from `portfolioCache` or `api/portfolio/id`.
-    // Let's assume we can get it from settings query if we update the API to return it, 
-    // or just leave it generic for now.
-
     return (
         <div className="flex flex-1 flex-col h-full bg-background/50 p-6 overflow-hidden">
-            <PanelHeader title={`Dashboard`}>
+            <PanelHeader title={`Dashboard${portfolioDetails?.name ? ` - ${portfolioDetails.name}` : ''}`}>
                 <div className="flex items-center gap-2 text-xs">
                     <div className="flex items-center gap-1 bg-background/50 border border-white/10 rounded px-2 py-1">
                         <span className="text-muted-foreground whitespace-nowrap">T1 (Simple)</span>
@@ -393,39 +382,44 @@ export default function DashboardPage() {
                                             const activeAssets = allSeries.filter((s: any) => activeIsins.has(s.isin));
                                             const historicalAssets = allSeries.filter((s: any) => !activeIsins.has(s.isin));
 
-                                            const renderAssetRow = (s: any, idx: number) => (
-                                                <div key={s.isin} className="flex items-center space-x-2 py-0.5">
-                                                    <Checkbox
-                                                        id={`filter-${s.isin}`}
-                                                        checked={selectedAssets.has(s.isin)}
-                                                        onCheckedChange={(checked) => {
-                                                            const next = new Set(selectedAssets);
-                                                            if (checked) {
-                                                                next.add(s.isin);
-                                                            } else {
-                                                                next.delete(s.isin);
-                                                            }
-                                                            setSelectedAssets(next);
-                                                        }}
-                                                        className="border-2 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground h-4 w-4"
-                                                        style={{
-                                                            borderColor: s.color || COLORS[idx % COLORS.length],
-                                                            backgroundColor: selectedAssets.has(s.isin) ? (s.color || COLORS[idx % COLORS.length]) : 'transparent'
-                                                        }}
-                                                    />
-                                                    <label
-                                                        htmlFor={`filter-${s.isin}`}
-                                                        className={`text-xs font-medium leading-none cursor-pointer w-full text-left ${activeIsins.has(s.isin) ? '' : 'text-muted-foreground italic'}`}
-                                                        title={`${s.name} (${s.isin}) ${!activeIsins.has(s.isin) ? '- Sold' : ''}`}
-                                                        style={{ color: activeIsins.has(s.isin) ? (s.color || COLORS[idx % COLORS.length]) : undefined }}
-                                                    >
-                                                        <div className="truncate w-full flex justify-between">
-                                                            <span>{s.name}</span>
-                                                            {!activeIsins.has(s.isin) && <span className="text-[9px] opacity-70 ml-1 px-1 bg-white/10 rounded">STORICO</span>}
-                                                        </div>
-                                                    </label>
-                                                </div>
-                                            );
+                                            const renderAssetRow = (s: any, idx: number) => {
+                                                const rawColor = s.color || COLORS[idx % COLORS.length];
+                                                const accessibleColor = getAccessibleColor(rawColor, 60);
+
+                                                return (
+                                                    <div key={s.isin} className="flex items-center space-x-2 py-0.5">
+                                                        <Checkbox
+                                                            id={`filter-${s.isin}`}
+                                                            checked={selectedAssets.has(s.isin)}
+                                                            onCheckedChange={(checked) => {
+                                                                const next = new Set(selectedAssets);
+                                                                if (checked) {
+                                                                    next.add(s.isin);
+                                                                } else {
+                                                                    next.delete(s.isin);
+                                                                }
+                                                                setSelectedAssets(next);
+                                                            }}
+                                                            className="border-2 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground h-4 w-4"
+                                                            style={{
+                                                                borderColor: accessibleColor,
+                                                                backgroundColor: selectedAssets.has(s.isin) ? accessibleColor : 'transparent'
+                                                            }}
+                                                        />
+                                                        <label
+                                                            htmlFor={`filter-${s.isin}`}
+                                                            className={`text-xs font-medium leading-none cursor-pointer w-full text-left ${activeIsins.has(s.isin) ? '' : 'text-muted-foreground italic'}`}
+                                                            title={`${s.name} (${s.isin}) ${!activeIsins.has(s.isin) ? '- Sold' : ''}`}
+                                                            style={{ color: activeIsins.has(s.isin) ? accessibleColor : undefined }}
+                                                        >
+                                                            <div className="truncate w-full flex justify-between">
+                                                                <span>{s.name}</span>
+                                                                {!activeIsins.has(s.isin) && <span className="text-[9px] opacity-70 ml-1 px-1 bg-white/10 rounded">STORICO</span>}
+                                                            </div>
+                                                        </label>
+                                                    </div>
+                                                );
+                                            };
 
                                             return (
                                                 <>
@@ -467,7 +461,15 @@ export default function DashboardPage() {
                             className="h-full"
                             mwrMode={displayHistory?.mwr_mode}
                             xirrMode={xirrMode}
-                            onXirrModeChange={setXirrMode}
+                            onXirrModeChange={(mode) => {
+                                setXirrMode(mode);
+                                if (selectedPortfolioId) {
+                                    updateSettingsMutation.mutate({
+                                        portfolioId: selectedPortfolioId,
+                                        settings: { xirrMode: mode }
+                                    });
+                                }
+                            }}
                         />
                     </div>
                 </div>

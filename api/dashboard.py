@@ -9,6 +9,193 @@ from price_manager import get_price_history, get_interpolated_price_history, get
 from logger import logger
 import traceback
 
+def calculate_portfolio_summary(portfolio_id, assets_filter=None, mwr_t1=30, mwr_t2=365, xirr_mode='standard'):
+    """
+    Core logic to calculate portfolio summary metrics.
+    Extracted for reuse in other modules (e.g. backup_service).
+    """
+    try:
+        # 1. Recupera Transazioni
+        res_trans = execute_request('transactions', 'GET', params={
+            'select': '*,assets(id,isin,name,asset_class,last_trend_variation)',
+            'portfolio_id': f'eq.{portfolio_id}'
+        })
+        transactions = res_trans.json() if (res_trans and res_trans.status_code == 200) else []
+        
+        # Filtra per asset specifici se richiesto
+        if assets_filter is not None:
+            if assets_filter == "":
+                 selected_isins = set()
+            elif isinstance(assets_filter, str):
+                 selected_isins = set(assets_filter.split(','))
+            else: # Assume set or list
+                 selected_isins = set(assets_filter)
+            transactions = [t for t in transactions if t['assets']['isin'] in selected_isins]
+        
+        if not transactions:
+            return {
+                "total_value": 0,
+                "total_invested": 0,
+                "pl_value": 0,
+                "pl_percent": 0,
+                "xirr": 0,
+                "allocation": []
+            }
+
+        # 2. Calcola Posizioni (Holdings) Correnti
+        holdings = {} # isin -> {qty, cost, asset_name}
+        cash_flows = [] # Per XIRR: [(date, amount)]
+        
+        total_invested = 0
+        
+        for t in transactions:
+            isin = t['assets']['isin']
+            name = t['assets']['name']
+            qty = t['quantity']
+            price = t['price_eur']
+            date_str = t['date']
+            is_buy = t['type'] == 'BUY'
+            
+            # Aggiorna Holdings
+            if isin not in holdings:
+                holdings[isin] = {
+                    "qty": 0, 
+                    "cost": 0, 
+                    "name": name, 
+                    "asset_class": t['assets'].get('asset_class'),
+                    "last_trend_variation": t['assets'].get('last_trend_variation'),
+                    "isin": isin,
+                    "id": t['assets']['id'] 
+                }
+            
+            if is_buy:
+                holdings[isin]["qty"] += qty
+                holdings[isin]["cost"] += (qty * price)
+                
+                try:
+                    clean_date = date_str.replace('Z', '+00:00')
+                    cf_date = datetime.fromisoformat(clean_date).replace(tzinfo=None)
+                except:
+                    cf_date = datetime.now()
+
+                cash_flows.append({"date": cf_date, "amount": -(qty * price)})
+                total_invested += (qty * price)
+            else:
+                holdings[isin]["qty"] -= qty
+                try:
+                    clean_date = date_str.replace('Z', '+00:00')
+                    cf_date = datetime.fromisoformat(clean_date).replace(tzinfo=None)
+                except:
+                    cf_date = datetime.now()
+
+                cash_flows.append({"date": cf_date, "amount": (qty * price)})
+                total_invested -= (qty * price)
+
+        # --- 2b. Recupera Dividendi ---
+        res_div = execute_request('dividends', 'GET', params={
+            'portfolio_id': f'eq.{portfolio_id}'
+        })
+        dividends = res_div.json() if (res_div and res_div.status_code == 200) else []
+        
+        total_dividends = 0
+        for d in dividends:
+            amount = float(d['amount_eur'])
+            date_str = d['date']
+            total_dividends += amount
+            
+            try:
+                clean_div_date = date_str.replace('Z', '+00:00')
+                div_date = datetime.fromisoformat(clean_div_date).replace(tzinfo=None)
+            except:
+                div_date = datetime.now()
+
+            cash_flows.append({"date": div_date, "amount": amount})
+
+        # 3. Recupera Prezzi Correnti (OTTIMIZZATO: BATCH)
+        active_holdings = {k: v for k, v in holdings.items() if abs(v['qty']) > 0.0001}
+        active_isins = list(active_holdings.keys())
+        latest_prices_map = get_latest_prices_batch(active_isins)
+        
+        current_total_value = 0
+        allocation_data = []
+        
+        for isin, data in active_holdings.items():
+            current_price = 0
+            try:
+                price_data = latest_prices_map.get(isin)
+                if price_data:
+                    current_price = float(price_data['price'])
+                if current_price == 0:
+                    current_price = 0
+            except Exception as e:
+                logger.error(f"Errore prezzo per {isin}: {e}")
+                current_price = data['cost'] / data['qty'] if data['qty'] else 0
+            
+            market_val = data['qty'] * current_price
+            current_total_value += market_val
+            
+            allocation_data.append({
+                "name": data['name'],
+                "value": market_val,
+                "sector": data.get('asset_class') or "Other",
+                "type": data.get('asset_class') or "Other",
+                "isin": isin,
+                "quantity": data['qty'],
+                "price": current_price,
+                "last_trend_variation": data.get('last_trend_variation'),
+                "asset_id": data.get('id')
+            })
+
+        # 4. Calcolo XIRR (Tiered)
+        from finance import get_tiered_mwr
+        max_date = datetime.now()
+        mwr_dates = []
+        if cash_flows: mwr_dates.extend([f['date'] for f in cash_flows])
+        if latest_prices_map:
+            for p in latest_prices_map.values():
+                if p.get('date'): mwr_dates.append(datetime.strptime(p['date'], '%Y-%m-%d'))
+        
+        if mwr_dates:
+            max_date = max(mwr_dates)
+
+        mwr_value, mwr_type = get_tiered_mwr(cash_flows, current_total_value, t1=mwr_t1, t2=mwr_t2, end_date=max_date, xirr_mode=xirr_mode)
+
+        # 5. Recupera Colori (Batch)
+        asset_ids = [item['asset_id'] for item in allocation_data if item.get('asset_id')]
+        color_map = {}
+        if asset_ids:
+             in_filter = f"in.({','.join(asset_ids)})"
+             res_colors = execute_request('portfolio_asset_settings', 'GET', params={
+                 'select': 'asset_id,color',
+                 'portfolio_id': f'eq.{portfolio_id}',
+                 'asset_id': in_filter
+             })
+             rows = res_colors.json() if (res_colors and res_colors.status_code == 200) else []
+             color_map = {row['asset_id']: row['color'] for row in rows}
+
+        for item in allocation_data:
+            aid = item.get('asset_id')
+            item['color'] = color_map.get(aid, '#888888')
+            if 'asset_id' in item: del item['asset_id']
+
+        # 6. Metriche Sommario
+        pl_value = (current_total_value - total_invested) + total_dividends
+        pl_percent = (pl_value / total_invested * 100) if total_invested > 0 else 0
+
+        return {
+            "total_value": round(current_total_value, 2),
+            "total_invested": round(total_invested, 2),
+            "pl_value": round(pl_value, 2),
+            "pl_percent": round(pl_percent, 2),
+            "xirr": mwr_value,
+            "mwr_type": mwr_type, 
+            "allocation": sorted(allocation_data, key=lambda x: x['value'], reverse=True)
+        }
+    except Exception as e:
+        logger.error(f"calculate_portfolio_summary ERROR: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise e
+
 def register_dashboard_routes(app):
     
     @app.route('/api/dashboard/summary', methods=['GET'])
@@ -20,242 +207,25 @@ def register_dashboard_routes(app):
             if not portfolio_id:
                 return jsonify(error="Missing portfolio_id"), 400
 
-            # supabase = get_supabase_client() -> Removed
-            
-            # 1. Recupera Transazioni
-            # res_trans = supabase.table('transactions').select("*, assets(id, isin, name, asset_class, last_trend_variation)").eq('portfolio_id', portfolio_id).execute()
-            res_trans = execute_request('transactions', 'GET', params={
-                'select': '*,assets(id,isin,name,asset_class,last_trend_variation)',
-                'portfolio_id': f'eq.{portfolio_id}'
-            })
-            transactions = res_trans.json() if (res_trans and res_trans.status_code == 200) else []
-            
-            # Filtra per asset specifici se richiesto
             assets_param = request.args.get('assets')
-            if assets_param is not None:
-                if assets_param == "":
-                     selected_isins = set()
-                else: 
-                     selected_isins = set(assets_param.split(','))
-                transactions = [t for t in transactions if t['assets']['isin'] in selected_isins]
-            
-            if not transactions:
-                return jsonify({
-                    "total_value": 0,
-                    "total_invested": 0,
-                    "pl_value": 0,
-                    "pl_percent": 0,
-                    "xirr": 0,
-                    "allocation": []
-                })
-
-            # 2. Calcola Posizioni (Holdings) Correnti
-            holdings = {} # isin -> {qty, cost, asset_name}
-            cash_flows = [] # Per XIRR: [(date, amount)]
-            
-            total_invested = 0
-            
-            for t in transactions:
-                isin = t['assets']['isin']
-                name = t['assets']['name']
-                qty = t['quantity']
-                price = t['price_eur']
-                date_str = t['date']
-                is_buy = t['type'] == 'BUY'
-                
-                # Aggiorna Holdings
-                if isin not in holdings:
-                    holdings[isin] = {
-                        "qty": 0, 
-                        "cost": 0, 
-                        "name": name, 
-                        "asset_class": t['assets'].get('asset_class'),
-                        "last_trend_variation": t['assets'].get('last_trend_variation'),
-                        "isin": isin,
-                        "id": t['assets']['id'] # ID asset per colori
-                    }
-                
-                if is_buy:
-                    holdings[isin]["qty"] += qty
-                    holdings[isin]["cost"] += (qty * price)
-                    
-                    # Cash Flow: Uscita (Negativo)
-                    try:
-                        clean_date = date_str.replace('Z', '+00:00')
-                        cf_date = datetime.fromisoformat(clean_date).replace(tzinfo=None)
-                    except:
-                        cf_date = datetime.now()
-
-                    cash_flows.append({
-                        "date": cf_date,
-                        "amount": -(qty * price)
-                    })
-                    total_invested += (qty * price)
-                else:
-                    holdings[isin]["qty"] -= qty
-                    # Il costo viene ridotto proporzionalmente o FIFO?
-                    # Semplificazione: Invested è net cash flow qui.
-                    
-                    # Cash Flow: Entrata (Positivo)
-                    try:
-                        clean_date = date_str.replace('Z', '+00:00')
-                        cf_date = datetime.fromisoformat(clean_date).replace(tzinfo=None)
-                    except:
-                        cf_date = datetime.now()
-
-                    cash_flows.append({
-                        "date": cf_date,
-                        "amount": (qty * price)
-                    })
-                    
-                    # Per total_invested (Capitale Netto Investito):
-                    total_invested -= (qty * price)
-
-            # --- 2b. Recupera Dividendi/Spese ---
-            res_div = execute_request('dividends', 'GET', params={
-                'portfolio_id': f'eq.{portfolio_id}'
-            })
-            dividends = res_div.json() if (res_div and res_div.status_code == 200) else []
-            
-            total_dividends = 0
-            for d in dividends:
-                amount = float(d['amount_eur'])
-                date_str = d['date']
-                total_dividends += amount
-                
-                # Includi nei flussi di cassa per XIRR
-                try:
-                    clean_div_date = date_str.replace('Z', '+00:00')
-                    div_date = datetime.fromisoformat(clean_div_date).replace(tzinfo=None)
-                except:
-                    div_date = datetime.now()
-
-                cash_flows.append({
-                    "date": div_date,
-                    "amount": amount
-                })
-
-            # 3. Recupera Prezzi Correnti (OTTIMIZZATO: BATCH)
-            # Filtra holdings con quantità > 0 (o negative se short)
-            active_holdings = {k: v for k, v in holdings.items() if abs(v['qty']) > 0.0001}
-            
-            active_isins = list(active_holdings.keys())
-            
-            # Batch Fetch
-            latest_prices_map = get_latest_prices_batch(active_isins)
-            
-            current_total_value = 0
-            allocation_data = []
-            
-            for isin, data in active_holdings.items():
-                current_price = 0
-                sector = "Other"
-                
-                try:
-                    price_data = latest_prices_map.get(isin)
-                    if price_data:
-                        current_price = float(price_data['price'])
-                    
-                    if current_price == 0:
-                        # Fallback su costo medio se prezzo zero
-                        # logger.warning(f"Prezzo 0 per {isin}, Valutato a 0 o costo")
-                        current_price = 0
-                    
-                except Exception as e:
-                    logger.error(f"Errore prezzo per {isin}: {e}")
-                    current_price = data['cost'] / data['qty'] if data['qty'] else 0
-                
-                market_val = data['qty'] * current_price
-                current_total_value += market_val
-                
-                allocation_data.append({
-                    "name": data['name'],
-                    "value": market_val,
-                    "sector": data.get('asset_class') or "Other",
-                    "type": data.get('asset_class') or "Other",
-                    "isin": isin,
-                    "quantity": data['qty'],
-                    "price": current_price,
-                    "last_trend_variation": data.get('last_trend_variation'),
-                    "asset_id": data.get('id')
-                })
-
-            # 4. Calcolo XIRR (Tiered)
             mwr_t1 = int(request.args.get('mwr_t1', 30))
             mwr_t2 = int(request.args.get('mwr_t2', 365))
-
-            from finance import get_tiered_mwr
-            
-            # Calculate max date from available data to avoid dilution
-            max_date = datetime.now()
-            mwr_dates = []
-            if cash_flows:
-                mwr_dates.extend([f['date'] for f in cash_flows])
-            if latest_prices_map:
-                for p in latest_prices_map.values():
-                    if p.get('date'):
-                        mwr_dates.append(datetime.strptime(p['date'], '%Y-%m-%d'))
-            
-            if mwr_dates:
-                max_date = max(mwr_dates)
-                logger.info(f"[DASHBOARD_SUMMARY] Using max_date={max_date.strftime('%Y-%m-%d')} for MWR calculation (dilution prevention)")
-
             xirr_mode = request.args.get('xirr_mode', 'standard')
-            mwr_value, mwr_type = get_tiered_mwr(cash_flows, current_total_value, t1=mwr_t1, t2=mwr_t2, end_date=max_date, xirr_mode=xirr_mode)
 
-            # 5. Recupera Colori (Batch)
-            # Recuperiamo settings colori per gli asset attivi
-            asset_ids = [item['asset_id'] for item in allocation_data if item.get('asset_id')]
-            
-            color_map = {}
-            if asset_ids:
-                 # res_colors = supabase.table('portfolio_asset_settings').select('asset_id, color').eq('portfolio_id', portfolio_id).in_('asset_id', asset_ids).execute()
-                 in_filter = f"in.({','.join(asset_ids)})"
-                 res_colors = execute_request('portfolio_asset_settings', 'GET', params={
-                     'select': 'asset_id,color',
-                     'portfolio_id': f'eq.{portfolio_id}',
-                     'asset_id': in_filter
-                 })
-                 
-                 rows = res_colors.json() if (res_colors and res_colors.status_code == 200) else []
-                 color_map = {row['asset_id']: row['color'] for row in rows}
-
-            # Assegna colori
-            for item in allocation_data:
-                aid = item.get('asset_id')
-                if aid and aid in color_map:
-                    item['color'] = color_map[aid]
-                else:
-                    item['color'] = '#888888' # Fallback
-
-                # Clean up interno
-                if 'asset_id' in item: del item['asset_id']
-
-            # 6. Metriche Sommario
-            # P&L Totale = (Valore Corrente - Netto Investito) + Totale Dividendi
-            pl_value = (current_total_value - total_invested) + total_dividends
-            pl_percent = (pl_value / total_invested * 100) if total_invested > 0 else 0
+            summary = calculate_portfolio_summary(
+                portfolio_id, 
+                assets_filter=assets_param,
+                mwr_t1=mwr_t1,
+                mwr_t2=mwr_t2,
+                xirr_mode=xirr_mode
+            )
 
             t_end = datetime.now()
             logger.info(f"[DASHBOARD_SUMMARY] Completato in {(t_end - t_start).total_seconds():.2f}s")
-            return jsonify({
-                "total_value": round(current_total_value, 2),
-                "total_invested": round(total_invested, 2),
-                "pl_value": round(pl_value, 2),
-                "pl_percent": round(pl_percent, 2),
-                "xirr": mwr_value,
-                "mwr_type": mwr_type, 
-                "allocation": sorted(allocation_data, key=lambda x: x['value'], reverse=True)
-            })
+            return jsonify(summary)
 
         except Exception as e:
-            logger.error(f"DASHBOARD ERROR: {str(e)}")
-            logger.error(traceback.format_exc())
-            # Log su file debug
-            with open("debug_error.log", "a") as f:
-                f.write(f"SUMMARY ERROR: {datetime.now()}\n")
-                f.write(traceback.format_exc())
-                f.write("\n")
+            logger.error(f"DASHBOARD ROUTE ERROR: {str(e)}")
             return jsonify(error=str(e)), 500
 
     @app.route('/api/dashboard/history', methods=['GET'])

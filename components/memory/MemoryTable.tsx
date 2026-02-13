@@ -40,6 +40,13 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ArrowUpDown } from "lucide-react";
 import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
     DropdownMenuContent,
@@ -76,6 +83,8 @@ export interface MemoryTableProps {
     columnSizing: Record<string, number>;
     onColumnSizingChange: (updaterOrValue: Record<string, number> | ((old: Record<string, number>) => Record<string, number>)) => void;
     portfolioId?: string;
+    selectedTrend: string;
+    onTrendChange: (trend: string) => void;
 }
 
 // Extract Cell Component to prevent focus loss - uses local state
@@ -158,7 +167,9 @@ export function MemoryTable({
     onColumnVisibilityChange,
     columnSizing,
     onColumnSizingChange,
-    portfolioId
+    portfolioId,
+    selectedTrend,
+    onTrendChange
 }: MemoryTableProps) {
 
 
@@ -182,6 +193,25 @@ export function MemoryTable({
             if (res.data?.priceVariationThreshold !== undefined) setThreshold(res.data.priceVariationThreshold);
         }).catch(err => console.error("Failed to load asset config", err));
     }, [portfolioId]);
+
+    // Filter Data by Trend
+    const filteredData = useMemo(() => {
+        let result = data;
+        if (selectedTrend !== "ALL") {
+            result = result.filter(asset => {
+                const variation = asset.last_trend_variation || 0;
+                if (selectedTrend === "POSITIVE") {
+                    return variation >= threshold;
+                } else if (selectedTrend === "NEGATIVE") {
+                    return variation <= -threshold;
+                } else if (selectedTrend === "NEUTRAL") {
+                    return Math.abs(variation) < threshold;
+                }
+                return true;
+            });
+        }
+        return result;
+    }, [data, selectedTrend, threshold]);
 
     const columns = useMemo<ColumnDef<MemoryData>[]>(() => [
         {
@@ -364,7 +394,7 @@ export function MemoryTable({
     ], [editedNotes, onNoteChange, threshold]); // Re-create columns only if handlers change? Actually NoteCell handles updates via props.
 
     const table = useReactTable({
-        data,
+        data: filteredData,
         columns,
         columnResizeMode: "onChange",
         getCoreRowModel: getCoreRowModel(),
@@ -409,6 +439,21 @@ export function MemoryTable({
                             <option key={t} value={t} className="text-black">{t}</option>
                         ))}
                     </select>
+                </div>
+
+                {/* Filter by Trend */}
+                <div className="w-[120px]">
+                    <Select value={selectedTrend} onValueChange={onTrendChange}>
+                        <SelectTrigger className="h-9 w-full border-slate-500 bg-transparent text-foreground">
+                            <SelectValue placeholder="Trend" />
+                        </SelectTrigger>
+                        <SelectContent align="end">
+                            <SelectItem value="ALL">-</SelectItem>
+                            <SelectItem value="POSITIVE">Positivo</SelectItem>
+                            <SelectItem value="NEGATIVE">Negativo</SelectItem>
+                            <SelectItem value="NEUTRAL">Neutro</SelectItem>
+                        </SelectContent>
+                    </Select>
                 </div>
 
                 <DropdownMenu>
@@ -493,7 +538,7 @@ export function MemoryTable({
                                 <TableRow
                                     key={row.id}
                                     data-state={row.getIsSelected() && "selected"}
-                                    className="border-b border-slate-700 text-slate-200 hover:bg-sky-200 hover:text-slate-900 group"
+                                    className={`border-b border-slate-700 text-slate-200 hover:bg-sky-200 hover:text-slate-900 group ${row.original.close_date ? "bg-slate-600/50" : ""} `}
                                 >
                                     {row.getVisibleCells().map((cell) => (
                                         <TableCell

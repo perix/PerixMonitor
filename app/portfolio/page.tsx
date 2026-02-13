@@ -47,6 +47,8 @@ export default function PortfolioPage() {
 
     // [PERSISTENCE STATE]
     const [layoutWidth, setLayoutWidth] = useState(30);
+    const [selectedType, setSelectedType] = useState<string>("ALL");
+    const [selectedTrend, setSelectedTrend] = useState<string>("ALL");
 
     useEffect(() => {
         async function fetchAssets() {
@@ -65,6 +67,8 @@ export default function PortfolioPage() {
                 if (cached.settings) {
                     setLiquidity(Number(cached.settings.liquidity) || 0);
                     if (cached.settings.layoutWidth) setLayoutWidth(cached.settings.layoutWidth);
+                    if (cached.settings.selectedType) setSelectedType(cached.settings.selectedType);
+                    if (cached.settings.selectedTrend) setSelectedTrend(cached.settings.selectedTrend);
 
                     // Saved ISIN from DB
                     if (cached.settings.selectedIsin && cached.assets.some(a => a.isin === cached.settings.selectedIsin)) {
@@ -79,6 +83,8 @@ export default function PortfolioPage() {
                         const settings = portfolioRes.data.settings || {};
                         setLiquidity(Number(settings.liquidity) || 0);
                         if (settings.layoutWidth) setLayoutWidth(settings.layoutWidth);
+                        if (settings.selectedType) setSelectedType(settings.selectedType || "ALL");
+                        if (settings.selectedTrend) setSelectedTrend(settings.selectedTrend || "ALL");
 
                         if (settings.selectedIsin && cached.assets.some(a => a.isin === settings.selectedIsin)) {
                             setSelectedIsin(settings.selectedIsin);
@@ -108,6 +114,8 @@ export default function PortfolioPage() {
                 setPortfolioName(fetchedName);
                 setLiquidity(Number(fetchedSettings.liquidity) || 0);
                 if (fetchedSettings.layoutWidth) setLayoutWidth(fetchedSettings.layoutWidth);
+                setSelectedType(fetchedSettings.selectedType || "ALL");
+                setSelectedTrend(fetchedSettings.selectedTrend || "ALL");
 
                 // Selection Logic (DB > First)
                 if (fetchedSettings.selectedIsin && fetchedAssets.some((a: any) => a.isin === fetchedSettings.selectedIsin)) {
@@ -170,6 +178,28 @@ export default function PortfolioPage() {
         }
     };
 
+    const handleTypeChange = (type: string) => {
+        setSelectedType(type);
+
+        if (selectedPortfolioId) {
+            // Update Cache
+            if (portfolioCache[selectedPortfolioId]) {
+                const currentCache = portfolioCache[selectedPortfolioId];
+                setPortfolioCache(selectedPortfolioId, {
+                    ...currentCache,
+                    settings: {
+                        ...currentCache.settings,
+                        selectedType: type
+                    }
+                });
+            }
+
+            axios.patch(`/api/portfolio/${selectedPortfolioId}/settings`, {
+                selectedType: type
+            }).catch(console.error);
+        }
+    };
+
     const handleLiquidityUpdate = async (newValue: string) => {
         if (!selectedPortfolioId) return;
         const val = parseFloat(newValue);
@@ -196,6 +226,28 @@ export default function PortfolioPage() {
         } catch (e) {
             console.error("Failed to update liquidity", e);
             // Optionally revert state on error (omitted for simplicity as it's a minor UX risk)
+        }
+    };
+
+    const handleTrendChange = (trend: string) => {
+        setSelectedTrend(trend);
+
+        if (selectedPortfolioId) {
+            // Update Cache
+            if (portfolioCache[selectedPortfolioId]) {
+                const currentCache = portfolioCache[selectedPortfolioId];
+                setPortfolioCache(selectedPortfolioId, {
+                    ...currentCache,
+                    settings: {
+                        ...currentCache.settings,
+                        selectedTrend: trend
+                    }
+                });
+            }
+
+            axios.patch(`/api/portfolio/${selectedPortfolioId}/settings`, {
+                selectedTrend: trend
+            }).catch(console.error);
         }
     };
 
@@ -245,9 +297,10 @@ export default function PortfolioPage() {
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <h1 className="text-2xl font-bold tracking-tight">
-                            {portfolioName ? `Portafoglio ${portfolioName}` : "Portafoglio"}
+                            {portfolioName ? `Portafoglio - ${portfolioName}` : "Portafoglio"}
                         </h1>
                         <div className="flex items-center gap-2 text-lg">
+                            <span className="font-medium text-muted-foreground">Liquidità:</span>
                             <input
                                 type="number"
                                 value={liquidity}
@@ -281,6 +334,10 @@ export default function PortfolioPage() {
                             assets={assets}
                             selectedIsin={selectedIsin}
                             onSelect={setSelectedIsin}
+                            selectedType={selectedType}
+                            onTypeChange={handleTypeChange}
+                            selectedTrend={selectedTrend}
+                            onTrendChange={handleTrendChange}
                         />
                     }
                     rightPanel={

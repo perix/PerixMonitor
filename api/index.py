@@ -626,6 +626,96 @@ def system_reset_route():
         logger.error(f"SYSTEM RESET FAIL: {e}")
         return jsonify(error=str(e)), 500
 
+# --- BACKUP ROUTES ---
+from backup_service import create_backup_payload, analyze_backup_file, restore_backup
+from flask import send_file
+import json
+import io
+
+@app.route('/api/backup/download', methods=['GET'])
+def download_backup():
+    """
+    Generates and downloads a JSON backup file for a portfolio.
+    """
+    try:
+        portfolio_id = request.args.get('portfolio_id')
+        if not portfolio_id:
+            return jsonify(error="Missing portfolio_id"), 400
+
+        payload = create_backup_payload(portfolio_id)
+        
+        # Create file in memory
+        mem = io.BytesIO()
+        mem.write(json.dumps(payload, indent=2, default=str).encode('utf-8'))
+        mem.seek(0)
+        
+        filename = f"backup_portfolio_{portfolio_id[:8]}_{datetime.now().strftime('%Y%m%d')}.json"
+        
+        return send_file(
+            mem,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/json'
+        )
+    except Exception as e:
+        logger.error(f"BACKUP DOWNLOAD ERROR: {e}")
+        return jsonify(error=str(e)), 500
+
+@app.route('/api/backup/analyze', methods=['POST'])
+def analyze_backup():
+    """
+    Analyzes an uploaded backup file and proposes a unique name.
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify(error="No file uploaded"), 400
+            
+        file = request.files['file']
+        content = file.read().decode('utf-8')
+        
+        result = analyze_backup_file(content)
+        
+        if not result.get('valid'):
+            return jsonify(error=result.get('error', 'Invalid file')), 400
+            
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"BACKUP ANALYZE ERROR: {e}")
+        return jsonify(error=str(e)), 500
+
+@app.route('/api/backup/restore', methods=['POST'])
+def execute_restore():
+    """
+    Restores the backup to a new portfolio.
+    """
+    try:
+        data = request.json
+        backup_content = data.get('backup_content')
+        new_name = data.get('new_name')
+        
+        if not backup_content or not new_name:
+            return jsonify(error="Missing content or name"), 400
+            
+        # Ensure name doesn't exist (double check)
+        from db_helper import execute_request
+        res = execute_request('portfolios', 'GET', params={'select': 'id', 'name': f'eq.{new_name}'})
+        if res and res.json():
+            return jsonify(error="Un portafoglio con questo nome esiste già. Scegline un altro."), 409
+            
+        user_id = data.get('user_id')
+        # If user_id is missing, we might fail DB constraint. 
+        # In a real app we'd get it from session/token. 
+        # For now, we rely on frontend sending it or fallback if possible (but DB is strict).
+        
+        result = restore_backup(backup_content, new_name, user_id)
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"RESTORE ERROR: {e}")
+        return jsonify(error=str(e)), 500
+
 @app.route('/api/ingest', methods=['POST', 'OPTIONS'])
 def ingest_excel():
     if request.method == 'OPTIONS':

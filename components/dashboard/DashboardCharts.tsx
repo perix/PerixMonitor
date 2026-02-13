@@ -2,7 +2,8 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResponsiveContainer, Tooltip, Legend, LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine } from 'recharts';
-import { formatSwissMoney, formatSwissNumber, parseISODateLocal } from "@/lib/utils";
+import { formatSwissMoney, formatSwissNumber, parseISODateLocal, getAccessibleColor } from "@/lib/utils";
+
 import { CHART_STRINGS } from "@/constants/chartStrings";
 
 
@@ -25,6 +26,7 @@ interface DashboardChartsProps {
         yAxisScale?: number;
         showMajorGrid?: boolean;
         showMinorGrid?: boolean;
+        viewMode?: 'mwr' | 'value';
     };
     onSettingsChange?: (settings: any) => void;
     portfolioName?: string;
@@ -270,6 +272,9 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                 if (initialSettings.showMinorGrid !== undefined) {
                     setShowMinorGrid(initialSettings.showMinorGrid);
                 }
+                if (initialSettings.viewMode) {
+                    setViewMode(initialSettings.viewMode);
+                }
             }
 
             initializedRef.current = true;
@@ -299,7 +304,8 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                     value: { yMin: valueRange[0], yMax: valueRange[1] },
                     yAxisScale: mwrRange[1],
                     showMajorGrid,
-                    showMinorGrid
+                    showMinorGrid,
+                    viewMode
                 });
             }, 1000);
 
@@ -792,6 +798,19 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                             : `${value.toFixed(2)}%`;
                                         return [`${valStr}${pnlStr}`, name];
                                     }}
+                                    itemSorter={(item) => {
+                                        const val = item.value;
+                                        // Sort descending by value
+                                        if (val === null || val === undefined) return Infinity;
+                                        // Use negative value for ascending sort function to achieve descending order
+                                        // But wait, Recharts itemSorter default is likely: (a, b) => ... ? No, type definition says:
+                                        // `itemSorter?: (item: Payload<TValue, TName>) => number | string;`
+                                        // And Recharts sorts based on the return value of this function.
+                                        // Standard sort is usually ascending. So higher values should return smaller numbers to be first? 
+                                        // Actually simplest way: return -val to sort descending if sort is ascending.
+                                        // Let's assume standard ascending sort on the key returned.
+                                        return typeof val === 'number' ? -val : 0;
+                                    }}
                                     labelFormatter={(label) => {
                                         const d = parseISODateLocal(label);
                                         return d ? d.toLocaleDateString('it-IT', { dateStyle: 'medium' }) : '';
@@ -816,13 +835,16 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                 {/* Asset Lines */}
                                 {history.series?.map((s, idx) => {
                                     const displayName = `${s.name} (${s.isin})`;
+                                    const rawColor = s.color || COLORS[idx % COLORS.length];
+                                    const accessibleColor = getAccessibleColor(rawColor, 60); // Ensure min 60% lightness
+
                                     return (
                                         <Line
                                             key={s.isin}
                                             yAxisId="left" // Always on Left
                                             type="monotone"
                                             dataKey={displayName}
-                                            stroke={s.color || COLORS[idx % COLORS.length]}
+                                            stroke={accessibleColor}
                                             strokeWidth={1.5}
                                             dot={false}
                                             strokeOpacity={0.8}
