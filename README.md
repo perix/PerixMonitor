@@ -50,8 +50,10 @@ npm run dev
 
 ## Documentazione
 
-- [Architettura del Sistema](ARCHITECTURE_v0.2.0.md)
-- [Guida al Deployment](App_Deployment_Guide.md)
+- [Architettura del Sistema](docs/architecture/system_architecture.md)
+- [Analisi Performance & Caching](docs/architecture/performance.md)
+- [Guida al Deployment](docs/guides/deployment.md)
+- [Guida all'Importazione Dati](docs/guides/user_manual_import.md)
 
 ## Struttura del Progetto
 
@@ -131,4 +133,14 @@ Solo confermando la preview i dati vengono scritti nel database.
     - Importi negativi → `EXPENSE` (spese, costi, tasse).
 - **Aggregazione Intelligente**: Somma automatica di entries multiple per stesso ISIN/data/tipo, sia nel file uploadato che con i dati già in archivio.
 - **DB**: Nuova colonna `type` nella tabella `dividends` con vincolo di unicità aggiornato a `(portfolio_id, asset_id, date, type)`.
-- **Riconciliazione Separata**: Modal con sezioni distinte per Cedole/Dividendi (indaco) e Spese/Costi (arancione), ciascuna con colonne "In Archivio" | "Nuovi" | "Dopo Importazione".
+- **Riconciliazione Separata**: Modal con sezioni distinte per Cedole/Dividendi (indaco) e Spese/Costi (arancione), ciascuna con colonne "In Archivio" | "Nuovi Incassi/Costi" | "Dopo Importazione".
+
+### Ottimizzazioni Core & UX (13/02/2026)
+- **Logica Selezione Asset**:
+    - Il filtro "Nessuno selezionato" ora svuota completamente la dashboard (grafici e KPI), permettendo focus totale sui singoli asset selezionati.
+    - Risolto bug dove la selezione vuota veniva interpretata come "Seleziona Tutto".
+- **Conditional Logging**:
+    - Nuovo sistema di filtraggio log su file (`ConditionalFileFilter`).
+    - Se disabilitato (default), il file log registra solo eventi macroscopici (`[STARTUP]`, `[AUDIT]`, `[SYNC]`, `[ERROR]`), mantenendo il file pulito e leggero.
+    - Se abilitato da UI, traccia il debug completo di ogni operazione.
+    - Gestione dinamica senza riavvio del server.

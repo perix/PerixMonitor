@@ -6,6 +6,9 @@ import { formatSwissMoney, formatSwissNumber, parseISODateLocal } from "@/lib/ut
 import { CHART_STRINGS } from "@/constants/chartStrings";
 
 
+import { Button } from "@/components/ui/button";
+import { Calculator, RefreshCcw, AlertTriangle } from "lucide-react";
+
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#a855f7', '#ec4899', '#6366f1', '#14b8a6'];
 
 interface DashboardChartsProps {
@@ -28,13 +31,16 @@ interface DashboardChartsProps {
     hidePortfolio?: boolean;
     className?: string;
     onVisibleStatsChange?: (stats: { pnl: number; mwr: number; market_value: number; date: string }) => void;
+    mwrMode?: 'xirr' | 'simple_return' | 'mixed';
+    xirrMode?: string;
+    onXirrModeChange?: (mode: string) => void;
 }
 
 import { useState, useMemo, useEffect, useRef, useTransition } from "react";
 import { RangeSlider } from "@/components/ui/range-slider";
 import { Checkbox } from "@/components/ui/checkbox";
 
-export function DashboardCharts({ allocationData, history, initialSettings, onSettingsChange, portfolioName, hidePortfolio, className, onVisibleStatsChange }: DashboardChartsProps) {
+export function DashboardCharts({ allocationData, history, initialSettings, onSettingsChange, portfolioName, hidePortfolio, className, onVisibleStatsChange, mwrMode, xirrMode, onXirrModeChange }: DashboardChartsProps) {
     const [dateRange, setDateRange] = useState<number[]>([0, 0]);
     // Separate state for ranges
     const [mwrRange, setMwrRange] = useState<number[]>([0, 100]);
@@ -247,9 +253,9 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
 
             // Restore Y-Ranges
             if (initialSettings) {
-                if (initialSettings.mwr) {
+                if (initialSettings.mwr && Math.abs(initialSettings.mwr.yMax) < 5000 && Math.abs(initialSettings.mwr.yMin) < 5000) {
                     setMwrRange([initialSettings.mwr.yMin, initialSettings.mwr.yMax]);
-                } else if (initialSettings.yAxisScale) {
+                } else if (initialSettings.yAxisScale && Math.abs(initialSettings.yAxisScale) < 5000) {
                     setMwrRange([-50, initialSettings.yAxisScale]);
                 }
 
@@ -456,13 +462,12 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
     };
 
 
-    if (!history || !history.portfolio) {
-        return <div className="p-4 text-center text-muted-foreground">Caricamento grafico...</div>
-    }
+    // [FIX] Removed conditional return to satisfy Rules of Hooks
+    // If !history, we still run hooks but render loading state at the end.
 
     // Callback for visible stats
     useEffect(() => {
-        if (!onVisibleStatsChange || !history.series || history.series.length === 0 || rawChartData.length === 0) return;
+        if (!onVisibleStatsChange || !history?.series || history.series.length === 0 || rawChartData.length === 0) return;
 
         const startIndex = dateRange[0];
         const endIndex = dateRange[1];
@@ -522,7 +527,11 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                 date: endPoint.date
             });
         }
-    }, [dateRange, rawChartData, history.series, onVisibleStatsChange]);
+    }, [dateRange, rawChartData, history?.series, onVisibleStatsChange]);
+
+    if (!history || !history.portfolio) {
+        return <div className="p-4 text-center text-muted-foreground">Caricamento grafico...</div>
+    }
 
     return (
         <div className={`grid gap-4 md:grid-cols-1 ${className || 'mt-4'}`}>
@@ -537,6 +546,9 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                         const title = viewMode === 'value' ? contextStrings.value.title : contextStrings.mwr.title;
                                         return `${title} - ${portfolioName || 'Portafoglio'}`;
                                     })()}
+                                    {(mwrMode === 'simple_return' || mwrMode === 'mixed') && (
+                                        <span className="text-red-500 text-sm ml-2 font-normal whitespace-nowrap" title="Calcolo XIRR non convergente, usato Simple Return come fallback">(simple return)</span>
+                                    )}
                                 </CardTitle>
                             </div>
                             <p className="text-sm text-muted-foreground">
@@ -547,6 +559,20 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                             </p>
                         </div>
                         <div className="flex items-center gap-4">
+                            {onXirrModeChange && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className={`h-7 px-2 gap-1 text-xs ${xirrMode === 'multi_guess' ? 'bg-primary/20 border-primary text-primary' : 'text-muted-foreground'}`}
+                                    onClick={() => onXirrModeChange(xirrMode === 'multi_guess' ? 'standard' : 'multi_guess')}
+                                    title="Cambia metodo di calcolo XIRR (Standard vs Multi-Guess)"
+                                >
+                                    <Calculator className="h-3 w-3" />
+                                    <span className="hidden sm:inline">
+                                        {xirrMode === 'multi_guess' ? 'Multi-Guess' : 'Standard'}
+                                    </span>
+                                </Button>
+                            )}
                             <div className="flex items-center space-x-2">
                                 <Checkbox
                                     id="view-mode-value"
@@ -646,8 +672,8 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                     />
                                 )}
 
-                                {/* Gridlines Asse Destro (Portfolio) - Tratteggiate Ambra Tenue */}
-                                {showMajorGrid && !hidePortfolio && rightAxisTicks.map((tick) => (
+                                {/* Gridlines Asse Destro (Portfolio) - Tratteggiate Ambra Tenue - ONLY IN VALUE MODE */}
+                                {viewMode === 'value' && showMajorGrid && !hidePortfolio && rightAxisTicks.map((tick) => (
                                     <ReferenceLine
                                         key={`right-grid-${tick}`}
                                         y={tick}
@@ -728,30 +754,23 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                     }
                                 />
 
-                                {!hidePortfolio && (
+                                {!hidePortfolio && viewMode === 'value' && (
                                     <YAxis
                                         yAxisId="right"
                                         orientation="right"
                                         stroke="#ffffff"
                                         tickLine={false}
                                         axisLine={false}
-                                        domain={viewMode === 'mwr' ? [yRange[0], yRange[1]] : [0, portfolioMax]}
+                                        domain={[0, portfolioMax]}
                                         ticks={rightAxisTicks}
                                         tick={({ x, y, payload }: any) => {
                                             const val = payload.value;
-                                            let label = viewMode === 'value'
-                                                ? (val >= 1000 ? `€${formatSwissNumber(val / 1000, 0)}k` : `€${formatSwissNumber(val, 0)}`)
-                                                : `${val > 0 ? '+' : ''}${val}%`;
-                                            if (val === 0 && viewMode === 'value') label = "€0";
+                                            let label = (val >= 1000 ? `€${formatSwissNumber(val / 1000, 0)}k` : `€${formatSwissNumber(val, 0)}`);
 
-                                            // Colore basato sul valore solo in modalità MWR
-                                            let color = "#ffffff";
-                                            if (viewMode === 'mwr') {
-                                                color = val === 0 ? "#ffffff" : val > 0 ? "#22c55e" : "#ef4444";
-                                            }
+                                            if (val === 0) label = "€0";
 
                                             return (
-                                                <text x={x} y={y} dy={4} fill={color} fontSize={10} textAnchor="start">
+                                                <text x={x} y={y} dy={4} fill="#ffffff" fontSize={10} textAnchor="start">
                                                     {label}
                                                 </text>
                                             );
@@ -779,10 +798,10 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                     }}
                                 />
 
-                                {/* Portfolio Line - Always on left axis now */}
+                                {/* Portfolio Line - On Right Axis in Value mode, Left Axis in MWR mode */}
                                 {!hidePortfolio && (
                                     <Line
-                                        yAxisId="right"
+                                        yAxisId={viewMode === 'value' ? "right" : "left"}
                                         type="monotone"
                                         dataKey="Portfolio"
                                         stroke="#ffffff"

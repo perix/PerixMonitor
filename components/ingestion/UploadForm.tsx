@@ -14,6 +14,9 @@ import { Sparkles, Loader2 } from 'lucide-react';
 
 import { PortfolioSelector } from '../user/PortfolioSelector';
 import { usePortfolio } from '@/context/PortfolioContext';
+import { useQueryClient } from '@tanstack/react-query';
+import { memoryKeys } from '@/hooks/useMemory';
+import { dashboardKeys } from '@/hooks/useDashboard';
 
 export const UploadForm = () => {
     const [file, setFile] = useState<File | null>(null);
@@ -132,6 +135,8 @@ export const UploadForm = () => {
         }
     };
 
+    const queryClient = useQueryClient();
+
     const handleReconciliationConfirm = async (resolutions: any[], trendUpdates?: any[]) => {
         if (!selectedPortfolioId) return;
 
@@ -156,6 +161,15 @@ export const UploadForm = () => {
             // Invalidate ALL caches because Assets are shared globally.
             // If we updated an Asset Name/Type, it affects other portfolios too.
             clearCache();
+
+            // [NEW] Invalidate React Query Caches for ALL pages
+            // This ensures Dashboard, History (Memory), and Portfolio lists are updated immediately.
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: memoryKeys.all }),
+                queryClient.invalidateQueries({ queryKey: dashboardKeys.all }),
+                queryClient.invalidateQueries({ queryKey: ['portfolio'] })
+            ]);
+
             alert("Sincronizzazione completata con successo!");
             setShowModal(false);
             setDividends(null);

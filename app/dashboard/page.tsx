@@ -27,6 +27,9 @@ export default function DashboardPage() {
     // Selection state
     const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
 
+    // Calculation Mode
+    const [xirrMode, setXirrMode] = useState('standard');
+
     // --- Queries ---
 
     // 1. Settings
@@ -40,11 +43,11 @@ export default function DashboardPage() {
     // "Summary" is ALWAYS the full portfolio. "Filtered" is the subset.
     // So we need TWO queries if we want to show both (Total vs Selection).
 
-    const { data: summary, isLoading: isLoadingSummary } = useDashboardSummary(selectedPortfolioId, mwrT1, mwrT2);
-    const { data: history, isLoading: isLoadingHistory } = useDashboardHistory(selectedPortfolioId, mwrT1, mwrT2);
+    const { data: summary, isLoading: isLoadingSummary } = useDashboardSummary(selectedPortfolioId, mwrT1, mwrT2, undefined, xirrMode);
+    const { data: history, isLoading: isLoadingHistory } = useDashboardHistory(selectedPortfolioId, mwrT1, mwrT2, undefined, xirrMode);
 
     // 3. Filtered Data (Only if selection exists and is not full)
-    const isFullSelection = !history?.series || selectedAssets.size === history.series.length || selectedAssets.size === 0;
+    const isFullSelection = !history?.series || selectedAssets.size === history.series.length;
 
     // Prepare assets param for filtered query
     const selectedAssetsArray = useMemo(() => Array.from(selectedAssets), [selectedAssets]);
@@ -53,14 +56,16 @@ export default function DashboardPage() {
         selectedPortfolioId,
         mwrT1,
         mwrT2,
-        !isFullSelection && selectedAssets.size > 0 ? selectedAssetsArray : undefined
+        !isFullSelection ? selectedAssetsArray : undefined,
+        xirrMode
     );
 
     const { data: filteredHistory, isLoading: isLoadingFilteredHistory } = useDashboardHistory(
         selectedPortfolioId,
         mwrT1,
         mwrT2,
-        !isFullSelection && selectedAssets.size > 0 ? selectedAssetsArray : undefined
+        !isFullSelection ? selectedAssetsArray : undefined,
+        xirrMode
     );
 
     // --- Mutations ---
@@ -460,6 +465,9 @@ export default function DashboardPage() {
                             onSettingsChange={(newSettings) => updateSettingsMutation.mutate({ portfolioId: selectedPortfolioId!, settings: newSettings })}
                             portfolioName="" // Was being fetched logic, now simplified. Charts might not need it for display if header has it.
                             className="h-full"
+                            mwrMode={displayHistory?.mwr_mode}
+                            xirrMode={xirrMode}
+                            onXirrModeChange={setXirrMode}
                         />
                     </div>
                 </div>

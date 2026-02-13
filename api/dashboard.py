@@ -32,8 +32,11 @@ def register_dashboard_routes(app):
             
             # Filtra per asset specifici se richiesto
             assets_param = request.args.get('assets')
-            if assets_param:
-                selected_isins = set(assets_param.split(','))
+            if assets_param is not None:
+                if assets_param == "":
+                     selected_isins = set()
+                else: 
+                     selected_isins = set(assets_param.split(','))
                 transactions = [t for t in transactions if t['assets']['isin'] in selected_isins]
             
             if not transactions:
@@ -169,6 +172,7 @@ def register_dashboard_routes(app):
                     "name": data['name'],
                     "value": market_val,
                     "sector": data.get('asset_class') or "Other",
+                    "type": data.get('asset_class') or "Other",
                     "isin": isin,
                     "quantity": data['qty'],
                     "price": current_price,
@@ -196,7 +200,8 @@ def register_dashboard_routes(app):
                 max_date = max(mwr_dates)
                 logger.info(f"[DASHBOARD_SUMMARY] Using max_date={max_date.strftime('%Y-%m-%d')} for MWR calculation (dilution prevention)")
 
-            mwr_value, mwr_type = get_tiered_mwr(cash_flows, current_total_value, t1=mwr_t1, t2=mwr_t2, end_date=max_date)
+            xirr_mode = request.args.get('xirr_mode', 'standard')
+            mwr_value, mwr_type = get_tiered_mwr(cash_flows, current_total_value, t1=mwr_t1, t2=mwr_t2, end_date=max_date, xirr_mode=xirr_mode)
 
             # 5. Recupera Colori (Batch)
             # Recuperiamo settings colori per gli asset attivi
@@ -255,6 +260,7 @@ def register_dashboard_routes(app):
 
     @app.route('/api/dashboard/history', methods=['GET'])
     def get_mwrr_history():
+        # logger.info(">>> LOADING MWR HISTORY <<<") # Manteniamo pulito
         t0 = datetime.now()
         logger.info(f"[DASHBOARD_HISTORY] Richiesta ricevuta alle {t0}")
         try:
@@ -286,9 +292,15 @@ def register_dashboard_routes(app):
 
             # Filtro asset opzionale
             assets_param = request.args.get('assets')
-            if assets_param:
-                selected_isins = set(assets_param.split(','))
+            selected_asset_ids = None
+            if assets_param is not None:
+                if assets_param == "":
+                    selected_isins = set()
+                else:
+                    selected_isins = set(assets_param.split(','))
                 transactions = [t for t in transactions if t['assets']['isin'] in selected_isins]
+                # Collect asset IDs for dividend filtering
+                selected_asset_ids = set(t['assets']['id'] for t in transactions)
             
             if not transactions:
                 return jsonify(history=[], assets=[], portfolio=[])
@@ -488,29 +500,61 @@ def register_dashboard_routes(app):
                         mwr_t2 = int(request.args.get('mwr_t2', 365))
 
                         try:
+                            # 1. Tentativo XIRR Standard
                             val = xirr(calc_flows, guess=last_xirr_guess)
-                            if val is not None:
-                                last_xirr_guess = val 
-                                
-                                # Tiered Logic
+                            
+                            final_val = 0.0
+                            is_valid_xirr = False
+                            
+                            # 2. Validazione Convergenza
+                            if val is not None and abs(val) <= 10.0: # Max 1000%
+                                last_xirr_guess = max(-0.99, min(val, 10.0))
                                 final_val = val
+                                is_valid_xirr = True
+                                
+                                # Tier Logic con XIRR valido
                                 if dur_days < mwr_t1:
-                                     net_in = sum(-f['amount'] for f in current_cash_flows)
-                                     if net_in > 0:
-                                         final_val = (current_val - net_in) / net_in
-                                     else:
-                                         final_val = 0
+                                     # Tier 1 Override (Simple Return)
+                                     pass # Gestito sotto uniformemente
                                 elif dur_days < mwr_t2:
                                     from finance import deannualize_xirr
                                     final_val = deannualize_xirr(val, dur_days)
+                                # else: Keep annualized val
+                            
+                            # 3. Determinazione Valore Finale (XIRR Tiered o Fallback)
+                            # Se XIRR non valido O siamo in Tier 1 -> Usa Simple Return
+                            use_simple_return = (not is_valid_xirr) or (dur_days < mwr_t1)
+                            
+                            if use_simple_return:
+                                # Calcolo Simple Return robusto (Net Invested: Buys + Sells + Divs)
+                                net_in = sum(-f['amount'] for f in current_cash_flows)
+                                if net_in > 0:
+                                     simple_ret = (current_val - net_in) / net_in
+                                     
+                                     # Annualizza se Tier 3
+                                     if dur_days >= mwr_t2:
+                                         from finance import annualize_simple_return
+                                         final_val = annualize_simple_return(simple_ret, dur_days)
+                                     else:
+                                         final_val = simple_ret
+                                else:
+                                     final_val = 0.0
 
-                                mwr_series.append({
-                                    "date": cp_str,
-                                    "value": round(final_val * 100, 2),
-                                    "pnl": round(pnl_at_cp, 2),
-                                    "market_value": round(current_val, 2)
-                                })
-                        except:
+                            # 4. Clamp Rigoroso (±500%) per evitare distruzione grafico
+                            final_val = max(-5.0, min(final_val, 5.0))
+                            
+                            # DIAGNOSTICA ASSET - Se valore tocca il clamp o esce (impossibile con max/min ma utile per tracciare)
+                            if abs(final_val) >= 4.9:
+                                logger.warning(f"[ASSET_DIAG] CLAMP HIT/FAIL {isin} date={cp_str} val={val} final={final_val}")
+
+                            mwr_series.append({
+                                "date": cp_str,
+                                "value": round(final_val * 100, 2),
+                                "pnl": round(pnl_at_cp, 2),
+                                "market_value": round(current_val, 2)
+                            })
+                        except Exception as e:
+                            # In caso di errore catastrofico, salta il punto ma non crashare
                             pass
 
                 if mwr_series:
@@ -559,11 +603,18 @@ def register_dashboard_routes(app):
             
             # global_price_map è già popolato per tutti gli assets! -> OTTIMO.
             
+            # Filter dividends by selected assets if subset is active
+            if selected_asset_ids:
+                portfolio_dividends = [d for d in portfolio_dividends if d['asset_id'] in selected_asset_ids]
+            
             current_port_cash_flows = []
             transaction_idx_p = 0
             
             current_port_holdings_map = {} 
             last_port_xirr = 0.1
+
+            # Contatori diagnostici per riepilogo finale
+            diag_counts = {"T1_SIMPLE": 0, "T2_DEANN": 0, "T3_ANNUAL": 0, "EXTREME": 0, "XIRR_NONE": 0, "XIRR_EXC": 0, "SKIPPED": 0}
 
             for cp in check_points:
                 cp_str = cp.strftime('%Y-%m-%d')
@@ -632,45 +683,144 @@ def register_dashboard_routes(app):
                     port_value_at_cp += (qty * price)
                 
                 if port_value_at_cp > 0:
-                     calc_flows = current_port_cash_flows + [{"date": cp, "amount": port_value_at_cp}]
-                     
-                     start_d = current_port_cash_flows[0]['date'] if current_port_cash_flows else cp
-                     dur_days = (cp - start_d).days
-                     
-                     mwr_t1 = int(request.args.get('mwr_t1', 30))
-                     mwr_t2 = int(request.args.get('mwr_t2', 365))
+                    calc_flows = current_port_cash_flows + [{"date": cp, "amount": port_value_at_cp}]
+                    
+                    start_d = current_port_cash_flows[0]['date'] if current_port_cash_flows else cp
+                    dur_days = (cp - start_d).days
+                    
+                    mwr_t1 = int(request.args.get('mwr_t1', 30))
+                    mwr_t2 = int(request.args.get('mwr_t2', 365))
 
-                     try:
-                         val = xirr(calc_flows, guess=last_port_xirr)
-                         
-                         if val is not None:
-                             last_port_xirr = val
-                             
-                             final_mwr = val
-                             
-                             if dur_days < mwr_t1:
-                                 net_in = sum(-f['amount'] for f in current_port_cash_flows)
-                                 if net_in > 0:
-                                     final_mwr = (port_value_at_cp - net_in) / net_in
-                                 else:
-                                     final_mwr = 0
-                             elif dur_days < mwr_t2:
-                                 from finance import deannualize_xirr
-                                 final_mwr = deannualize_xirr(val, dur_days)
-                             
-                             portfolio_series.append({
-                                 "date": cp_str,
-                                 "value": round(final_mwr * 100, 2),
-                                 "market_value": round(port_value_at_cp, 2)
-                             })
-                     except: pass
+                    final_mwr = 0.0
+                    calculated = False
+                    
+                    # Parametro xirr_mode: 'standard' (default con fallback) o 'multi_guess' (prova multipli guess)
+                    xirr_mode = request.args.get('xirr_mode', 'standard')
+
+                    try:
+                        if xirr_mode == 'multi_guess':
+                            from finance import xirr_multi_guess
+                            val = xirr_multi_guess(calc_flows)
+                        else:
+                            val = xirr(calc_flows, guess=last_port_xirr)
+                        
+                        xirr_converged = val is not None and abs(val) <= 10.0  # < 1000%
+                        
+                        if xirr_converged:
+                            # XIRR convergita ragionevolmente → usa tiering normale
+                            last_port_xirr = max(-0.99, min(val, 10.0))
+                            final_mwr = val
+                            
+                            # Tier 1: Simple Return Override
+                            if dur_days < mwr_t1:
+                                net_in = sum(-f['amount'] for f in current_port_cash_flows)
+                                if net_in > 0:
+                                    final_mwr = (port_value_at_cp - net_in) / net_in
+                                else:
+                                    final_mwr = 0.0
+                                tier_name = "T1_SIMPLE"
+                                diag_counts["T1_SIMPLE"] += 1
+                            
+                            # Tier 2: Deannualize
+                            elif dur_days < mwr_t2:
+                                from finance import deannualize_xirr
+                                final_mwr = deannualize_xirr(val, dur_days)
+                                tier_name = "T2_DEANN"
+                                diag_counts["T2_DEANN"] += 1
+                            
+                            # Tier 3: Annualized XIRR (val unchanged)
+                            else:
+                                tier_name = "T3_ANNUAL"
+                                diag_counts["T3_ANNUAL"] += 1
+                            
+                            calculated = True
+                        else:
+                            # XIRR non convergita → Fallback a Simple Return
+                            # Usa il capitale netto investito (Buys + Sells + Dividendi)
+                            net_in = sum(-f['amount'] for f in current_port_cash_flows)
+                            if net_in > 0:
+                                simple_ret = (port_value_at_cp - net_in) / net_in
+                                
+                                # Se siamo in Tier 3, annualizziamo il Simple Return per coerenza con la card
+                                if dur_days >= mwr_t2:
+                                    from finance import annualize_simple_return
+                                    final_mwr = annualize_simple_return(simple_ret, dur_days)
+                                    tier_name = "FALLBACK_ANNUAL"
+                                else:
+                                    final_mwr = simple_ret
+                                    tier_name = "FALLBACK_SIMPLE"
+                            else:
+                                final_mwr = 0.0
+                                tier_name = "FALLBACK_SIMPLE"
+                            
+                            diag_counts["FALLBACK"] = diag_counts.get("FALLBACK", 0) + 1
+                            calculated = True
+                        
+                        # --- LOGGING DIAGNOSTICO ---
+                        if calculated:
+                            is_extreme = abs(final_mwr) > 1.0
+                            if is_extreme:
+                                diag_counts["EXTREME"] += 1
+                            
+                            diag_net_in_buy = sum(-f['amount'] for f in current_port_cash_flows if f['amount'] < 0)
+                            diag_net_in_all = sum(-f['amount'] for f in current_port_cash_flows)
+                            diag_divs = total_port_dividends_acc
+                            
+                            xirr_raw_str = f"{val:.6f} ({val*100:.2f}%)" if val is not None else "None"
+                            log_level = logger.warning if (is_extreme or not xirr_converged) else logger.info
+                            log_level(
+                                f"[MWR_DIAG] {'⚠️EXTREME' if is_extreme else 'OK'} "
+                                f"date={cp_str} | tier={tier_name} | mode={xirr_mode} | dur={dur_days}d | "
+                                f"xirr_raw={xirr_raw_str} | converged={xirr_converged} | "
+                                f"final_mwr={final_mwr:.6f} ({final_mwr*100:.2f}%) | "
+                                f"flows={len(calc_flows)} | "
+                                f"port_val={port_value_at_cp:.2f} | "
+                                f"net_in_buy={diag_net_in_buy:.2f} | "
+                                f"net_in_all={diag_net_in_all:.2f} | "
+                                f"divs_acc={diag_divs:.2f}"
+                            )
+                        
+                    except Exception as e:
+                        diag_counts["XIRR_EXC"] += 1
+                        logger.warning(f"[MWR_DIAG] XIRR_EXCEPTION at {cp_str} | dur={dur_days}d | mode={xirr_mode} | error={e}")
+                        pass
+                    
+                    if calculated:
+                        # Clamp ragionevole: ±500%
+                        final_mwr = max(-5.0, min(final_mwr, 5.0))
+                        portfolio_series.append({
+                            "date": cp_str,
+                            "value": round(final_mwr * 100, 2),
+                            "market_value": round(port_value_at_cp, 2)
+                        })
+                else:
+                    diag_counts["SKIPPED"] += 1
+            
+            # --- RIEPILOGO DIAGNOSTICO ---
+            fallback_count = diag_counts.get("FALLBACK", 0)
+            total_calculated = diag_counts["T1_SIMPLE"] + diag_counts["T2_DEANN"] + diag_counts["T3_ANNUAL"] + fallback_count
+            mwr_mode = "xirr"  # Default: calcolo XIRR puro
+            if fallback_count > 0 and total_calculated > 0:
+                fallback_ratio = fallback_count / total_calculated
+                if fallback_ratio > 0.5:
+                    mwr_mode = "simple_return"  # Maggioranza fallback
+                else:
+                    mwr_mode = "mixed"  # Mix di XIRR e fallback
+            
+            logger.info(f"[MWR_DIAG] === RIEPILOGO PORTAFOGLIO === checkpoints={len(check_points)} | serie_output={len(portfolio_series)} | mwr_mode={mwr_mode}")
+            logger.info(f"[MWR_DIAG] Tiers: T1={diag_counts['T1_SIMPLE']} | T2={diag_counts['T2_DEANN']} | T3={diag_counts['T3_ANNUAL']} | FALLBACK={fallback_count}")
+            logger.info(f"[MWR_DIAG] Problemi: EXTREME={diag_counts['EXTREME']} | XIRR_NONE={diag_counts.get('XIRR_NONE',0)} | XIRR_EXC={diag_counts['XIRR_EXC']} | SKIPPED={diag_counts['SKIPPED']}")
+            if portfolio_series:
+                all_mwr_values = [p['value'] for p in portfolio_series]
+                logger.info(f"[MWR_DIAG] Range output: min={min(all_mwr_values):.2f}% | max={max(all_mwr_values):.2f}% | last={all_mwr_values[-1]:.2f}%")
             
             t_final = datetime.now()
             logger.info(f"[DASHBOARD_HISTORY] Completato in {(t_final - t0).total_seconds():.2f}s")
             
             return jsonify({
                 "series": assets_history,
-                "portfolio": portfolio_series
+                "portfolio": portfolio_series,
+                "mwr_mode": mwr_mode
             })
 
         except Exception as e:

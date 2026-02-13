@@ -55,8 +55,11 @@ export const PortfolioSelector: React.FC<PortfolioSelectorProps> = ({ selectedPo
 
         // Fetch Portfolios via API (Backend Service Role)
         try {
+            console.log("PORTFOLIO SELECTOR: Fetching portfolios for user", user.id);
             const response = await axios.get(`/api/portfolios?user_id=${user.id}`);
             const data = response.data.portfolios;
+
+            console.log("PORTFOLIO SELECTOR: Found portfolios:", data?.length || 0);
 
             // Re-use existing logic variable 'data'
             setPortfolios(data || []);
@@ -86,12 +89,14 @@ export const PortfolioSelector: React.FC<PortfolioSelectorProps> = ({ selectedPo
         setCreating(true);
 
         try {
+            console.log("PORTFOLIO SELECTOR: Creating new portfolio", newPortfolioName);
             // Use Backend API for logging
             const response = await axios.post('/api/portfolios', {
                 user_id: userId,
                 name: newPortfolioName
             });
             const data = response.data;
+            console.log("PORTFOLIO SELECTOR: Created", data);
 
             setPortfolios([data, ...portfolios]);
             onSelect(data.id);

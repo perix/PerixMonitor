@@ -20,14 +20,18 @@ export default function LoginPage() {
         setLoading(true);
         setError(null);
 
+        console.log("LOGIN ATTEMPT: Starting login for", email);
+
         const { data, error } = await supabase.auth.signInWithPassword({
             email,
             password,
         });
 
         if (error) {
+            console.error("LOGIN ERROR:", error);
             setError(error.message);
         } else {
+            console.log("LOGIN SUCCESS: User authenticated", data);
             router.push('/'); // Redirect to Home
         }
         setLoading(false);

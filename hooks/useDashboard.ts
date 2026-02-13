@@ -16,6 +16,7 @@ export interface DashboardSummary {
 export interface DashboardHistory {
     series: any[];
     portfolio: any[];
+    mwr_mode?: 'xirr' | 'simple_return' | 'mixed';
 }
 
 export interface PortfolioSettings {
@@ -36,19 +37,25 @@ export const dashboardKeys = {
 
 // --- Fetchers ---
 
-const fetchSummary = async (portfolioId: string, mwrT1: number, mwrT2: number, assets?: string[]) => {
+const fetchSummary = async (portfolioId: string, mwrT1: number, mwrT2: number, assets?: string[], xirrMode?: string) => {
     const params: any = { portfolio_id: portfolioId, mwr_t1: mwrT1, mwr_t2: mwrT2 };
-    if (assets && assets.length > 0) {
+    if (assets !== undefined) {
         params.assets = assets.join(',');
+    }
+    if (xirrMode) {
+        params.xirr_mode = xirrMode;
     }
     const { data } = await axios.get('/api/dashboard/summary', { params });
     return data as DashboardSummary;
 };
 
-const fetchHistory = async (portfolioId: string, mwrT1: number, mwrT2: number, assets?: string[]) => {
+const fetchHistory = async (portfolioId: string, mwrT1: number, mwrT2: number, assets?: string[], xirrMode?: string) => {
     const params: any = { portfolio_id: portfolioId, mwr_t1: mwrT1, mwr_t2: mwrT2 };
-    if (assets && assets.length > 0) {
+    if (assets !== undefined) {
         params.assets = assets.join(',');
+    }
+    if (xirrMode) {
+        params.xirr_mode = xirrMode;
     }
     const { data } = await axios.get('/api/dashboard/history', { params });
     return data as DashboardHistory;
@@ -66,19 +73,19 @@ const updateSettings = async ({ portfolioId, settings }: { portfolioId: string, 
 
 // --- Hooks ---
 
-export function useDashboardSummary(portfolioId: string | null, mwrT1: number, mwrT2: number, assets?: string[]) {
+export function useDashboardSummary(portfolioId: string | null, mwrT1: number, mwrT2: number, assets?: string[], xirrMode?: string) {
     return useQuery({
-        queryKey: dashboardKeys.summary(portfolioId, { mwrT1, mwrT2, assets }),
-        queryFn: () => fetchSummary(portfolioId!, mwrT1, mwrT2, assets),
+        queryKey: dashboardKeys.summary(portfolioId, { mwrT1, mwrT2, assets, xirrMode }),
+        queryFn: () => fetchSummary(portfolioId!, mwrT1, mwrT2, assets, xirrMode),
         enabled: !!portfolioId,
         staleTime: 5 * 60 * 1000, // 5 minutes
     });
 }
 
-export function useDashboardHistory(portfolioId: string | null, mwrT1: number, mwrT2: number, assets?: string[]) {
+export function useDashboardHistory(portfolioId: string | null, mwrT1: number, mwrT2: number, assets?: string[], xirrMode?: string) {
     return useQuery({
-        queryKey: dashboardKeys.history(portfolioId, { mwrT1, mwrT2, assets }),
-        queryFn: () => fetchHistory(portfolioId!, mwrT1, mwrT2, assets),
+        queryKey: dashboardKeys.history(portfolioId, { mwrT1, mwrT2, assets, xirrMode }),
+        queryFn: () => fetchHistory(portfolioId!, mwrT1, mwrT2, assets, xirrMode),
         enabled: !!portfolioId,
         staleTime: 5 * 60 * 1000,
     });

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
+import { formatSwissMoney } from "@/lib/utils";
 import axios from 'axios';
 import {
     ColumnDef,
@@ -164,6 +165,17 @@ export function MemoryTable({
     const [threshold, setThreshold] = useState(0.1);
 
     useEffect(() => {
+        if (data.length > 0) {
+            console.log("MemoryTable Data Debug:", data.map(d => ({
+                id: d.id,
+                description: d.description,
+                total_divs: d.total_divs,
+                gross_dividends: (d as any).gross_dividends
+            })));
+        }
+    }, [data]);
+
+    useEffect(() => {
         axios.get('/api/config/assets', {
             params: { portfolio_id: portfolioId }
         }).then(res => {
@@ -194,12 +206,12 @@ export function MemoryTable({
 
                 const formatPct = (val: number) => {
                     const sign = val >= 0 ? '+' : '';
-                    return `${sign}${val.toFixed(2)}%`;
+                    return `${sign}${val.toFixed(2)}% `;
                 };
 
-                const title = `${row.getValue("description")}\nDelta: ${formatPct(variation)}`;
+                const title = `${row.getValue("description")} \nDelta: ${formatPct(variation)} `;
 
-                return <div className={`font-medium truncate ${colorClass}`} title={title}>{row.getValue("description")}</div>;
+                return <div className={`font-medium truncate ${colorClass} `} title={title}>{row.getValue("description")}</div>;
             },
             size: 250,
         },
@@ -234,13 +246,10 @@ export function MemoryTable({
             ),
             cell: ({ row }) => {
                 const amount = parseFloat(row.getValue("pnl"));
-                const formatted = new Intl.NumberFormat("it-CH", {
-                    style: "decimal",
-                    minimumFractionDigits: 2,
-                }).format(amount);
+                const formatted = formatSwissMoney(amount, 2);
 
                 return (
-                    <div className={`text-right font-medium ${amount >= 0 ? "text-green-500" : "text-red-400"}`}>
+                    <div className={`text-right font-medium ${amount >= 0 ? "text-green-500" : "text-red-400"} `}>
                         {formatted}
                     </div>
                 );
@@ -265,10 +274,7 @@ export function MemoryTable({
                 }
 
                 // Format with 2 decimal places and % sign
-                const formatted = new Intl.NumberFormat("it-CH", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                }).format(mwr);
+                const formatted = formatSwissMoney(mwr, 2);
 
                 // Type suffix: (S) Simple, (P) Period, (A) Annual
                 let suffix = "";
@@ -277,7 +283,7 @@ export function MemoryTable({
                 else if (mwrType === "ANNUAL") suffix = " (A)";
 
                 return (
-                    <div className={`text-right font-medium ${mwr >= 0 ? "text-green-500" : "text-red-400"}`}>
+                    <div className={`text-right font-medium ${mwr >= 0 ? "text-green-500" : "text-red-400"} `}>
                         {formatted}%{suffix}
                     </div>
                 );
@@ -296,12 +302,9 @@ export function MemoryTable({
             cell: ({ row }) => {
                 const amount = parseFloat(row.original.total_divs?.toString() || "0");
                 if (amount === 0) return <div className="text-right text-gray-500">-</div>;
-                const formatted = new Intl.NumberFormat("it-CH", {
-                    style: "decimal",
-                    minimumFractionDigits: 2,
-                }).format(amount);
+                const formatted = formatSwissMoney(amount, 2);
                 return (
-                    <div className={`text-right font-medium ${amount >= 0 ? "text-green-500" : "text-red-400"}`}>
+                    <div className={`text-right font-medium ${amount >= 0 ? "text-green-500" : "text-red-400"} `}>
                         {formatted}
                     </div>
                 );
@@ -320,10 +323,7 @@ export function MemoryTable({
             cell: ({ row }) => {
                 const amount = parseFloat(row.getValue("value"));
                 if (amount === 0) return <div className="text-right text-gray-500">-</div>;
-                const formatted = new Intl.NumberFormat("it-CH", {
-                    style: "decimal",
-                    minimumFractionDigits: 2,
-                }).format(amount);
+                const formatted = formatSwissMoney(amount, 2);
                 return <div className="text-right">{formatted}</div>;
             },
             size: 120,
@@ -473,7 +473,7 @@ export function MemoryTable({
                                                 onMouseDown={header.getResizeHandler()}
                                                 onTouchStart={header.getResizeHandler()}
                                                 className={`absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-400 ${header.column.getIsResizing() ? 'bg-blue-600 w-1.5' : 'bg-transparent'
-                                                    }`}
+                                                    } `}
                                             />
                                         </TableHead>
                                     );
@@ -529,7 +529,7 @@ export function MemoryTable({
                                     const totalPl = table.getFilteredRowModel().rows.reduce((sum, row) => sum + row.original.pnl, 0);
                                     return (
                                         <span className={totalPl >= 0 ? "text-green-700" : "text-red-600"}>
-                                            {new Intl.NumberFormat("it-CH", { minimumFractionDigits: 2 }).format(totalPl)}
+                                            {formatSwissMoney(totalPl, 2)}
                                         </span>
                                     );
                                 })()}
@@ -540,7 +540,7 @@ export function MemoryTable({
                                     const totalDivs = table.getFilteredRowModel().rows.reduce((sum, row) => sum + (row.original.total_divs || 0), 0);
                                     return (
                                         <span className={totalDivs >= 0 ? "text-green-700" : "text-red-600"}>
-                                            {new Intl.NumberFormat("it-CH", { minimumFractionDigits: 2 }).format(totalDivs)}
+                                            {formatSwissMoney(totalDivs, 2)}
                                         </span>
                                     );
                                 })()}
@@ -548,7 +548,7 @@ export function MemoryTable({
                             <TableCell className="border-r border-slate-300 text-right" style={{ width: table.getColumn('value')?.getSize() }}>
                                 {(() => {
                                     const totalVal = table.getFilteredRowModel().rows.reduce((sum, row) => sum + row.original.value, 0);
-                                    return new Intl.NumberFormat("it-CH", { minimumFractionDigits: 2 }).format(totalVal);
+                                    return formatSwissMoney(totalVal, 2);
                                 })()}
                             </TableCell>
                             <TableCell className="border-r border-slate-300" style={{ width: table.getColumn('open_date')?.getSize() }}></TableCell>

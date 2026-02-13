@@ -422,7 +422,7 @@ export default function AnalyticsPage() {
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
-                                                    <div className="text-sm font-bold tracking-tight">€{c.value.toLocaleString('it-IT', { compactDisplay: 'short', notation: 'compact' })}</div>
+                                                    <div className="text-sm font-bold tracking-tight">€{formatSwissMoney(c.value, 0)}</div>
                                                     <div className={`text-[10px] font-medium ${c.pl_percent >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                                         {c.pl_percent > 0 ? '+' : ''}{c.pl_percent}%
                                                     </div>

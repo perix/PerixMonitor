@@ -54,9 +54,9 @@ app.register_blueprint(memory_bp)
 
 
 import sys
-logger.info("Backend API Initialized")
-logger.info(f"debug_exec: {sys.executable}")
-logger.info(f"debug_path: {sys.path}")
+logger.info("[STARTUP] Backend API Initialized")
+logger.info(f"[STARTUP] debug_exec: {sys.executable}")
+logger.info(f"[STARTUP] debug_path: {sys.path}")
 
 @app.errorhandler(Exception)
 def handle_exception(e):
@@ -140,6 +140,7 @@ def sync_transactions():
 
         # --- 2b. Handle Dividends (If present) ---
         dividends = data.get('dividends', [])
+        valid_dividends = []
         if dividends:
             try:
                 # We need to resolve ISIN -> asset_id for dividends too.
@@ -155,7 +156,6 @@ def sync_transactions():
                      if res_assets and res_assets.status_code == 200:
                         asset_map_div = {row['isin']: row['id'] for row in res_assets.json()}
                      
-                     valid_dividends = []
                      for d in dividends:
                         a_id = asset_map_div.get(d['isin'])
                         if a_id:
@@ -461,7 +461,7 @@ def sync_transactions():
             # res = supabase.table('transactions').insert(valid_transactions).execute()
             upsert_table('transactions', valid_transactions) # Insert is effectively upsert without conflict key usually, or just POST
             
-            log_audit("SYNC_SUCCESS", f"Portfolio {portfolio_id}: {len(valid_transactions)} transactions, {len(prices)} prices.")
+            log_audit("SYNC_SUCCESS", f"Portfolio {portfolio_id}: {len(valid_transactions)} transactions, {len(prices)} prices, {len(valid_dividends)} dividends.")
             
             # [NEW] Refresh Materialized Views
             try:
@@ -470,9 +470,9 @@ def sync_transactions():
             except Exception as e_mv:
                 logger.error(f"SYNC: MV Refresh failed: {e_mv}")
 
-            return jsonify(message=f"Successfully synced. Prices: {len(prices)}. Trans: {len(valid_transactions)}"), 200
+            return jsonify(message=f"Successfully synced. Prices: {len(prices)}. Trans: {len(valid_transactions)}. Divs: {len(valid_dividends)}"), 200
         else:
-            log_audit("SYNC_SUCCESS", f"Portfolio {portfolio_id}: {len(prices)} prices only.")
+            log_audit("SYNC_SUCCESS", f"Portfolio {portfolio_id}: {len(prices)} prices, {len(valid_dividends)} dividends. No transactions.")
             
             # [NEW] Refresh Materialized Views (Prices might affect some logic, but mainly transactions do. 
             # However, dividends or other changes might have happened too.)
@@ -482,7 +482,7 @@ def sync_transactions():
             except Exception as e_mv:
                 logger.error(f"SYNC: MV Refresh failed: {e_mv}")
                 
-            return jsonify(message=f"Synced. Prices: {len(prices)}. No transactions."), 200
+            return jsonify(message=f"Synced. Prices: {len(prices)}. Divs: {len(valid_dividends)}. No transactions."), 200
 
     except Exception as e:
         logger.error(f"SYNC FAIL: {e}")

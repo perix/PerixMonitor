@@ -12,7 +12,10 @@ Works for both:
 import os
 import requests
 import json
-from logger import logger
+try:
+    from api.logger import logger
+except ImportError:
+    from logger import logger
 
 def get_supabase_credentials():
     """Returns (url, service_key) tuple."""

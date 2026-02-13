@@ -23,13 +23,13 @@ L'obiettivo principale è l'ingestione "intelligente" di file Excel di portafogl
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        UTENTE (Browser)                         │
-│                     http://localhost:3000                       │
+│                     http://localhost:3500                       │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    SERVER 1: FRONTEND                           │
-│                    Next.js (porta 3000)                         │
+│                    Next.js (porta 3500)                         │
 │                                                                 │
 │  • Mostra l'interfaccia grafica (pagine, bottoni, grafici)     │
 │  • Riceve input dall'utente (click, upload file)               │
@@ -62,7 +62,7 @@ Per far funzionare PerixMonitor in locale, **entrambi i server devono essere att
 
 | Comando | Server | Porta | Scopo |
 |---------|--------|-------|-------|
-| `npm run dev` | Frontend (Next.js) | 3000 | Interfaccia utente |
+| `npm run dev` | Frontend (Next.js) | 3500 | Interfaccia utente |
 | `python api/index.py` | Backend (Flask) | 5328 | Logica di business e database |
 
 > [!IMPORTANT]
@@ -104,10 +104,10 @@ api/
     - `pandas`: Parsing ed elaborazione dati Excel
     - `scipy`: Calcoli finanziari (XIRR ottimizzato)
     - `openai`: Integrazione con modelli AI per arricchimento dati asset
-- **Logging & Audit**: 
     - Sistema di audit professionale (`log_audit`) per operazioni critiche (Sync, Ingestione, Reset).
     - Logging a due livelli (INFO per Audit, DEBUG per dettagli tecnici).
-    - Supporto per file log (`perix_monitor.log`) attivabile dinamicamente da UI.
+    - **Conditional Logging**: Filtro dinamico (`ConditionalFileFilter`) che riduce i log su file quando non necessari (solo eventi macroscopici e warning/errori), attivabile da UI per debug completo.
+    - Supporto per file log (`perix_monitor.log`) gestito dinamicamente.
 
 ### Sicurezza e Row Level Security (RLS)
 
@@ -251,7 +251,19 @@ Il grafico dell'andamento MWR non è uno storico salvato, ma viene **ricalcolato
     - **Dual Axis**: Grafico a doppio asse per performance asset vs portafoglio.
     - **Time Window**: Range Slider bi-direzionale per zoomare su specifici periodi temporali.
     - **Persistent Colors**: Assegnazione colori univoci e persistenti per Asset nel database.
+
     - **Resizable Layout**: Layout a pannelli ridimensionabile.
+    - **Empty Selection Logic**: Il filtro "Nessuno selezionato" svuota la dashboard invece di mostrare tutto il portafoglio.
+
+### Ottimizzazioni Performance (Feb 2026)
+- [x] **Database Indexing**: Aggiunti indici su `transactions`, `dividends` e `asset_prices` per query istantanee.
+- [x] **Batch Processing**: Sostituiti loop N+1 con operazioni batch per prezzi e sync.
+- [x] **Smart Caching**: 
+    - **LocalStorage**: Persistenza dashboard e settings (TTL 5 min).
+    - **Server Filters**: Filtraggio lato DB delle date per ridurre il payload.
+- [x] **MWRR Engine**: Motore di calcolo ottimizzato con logica Tiered (Simple -> Period -> Annualized).
+- [x] **Data Compaction**: Strategia (pianificata) per ridurre la densità dei dati storici.
+*Dettagli completi in [Analisi Performance](performance.md)*
 
 ### Prossimi Passi (Roadmap Future V1.1+)
 - [ ] **MWRR Engine Refinement**: Aggiornare il calcolo XIRR per includere i dividendi in modo più granulare.

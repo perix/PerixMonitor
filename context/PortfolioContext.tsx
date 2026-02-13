@@ -61,7 +61,10 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
         if (typeof window !== 'undefined') {
             const stored = localStorage.getItem('selectedPortfolioId');
             if (stored) {
+                console.log("PORTFOLIO CONTEXT: Loaded stored ID", stored);
                 setSelectedPortfolioId(stored);
+            } else {
+                console.log("PORTFOLIO CONTEXT: No stored ID found");
             }
 
             // [PERF] Load persistent caches
@@ -94,8 +97,10 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
 
     useEffect(() => {
         if (selectedPortfolioId) {
+            console.log("PORTFOLIO CONTEXT: Saving ID to storage", selectedPortfolioId);
             localStorage.setItem('selectedPortfolioId', selectedPortfolioId);
         } else {
+            console.log("PORTFOLIO CONTEXT: Clearing ID from storage");
             localStorage.removeItem('selectedPortfolioId');
         }
     }, [selectedPortfolioId]);

@@ -22,43 +22,89 @@ logger.addHandler(ch)
 
 # --- File Logging Management ---
 
-def _get_file_handler():
-    """Helper to find existing file handler."""
+class ConditionalFileFilter(logging.Filter):
+    def filter(self, record):
+        # 1. ALWAYS log WARNING and ERROR
+        if record.levelno >= logging.WARNING:
+            return True
+            
+        # 2. If Global Logging is ENABLED, log everything
+        if ENABLE_FILE_LOGGING:
+            return True
+        
+        # 3. If Disabled, ONLY log "Macroscopic" events
+        # We identify them by prefixes (Tags)
+        msg = record.getMessage()
+        
+        # Macroscopic Tags List
+        macro_tags = [
+            "[AUDIT]", 
+            "[SYSTEM]", 
+            "[STARTUP]", 
+            "[DASHBOARD_SUMMARY]", 
+            "[DASHBOARD_HISTORY]",
+            "[SYNC]",
+            "[RESET_DB]",
+            "[SYSTEM_RESET]"
+        ]
+        
+        # Exception: We specifically EXCLUDE detailed diagnostics even if they look like tags, 
+        # unless they are in the macro list. 
+        # For example [MWR_DIAG] is very verbose, so we exclude it by omission from macro_tags.
+        
+        for tag in macro_tags:
+            if msg.startswith(tag):
+                return True
+                
+        return False
+
+def _ensure_file_handler():
+    """Ensure the file handler exists and has the filter attached."""
+    global logger
+    
+    # Check if exists
     for h in logger.handlers:
         if isinstance(h, logging.FileHandler):
             return h
-    return None
+
+    # Create if missing
+    try:
+        log_dir = os.path.dirname(LOG_FILE_PATH)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+
+        fh = logging.FileHandler(LOG_FILE_PATH, encoding='utf-8')
+        fh.setLevel(logging.DEBUG) # We capture all, filter decides
+        
+        # Attach Filter
+        fh.addFilter(ConditionalFileFilter())
+        
+        file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        fh.setFormatter(file_formatter)
+        logger.addHandler(fh)
+        return fh
+    except Exception as e:
+        print(f"Failed to create file logger: {e}") # Fallback to stdout
+        return None
 
 def configure_file_logging(enabled: bool):
     """
-    Dynamically enable or disable file logging based on user config.
+    Dynamically enable or disable DETAILED file logging.
+    Macroscopic logs and Warnings/Errors are always enabled via Filter.
     """
     global ENABLE_FILE_LOGGING
     
-    file_handler = _get_file_handler()
+    # Update state
+    if enabled != ENABLE_FILE_LOGGING:
+        ENABLE_FILE_LOGGING = enabled
+        status = "ENABLED" if enabled else "DISABLED"
+        logger.info(f"[SYSTEM] Detailed file logging {status} dynamically.")
     
-    if enabled:
-        ENABLE_FILE_LOGGING = True
-        if not file_handler:
-            try:
-                log_dir = os.path.dirname(LOG_FILE_PATH)
-                if log_dir and not os.path.exists(log_dir):
-                    os.makedirs(log_dir)
+    # Ensure handler is always present
+    _ensure_file_handler()
 
-                fh = logging.FileHandler(LOG_FILE_PATH, encoding='utf-8')
-                fh.setLevel(logging.DEBUG) # File gets everything (Audit + Debug)
-                file_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-                fh.setFormatter(file_formatter)
-                logger.addHandler(fh)
-                logger.info(f"[SYSTEM] File logging ENABLED dynamically.")
-            except Exception as e:
-                logger.error(f"[SYSTEM] Failed to enable file logging: {e}")
-    else:
-        ENABLE_FILE_LOGGING = False
-        if file_handler:
-            logger.info(f"[SYSTEM] File logging DISABLED dynamically.")
-            file_handler.close()
-            logger.removeHandler(file_handler)
+# Initialize Handler (It will default to Disabled restricted mode if env var is False)
+_ensure_file_handler()
 
 # Verify initial state
 if ENABLE_FILE_LOGGING:

@@ -7,21 +7,25 @@ export function cn(...inputs: ClassValue[]) {
 
 // Helper for consistent Swiss currency formatting (e.g. 8'015.00)
 // Uses apostrophe for thousands and dot for decimals
+// Helper for consistent Swiss currency formatting (e.g. 8'015.00)
+// Uses apostrophe for thousands and dot for decimals (standard it-CH)
 export function formatSwissMoney(value: number | undefined | null, decimals: number = 2): string {
   if (value === undefined || value === null) return "0";
-  return value.toLocaleString('en-US', {
+  return new Intl.NumberFormat('it-CH', {
     minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals
-  }).replace(/,/g, "'");
+    maximumFractionDigits: decimals,
+    useGrouping: true
+  }).format(value);
 }
 
 // Helper for consistent Swiss number formatting (e.g. 1'000)
 export function formatSwissNumber(value: number | undefined | null, decimals: number = 0): string {
   if (value === undefined || value === null) return "0";
-  return value.toLocaleString('en-US', {
+  return new Intl.NumberFormat('it-CH', {
     minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals
-  }).replace(/,/g, "'");
+    maximumFractionDigits: decimals,
+    useGrouping: true
+  }).format(value);
 }
 
 /**
