@@ -9,6 +9,8 @@ import DevTestPanel from '@/components/settings/DevTestPanel';
 import { createClient } from '@/utils/supabase/client';
 import axios from 'axios';
 
+import ResetDbPanel from '@/components/settings/ResetDbPanel';
+
 export default function SettingsPage() {
     const supabase = createClient();
     const [logEnabled, setLogEnabled] = useState<boolean>(false);
@@ -49,7 +51,9 @@ export default function SettingsPage() {
         return () => window.removeEventListener('log-config-changed', handleStorageChange);
     }, []);
 
-    const gridCols = logEnabled ? 'grid-cols-4' : 'grid-cols-3';
+    // Dynamic grid columns based on enabled tabs
+    const baseCols = 4; // Asset, AI, Maintenance, Reset
+    const gridCols = logEnabled ? `grid-cols-${baseCols + 1}` : `grid-cols-${baseCols}`;
 
     return (
         <div className="max-w-5xl lg:max-w-6xl xl:max-w-7xl mx-auto pb-20 px-4">
@@ -62,8 +66,11 @@ export default function SettingsPage() {
                     <TabsTrigger value="ai" className="rounded-lg data-[state=active]:bg-indigo-600 data-[state=active]:text-white h-full text-base">
                         AI
                     </TabsTrigger>
-                    <TabsTrigger value="system" className="rounded-lg data-[state=active]:bg-red-600 data-[state=active]:text-white h-full text-base">
+                    <TabsTrigger value="system" className="rounded-lg data-[state=active]:bg-blue-600 data-[state=active]:text-white h-full text-base">
                         Manutenzione
+                    </TabsTrigger>
+                    <TabsTrigger value="reset" className="rounded-lg data-[state=active]:bg-red-600 data-[state=active]:text-white h-full text-base">
+                        Reset DB
                     </TabsTrigger>
                     {logEnabled && (
                         <TabsTrigger value="devtest" className="rounded-lg data-[state=active]:bg-amber-600 data-[state=active]:text-white h-full text-base">
@@ -82,6 +89,10 @@ export default function SettingsPage() {
 
                 <TabsContent value="system" className="focus-visible:outline-none">
                     <SystemMaintenancePanel />
+                </TabsContent>
+
+                <TabsContent value="reset" className="focus-visible:outline-none">
+                    <ResetDbPanel />
                 </TabsContent>
 
                 {logEnabled && (

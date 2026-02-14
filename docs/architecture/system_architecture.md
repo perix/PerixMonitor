@@ -181,6 +181,7 @@ Il grafico MWR viene generato dinamicamente simulando una "vendita fittizia" (Ma
 - [x] **UI Persistence**: Salvataggio preferenze tabelle, colori custom asset, note.
 - [x] **AI Integration**: Supporto GPT-5/Search opzionale per arricchimento dati.
 - [x] **Performance**: Indicizzazione DB, Caching lato client, Batch processing prezzi.
+- [x] **Settings Refactoring**: "Danger Zone" isolata, Auto-selezione post-restore.
 
 ### Prossimi Passi (Roadmap Future V2.1+)
 - [ ] **Multi-Currency Support**: Gestione nativa cambi valuta storici.

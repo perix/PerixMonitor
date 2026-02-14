@@ -3,6 +3,8 @@ supabase start
 
 2. Avvio del Backend (Python/Edge Functions)
 supabase functions serve
+2
+python api/index.py
 
 3. Avvio del Frontend (React + Vite)
 npm run dev

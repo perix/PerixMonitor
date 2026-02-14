@@ -4,26 +4,13 @@ import React, { useState, useEffect } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import axios from 'axios';
 import {
-    Trash2,
-    AlertTriangle,
     Loader2,
-    ShieldAlert,
     Users,
     Key,
     UserX,
-    FileText
+    FileText,
+    Wrench
 } from 'lucide-react';
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-    AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
 import {
     Dialog,
     DialogContent,
@@ -101,17 +88,22 @@ function RestoreBackupArea({ userId }: { userId: string | null }) {
             // BUT for large files verify if analysis returns data. 
             // In backup_service.py we returned `data_preview`.
 
-            await axios.post('/api/backup/restore', {
+            const res = await axios.post('/api/backup/restore', {
                 backup_content: analysisResult.data_preview,
                 new_name: newName,
                 user_id: userId
             });
 
+            if (res.data.new_portfolio_id) {
+                // Set the new portfolio as selected for the next load
+                localStorage.setItem('selectedPortfolioId', res.data.new_portfolio_id);
+            }
+
             alert("Ripristino completato con successo!");
             setRestoreModalOpen(false);
             setFile(null);
             setAnalysisResult(null);
-            window.location.reload(); // Refresh to see new portfolio? Or dispatch event
+            window.location.reload();
         } catch (error: any) {
             console.error("Restore failed", error);
             alert("Errore ripristino: " + (error.response?.data?.error || error.message));
@@ -451,8 +443,8 @@ export default function SystemMaintenancePanel() {
     return (
         <div className="space-y-8">
             <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center shadow-lg shadow-red-500/20">
-                    <ShieldAlert className="text-white w-7 h-7" />
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-700 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                    <Wrench className="text-white w-7 h-7" />
                 </div>
                 <div>
                     <h2 className="text-2xl font-bold tracking-tight text-white">Manutenzione Sistema</h2>
@@ -656,142 +648,6 @@ export default function SystemMaintenancePanel() {
                             </div>
 
                             <RestoreBackupArea userId={currentUserId} />
-                        </div>
-
-                    </CardContent>
-                </Card>
-
-                {/* DANGER ZONE - Database Reset */}
-                <Card className="bg-red-950/10 backdrop-blur-md border border-red-900/30">
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-red-500">
-                            <span className="p-2 bg-red-500/10 rounded-lg text-red-500">
-                                <Trash2 className="w-4 h-4" />
-                            </span>
-                            Danger Zone
-                        </CardTitle>
-                        <CardDescription className="text-red-400/70">
-                            Azioni distruttive per la gestione dei dati
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-
-                        {/* 1. USER RESET */}
-                        <div className="flex items-center justify-between p-4 rounded-lg border border-red-500/10 bg-red-500/5 hover:bg-red-500/10 transition-colors">
-                            <div className="space-y-1">
-                                <p className="text-base font-medium text-red-400">Reset Utente (Soft)</p>
-                                <p className="text-sm text-red-400/60 leading-relaxed max-w-md">
-                                    Cancella solo i <b>tuoi</b> portafogli e transazioni.
-                                    <br />
-                                    <span className="text-green-500/80 font-medium">Mantiene Asset e Prezzi globali.</span>
-                                    <br />
-                                    Utile se vuoi ricaricare le tue transazioni senza perdere i dati di mercato.
-                                </p>
-                            </div>
-
-                            <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                    <Button variant="outline" size="sm" className="gap-2 shrink-0 border-red-500/30 text-red-400 hover:bg-red-500/20 hover:text-red-300">
-                                        {resetLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                                        Reset Utente
-                                    </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent className="bg-slate-900 border-red-500/30 text-white">
-                                    <AlertDialogHeader>
-                                        <AlertDialogTitle className="text-red-500">Confermi il Reset Utente?</AlertDialogTitle>
-                                        <AlertDialogDescription className="text-slate-300">
-                                            Verranno cancellati tutti i tuoi portafogli, le note e lo storico transazioni.
-                                            <br /><br />
-                                            <b>Gli Asset globali e i Prezzi NON verranno cancellati.</b>
-                                        </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                        <AlertDialogCancel className="bg-transparent border-white/10 hover:bg-white/5 text-white hover:text-white">
-                                            Annulla
-                                        </AlertDialogCancel>
-                                        <AlertDialogAction
-                                            onClick={handleResetDatabase} // Still maps to user reset (/api/reset)
-                                            className="bg-red-600 hover:bg-red-700 text-white border-none"
-                                        >
-                                            Reset I Miei Dati
-                                        </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                </AlertDialogContent>
-                            </AlertDialog>
-                        </div>
-
-                        {/* 2. SYSTEM RESET */}
-                        <div className="flex items-center justify-between p-4 rounded-lg border border-red-900/50 bg-red-950/30 hover:bg-red-900/40 transition-colors">
-                            <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                    <p className="text-base font-medium text-red-500">Reset Sistema (Hard)</p>
-                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-600 text-white uppercase tracking-wider">Admin</span>
-                                </div>
-                                <p className="text-sm text-red-400/60 leading-relaxed max-w-md">
-                                    <b className="text-red-500">NUCLEAR OPTION.</b> Cancella TUTTO dal database.
-                                    <br />
-                                    Include Portafogli, Asset, Prezzi e Configurazioni.
-                                    <br />
-                                    Richiederà un re-ingest completo dei dati di mercato.
-                                </p>
-                            </div>
-
-                            <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                    <Button variant="destructive" size="sm" className="gap-2 shrink-0 bg-red-700 hover:bg-red-800">
-                                        {resetLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4" />}
-                                        Reset COMPLETO
-                                    </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent className="bg-red-950 border-red-500 text-white">
-                                    <AlertDialogHeader>
-                                        <div className="flex items-center gap-2 text-red-500 mb-2">
-                                            <AlertTriangle className="w-6 h-6" />
-                                            <span className="font-bold text-lg">ATTENZIONE: WIPE TOTALE</span>
-                                        </div>
-                                        <AlertDialogTitle className="text-white">Sei davvero sicuro?</AlertDialogTitle>
-                                        {/* Use asChild to avoid nesting <ul> inside <p> */}
-                                        <AlertDialogDescription asChild className="text-red-200">
-                                            <div>
-                                                Questa azione è <b>IRREVERSIBILE</b>.
-                                                <br /><br />
-                                                Cancellerà:
-                                                <ul className="list-disc list-inside mt-2 space-y-1">
-                                                    <li>Tutti i Portafogli di tutti gli utenti</li>
-                                                    <li>Tutte le Transazioni</li>
-                                                    <li>Tutti gli Asset (Anagrafiche)</li>
-                                                    <li>Tutti i Prezzi storici</li>
-                                                </ul>
-                                                <br />
-                                                Il sistema tornerà allo stato vuoto.
-                                            </div>
-                                        </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                        <AlertDialogCancel className="bg-transparent border-white/20 hover:bg-white/10 text-white hover:text-white">
-                                            FERMATI
-                                        </AlertDialogCancel>
-                                        <AlertDialogAction
-                                            onClick={async () => {
-                                                setResetLoading(true);
-                                                try {
-                                                    await axios.post('/api/admin/reset-system');
-                                                    alert('Sistema resettato completamente.');
-                                                    window.location.reload();
-                                                } catch (e: any) {
-                                                    console.error(e);
-                                                    alert("Errore Reset Sistema: " + e.message);
-                                                } finally {
-                                                    setResetLoading(false);
-                                                }
-                                            }}
-                                            className="bg-red-600 hover:bg-red-700 text-white border-none font-bold"
-                                        >
-                                            SI, CANCELLA TUTTO
-                                        </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                </AlertDialogContent>
-                            </AlertDialog>
                         </div>
 
                     </CardContent>
