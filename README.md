@@ -127,20 +127,26 @@ Solo confermando la preview i dati vengono scritti nel database.
     - **Sold Assets**: Gestione automatica assets venduti (Quantità=0) -> Il trend viene forzato a `NULL` nel DB per pulizia visiva.
     - **Historical Fills**: Supporto robusto per iniezione massiva di prezzi storici senza corrompere l'indicatore "Ultima Variazione".
 
-### Gestione Cedole, Dividendi e Spese (12/02/2026)
-- **Classificazione Automatica per Tipo**:
-    - Importi positivi → `DIVIDEND` (cedole, dividendi, incassi).
-    - Importi negativi → `EXPENSE` (spese, costi, tasse).
-- **Aggregazione Intelligente**: Somma automatica di entries multiple per stesso ISIN/data/tipo, sia nel file uploadato che con i dati già in archivio.
-- **DB**: Nuova colonna `type` nella tabella `dividends` con vincolo di unicità aggiornato a `(portfolio_id, asset_id, date, type)`.
-- **Riconciliazione Separata**: Modal con sezioni distinte per Cedole/Dividendi (indaco) e Spese/Costi (arancione), ciascuna con colonne "In Archivio" | "Nuovi Incassi/Costi" | "Dopo Importazione".
+### Release 2.0 - "Memory & Analysis" (14/02/2026)
 
-### Ottimizzazioni Core & UX (13/02/2026)
-- **Logica Selezione Asset**:
-    - Il filtro "Nessuno selezionato" ora svuota completamente la dashboard (grafici e KPI), permettendo focus totale sui singoli asset selezionati.
-    - Risolto bug dove la selezione vuota veniva interpretata come "Seleziona Tutto".
-- **Conditional Logging**:
-    - Nuovo sistema di filtraggio log su file (`ConditionalFileFilter`).
-    - Se disabilitato (default), il file log registra solo eventi macroscopici (`[STARTUP]`, `[AUDIT]`, `[SYNC]`, `[ERROR]`), mantenendo il file pulito e leggero.
-    - Se abilitato da UI, traccia il debug completo di ogni operazione.
-    - Gestione dinamica senza riavvio del server.
+- **System Architecture V2.0**:
+    - Aggiornamento completo della documentazione architetturale.
+    - Consolidamento moduli backend: `memory.py`, `analysis.py`, `backup_service.py`.
+
+- **Backup & Restore "Full Fidelity"**:
+    - **Inclusione Storico Prezzi**: Il backup ora salva e ripristina l'intera serie storica dei prezzi, garantendo grafici MWRR coerenti.
+    - **Smart Restore**: Ricreazione automatica asset e rimappatura dipendenze (Note, Settings).
+
+- **Gestione "Memory" & P&L**:
+    - Nuova pagina "Note & Storico" con aggregazione transazioni e calcolo P&L netto (inclusi dividendi e spese).
+    - Note persistenti per asset.
+
+- **Modulo "Analysis"**:
+    - Breakdown Asset Allocation per classe e componente.
+    - Supporto Liquidità Manuale iniettabile.
+
+- **Ottimizzazioni UX & Core**:
+    - **Safe Ingestion**: Protocollo Read-Preview-Write per file Excel (Transazioni, Dividendi, Spese).
+    - **Color Manager**: Assegnazione colori persistenti e unici per asset.
+    - **Trend Coloring**: Logica a soglia configurabile per variazioni di prezzo.
+    - **AI Audit**: Integrazione avanzata GPT-5 e Conditional Logging.

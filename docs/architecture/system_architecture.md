@@ -1,4 +1,4 @@
-# PerixMonitor - Architettura e Stato Corrente (V1.1)
+# PerixMonitor - Architettura e Stato Corrente (V2.0)
 
 ## 1. Panoramica
 PerixMonitor è un'applicazione web per il tracciamento del patrimonio personale (Wealth Tracker) ottimizzata per residenti fiscali italiani. 
@@ -67,21 +67,24 @@ Per far funzionare PerixMonitor in locale, **entrambi i server devono essere att
 
 > [!IMPORTANT]
 > Se avvii solo il frontend senza il backend Python, vedrai errori del tipo `ECONNREFUSED 127.0.0.1:5328` perché il frontend non riesce a contattare l'API.
-> **Dev Test Note**: Per le chiamate LLM di test (lunga durata), il frontend contatta direttamente la porta 5328 per bypassare il timeout di 60s del proxy Next.js.
 
-#### Struttura dei File Backend
+#### Struttura dei File Backend (Version 2.0)
 
 ```
 api/
 ├── index.py          # Entry point principale - avvia Flask e registra tutte le route
-├── dashboard.py      # API per la pagina Dashboard (grafici, KPI, storico)
-├── portfolio.py      # Gestione portafogli (crea, elimina, lista)
-├── assets.py         # Gestione anagrafica titoli
-├── ingest.py         # Parsing file Excel
-├── finance.py        # Calcoli finanziari (XIRR)
-├── price_manager.py  # Salvataggio storico prezzi
-├── llm_asset_info.py # Integrazione AI avanzata (GPT-5, Web Search, Reasoning)
-├── supabase_client.py# Connessione al database
+├── dashboard.py      # API Dashboard: grafici, KPI, storico MWR, trend
+├── memory.py         # [V2.0] API Memory/Storico: aggregazione transazioni, P&L, note, dividendi
+├── analysis.py       # [V2.0] API Analisi: allocazione asset class, componenti, metriche granulari
+├── portfolio.py      # Gestione portafogli (CRUD)
+├── ingest.py         # Parsing e Safe Ingestion file Excel (Transazioni, Cedole)
+├── backup_service.py # [V2.0] Logica avanzata Backup/Restore (full price history support)
+├── finance.py        # Core Engine: Calcoli finanziari XIRR/MWR tiered
+├── price_manager.py  # Gestione storico prezzi (salvataggio manuale, recupero efficiente)
+├── color_manager.py  # [V2.0] Gestione colori persistenti per asset
+├── config_api.py     # [V2.0] API per settings UI persistenti (colonne, filtri)
+├── llm_asset_info.py # Integrazione AI (GPT-5, Web Search)
+├── supabase_client.py# Client DB centralizzato
 └── logger.py         # Sistema di audit e logging professionale
 ```
 
@@ -89,12 +92,12 @@ api/
 
 | Endpoint | Metodo | Funzione |
 |----------|--------|----------|
-| `/api/ingest` | POST | Riceve file Excel, lo analizza, restituisce anteprima |
-| `/api/sync` | POST | Conferma e salva transazioni/prezzi nel database |
-| `/api/dashboard/summary` | GET | Restituisce KPI aggregati del portafoglio |
-| `/api/dashboard/history` | GET | Restituisce storico performance per i grafici |
-| `/api/portfolios` | POST/DELETE | Crea o elimina un portafoglio |
-| `/api/admin/users` | GET | Lista utenti (solo admin) |
+| `/api/ingest` | POST | Preview Import: analizza Excel e propone modifiche (senza salvare) |
+| `/api/sync` | POST | Safe Sync: Commit atomico delle modifiche approvate nel DB |
+| `/api/memory/data` | GET | Recupera dati aggregati per pagina "Note & Storico" (incl. P&L netto) |
+| `/api/analysis/allocation` | GET | Recupera dati allocazione per pagina "Analisi" |
+| `/api/backup/download` | GET | Scarica JSON backup completo (incl. storico prezzi) |
+| `/api/dashboard/summary` | GET | KPI Dashboard e grafici andamento |
 
 #### Tecnologie Utilizzate
 
@@ -104,206 +107,86 @@ api/
     - `pandas`: Parsing ed elaborazione dati Excel
     - `scipy`: Calcoli finanziari (XIRR ottimizzato)
     - `openai`: Integrazione con modelli AI per arricchimento dati asset
-    - Sistema di audit professionale (`log_audit`) per operazioni critiche (Sync, Ingestione, Reset).
-    - Logging a due livelli (INFO per Audit, DEBUG per dettagli tecnici).
-    - **Conditional Logging**: Filtro dinamico (`ConditionalFileFilter`) che riduce i log su file quando non necessari (solo eventi macroscopici e warning/errori), attivabile da UI per debug completo.
-    - Supporto per file log (`perix_monitor.log`) gestito dinamicamente.
+    - Sistema di audit professionale (`log_audit`) per operazioni critiche.
 
-### Sicurezza e Row Level Security (RLS)
+### Sicurezza e RLS
 
-Per garantire la massima protezione dei dati, il progetto implementa una **sicurezza a due livelli**:
+- **Row Level Security (RLS)**: Attiva su tutte le tabelle. Accesso diretto bloccato per utenti anonimi.
+- **Service Role Proxy**: Il backend Python agisce come gatekeeper unico, utilizzando la `SERVICE_ROLE_KEY` per operazioni privilegiate previa validazione.
 
-1.  **Row Level Security (RLS)**: Tutte le tabelle Supabase (`profiles`, `portfolios`, `asset_prices`, `dividends`, `app_config`, ecc.) hanno la RLS attiva. Per impostazione predefinita, nessun utente anonimo (dal browser) può leggere o scrivere dati.
-2.  **Backend Proxy (Service Role)**: Poiché il frontend è bloccato dalla RLS, tutte le operazioni sui dati sensibili passano attraverso il **Backend Python**. Il backend utilizza la `SERVICE_ROLE_KEY` (una chiave segreta che non esce mai dal server) per comunicare con Supabase, agendo come un filtro sicuro che valida i permessi prima di ogni operazione.
+### Database (Schema V2.0)
 
-> [!CAUTION]
-> **NON tentare mai** di eseguire query dirette dal frontend (`supabase.from(...)`) su tabelle protette. Queste chiamate falliranno silenziosamente o con errore 403. Utilizzare sempre gli endpoint API del backend.
-
-### Database
-- **Provider**: Supabase (PostgreSQL).
-- **Schema Aggiornato (v2)**:
-    - `assets`: Anagrafica titoli (ISIN, Nome, Settore).
+- **Core Tables**:
+    - `assets`: Anagrafica titoli (ISIN, Nome, Settore, Metadata AI).
     - `transactions`: Storico operazioni (Acquisto, Vendita).
-    - `dividends`: Storico Flussi di Cassa (Cedole/Dividendi e Spese/Costi). Include colonna `type` (`DIVIDEND`/`EXPENSE`) e vincolo di unicità su `(portfolio_id, asset_id, date, type)`.
-    - `portfolios`: Contenitore logico per utente.
-    - `snapshots`: Storico aggregato degli upload Excel (Valore Totale, Capitale Investito, Data Upload).
-    - `asset_prices`: Storico prezzi manuale (ISIN, Prezzo, Data, Fonte). Fonte primaria: Colonna I file Excel.
-    - `asset_metrics_history`: Storico calcolato performance per asset (MWRR, Valore) per grafici nel tempo.
+    - `dividends`: Flussi di cassa (Cedole/Dividendi e Spese/Costi). Colonna `type` discrimina entrate/uscite.
+    - `portfolios`: Contenitori logici.
+    - `asset_prices`: Storico prezzi manuale (Timestamped). Fonte primaria per calcoli MWR.
+    - `snapshots`: Storico aggregato valori totali post-upload.
 
-## 3. Protocollo "Safe Ingestion" (Nuova Architettura)
+- **New V2.0 Tables**:
+    - `asset_notes`: Note testuali utente sugli asset (persistenti per portfolio).
+    - `portfolio_asset_settings`: Configurazioni specifiche per asset nel contesto portfolio (es. `color` per grafici).
+    - `app_config`: Key-Value store per impostazioni UI (es. visibilità colonne, ordinamento tabelle, config AI).
 
-Il sistema adotta un approccio "Read-Preview-Write" per evitare contaminazione del database con dati errati:
+## 3. Moduli Funzionali Chiave (V2.0 architecture)
 
-1.  **Phase 1: Ingest (Read-Only)**
-    - L'utente carica il file. L'API `/api/ingest` lo legge.
-    - Il sistema RILEVA il tipo file:
-        - **Portfolio Full/Partial Sync**:
-            -   Supporta "Partial Updates" (file con sole vendite): ignora asset mancanti senza venderli.
-            -   Supporta "Strict Sync" per discrepanze: Segnala errore se la quantità cambia senza operazione esplicita.
-        -   **Dividend/Expense File**: Rileva automaticamente pattern [ISIN, Valore, Data] per importazione flussi di cassa. Classifica automaticamente le entries come `DIVIDEND` (importi positivi) o `EXPENSE` (importi negativi). Aggrega per (ISIN, Data, Tipo) e calcola delta vs DB.
-    - **Nessun dato viene salvato nel DB**. L'API restituisce un JSON con le proposte di modifica (`delta`, `prices_to_save`, `snapshot_proposal`).
+### Gestione "Memory" & Storico
+La nuova pagina "Note & Storico" (`memory.py`) centralizza la vista dettagliata dell'investimento:
+- **Aggregazione**: Unifica transazioni di acquisto/vendita per calcolare giacenza media, costo totale e ricavi.
+- **P&L Netto**: Calcola il Profit & Loss includendo non solo plusvalenze da prezzo (Capital Gain), ma anche Dividendi netti e Spese.
+- **Note Persistenti**: Permette di annotare strategie su ogni singolo asset.
+- **UI Settings**: Salva le preferenze di visualizzazione tabella (colonne nascoste, sort) per esperienza utente continua.
 
-2.  **Phase 2: Preview & Reconciliation**
-    - Il Frontend mostra all'utente cosa sta per succedere (transazioni mancanti, cedole rilevate).
-    - Il sistema permette di riconciliare i nomi asset e le tipologie asset per uniformità.
-    - L'utente deve confermare esplicitamente.
+### Gestione "Analysis" & Allocazione
+Il modulo Analisi (`analysis.py`) scompone il portafoglio in Componenti (Asset Class):
+- **Logica Componenti**: Raggruppa asset (es. ETF Azionari, Bond Governativi) calcolando pesi percentuali e performance aggregate per classe.
+- **Liquidità Manuale**: Supporta l'iniezione di una posizione di liquidità virtuale (tramite settings portfolio) che partecipa all'asset allocation totale.
 
-3.  **Phase 3: Sync (Transactional Write)**
-    - Solo alla conferma, il frontend invia il payload approvato all'API `/api/sync`.
-    - Il backend esegue le scritture nel DB (Transazioni, Prezzi, Snapshot, Dividendi) in modo atomico o sequenziale sicuro.
-    - Il backend esegue update/backfill di asset type e description se forniti nel payload di sync.
+### Protocollo Safe Ingestion & Dividend Management
+- **Preview First**: Nessun dato viene scritto senza conferma esplicita post-analisi delta.
+- **Dividend/Expense separation**: Rilevamento automatico dal segno dell'importo (Positivo=Cedola, Negativo=Spesa).
+- **Idempotenza**: Gestione duplicati tramite chiave composita `(portfolio, asset, data, type)`.
 
-## 4. Strategie di Dati
+### Backup & Restore "Full Fidelity"
+Il servizio di Backup (`backup_service.py`) è stato riscritto per garantire **Zero Data Loss**:
+- **Price History Inclusion**: Il JSON di backup include TUTTI i prezzi storici degli asset coinvolti, permettendo di ricostruire fedelmente i grafici MWRR anche su nuove installazioni.
+- **Smart Restore**: 
+    - Ricrea automaticamente anagrafiche asset mancanti.
+    - Rimappa ID per entità dipendenti (Note, Settings, Colori).
+    - Preserva configurazioni UI e preferenze.
 
-### Manual Price Ingestion & Frequency
-- La fonte di verità è la **Colonna I ("Prezzo Corrente") del file Excel**.
-- **Frequenza Irregolare**: L'applicazione è progettata per gestire aggiornamenti di prezzo sporadici (es. settimanali o su richiesta).
-- **Logica di Continuità (LOCF)**:
-    - Poiché i prezzi non sono giornalieri, il sistema adotta la logica **Last Observation Carried Forward**.
-    - Il valore di un asset al giorno X (se non presente un prezzo esplicito) è assunto uguale all'ultimo prezzo noto precedente.
-    - Questo garantisce che i grafici di andamento ("Portfolio History") non abbiano "buchi" temporali e rimangano fluidi anche con dati sparsi.
-- Questi prezzi vengono salvati nella tabella `asset_prices` con `source='Manual Upload'`.
+## 4. Metodologia MWR (Money Weighted Return)
 
-### Client-Side Caching (Performance)
-- **Problem**: La navigazione tra Dashboard e Portafoglio causava ricaricamenti ridondanti dei dati.
-- **Solution**: Implementata una cache a livello di `PortfolioContext`.
-    - **Dashboard Cache**: Memorizza Summary, History e Settings per ogni Portafoglio visitato.
-    - **Portfolio Cache**: Memorizza lista Asset e dettagli Portafoglio.
-- **Invalidation**: La cache viene invalidata automaticamente al caricamento di nuovi dati (Ingest) o alla modifica delle impostazioni.
-- **Persistence**: I dati rimangono in memoria per la sessione corrente (o fino al reload pagina), garantendo navigazione istantanea.
+Il sistema calcola la performance reale tramite **XIRR (Extended Internal Rate of Return)**, l'unico metodo che pesa correttamente il timing dei flussi di cassa.
 
-### Integrazione AI Avanzata (v1.1)
-Il sistema utilizza modelli OpenAI di ultima generazione per l'arricchimento automatico dei metadati degli asset:
-- **Modelli Supportati**: Ottimizzato per `gpt-5-mini` e modelli `o-series` via **OpenAI Responses API**.
-- **Reasoning Effort**: Possibilità di configurare il livello di ragionamento del modello (`low`, `medium`, `high`) per analisi finanziarie più precise.
-- **Native Web Search**: Supporto per il tool nativo `web_search_preview` che permette all'LLM di navigare autonomamente in internet per trovare dati aggiornati.
-- **Configurazione Agnostica**: L'interfaccia utente si adatta automaticamente alle capacità del modello selezionato (mostra/nasconde parametri come Temperatura o Ragionamento).
-- **Tracciabilità**: Ogni interazione AI è loggata con dettagli su token utilizzati, motivo del completamento e parametri di invio.
-- **CORS Support**: Il backend abilita CORS per permettere chiamate dirette dal frontend in ambiente di sviluppo, risolvendo problemi di timeout su query AI complesse.
+### Logica "Tiered" (Stabilità vs Precisione)
+Per evitare distorsioni su periodi brevi:
+| Periodo | Metodo | Descrizione |
+|---------|--------|-------------|
+| **< 30gg** | Simple Return | `(Valore - Costo) / Costo`. Evita proiezioni annualizzate folli su pochi giorni. |
+| **30-365gg** | Period XIRR | XIRR de-annualizzato. Mostra il rendimento effettivo guadagnato nel periodo. |
+| **> 365gg** | Annualized XIRR | CAGR classico. Rendimento medio annuo composto. |
 
-### Gestione Cedole, Dividendi e Spese
-- **Rilevamento File**: Identificazione automatica tramite intestazione colonna C ("Data Flusso") o struttura a 3 colonne.
-- **Formato Flessibile**: Supporta file con più di 3 colonne (le colonne extra vengono ignorate).
-- **Classificazione Automatica per Tipo**:
-    - Importi **positivi** → tipo `DIVIDEND` (cedole, dividendi, incassi).
-    - Importi **negativi** → tipo `EXPENSE` (spese, costi, tasse).
-- **Aggregazione In-File**: Entries multiple con stesso ISIN, stessa data e stesso tipo vengono sommate automaticamente prima del confronto col DB.
-- **Aggregazione con DB**: Il sistema confronta i dati del file con quelli esistenti in archivio, calcolando:
-    - `current_amount`: totale attuale in DB per quel tipo.
-    - `new_amount`: importo dal file corrente.
-    - `total_amount`: somma (current + new) che verrà salvata.
-- **Memorizzazione**: Dati salvati nella tabella `dividends` con riferimento all'asset, portafoglio e tipo. Vincolo di unicità su `(portfolio_id, asset_id, date, type)` — cedole e spese sullo stesso asset/data coesistono come record separati.
-- **Riconciliazione UI**: La modale mostra sezioni separate per Cedole/Dividendi e Spese/Costi con colonne: "In Archivio" | "Nuovi Incassi/Costi" | "Dopo Importazione".
-- **Utilizzo**: Partecipano al calcolo del MWRR (XIRR) come flussi di cassa (positivi o negativi).
+### Calcolo Time-Series
+Il grafico MWR viene generato dinamicamente simulando una "vendita fittizia" (Mark-to-Market) ad ogni punto storico, utilizzando i prezzi noti (LOCF - Last Observation Carried Forward) per valutare il portafoglio nel passato.
 
-### Metodologia di Calcolo MWR (Money Weighted Return)
-Il sistema utilizza l'algoritmo **XIRR (Extended Internal Rate of Return)** per calcolare la performance reale, tenendo conto dei tempi e degli importi di ogni flusso di cassa (acquisti, vendite, dividendi).
+## 5. Stato Attuale (V2.0)
 
-#### Logica a Soglie (T1 & T2)
-Per evitare risultati fuorvianti su periodi brevi, il sistema applica una logica a 3 livelli basata sulla durata dell'investimento:
+### Feature Completate (Stable)
+- [x] **Core**: Safe Ingestion, Dashboard interattiva, Calcolo XIRR Tiered.
+- [x] **Memory Module**: Tabella storico avanzata, P&L granulare, Net Dividend support.
+- [x] **Analysis Module**: Asset allocation dinamica, supporto Liquidità manuale.
+- [x] **Data Integrity**: Backup/Restore completo con storico prezzi.
+- [x] **UI Persistence**: Salvataggio preferenze tabelle, colori custom asset, note.
+- [x] **AI Integration**: Supporto GPT-5/Search opzionale per arricchimento dati.
+- [x] **Performance**: Indicizzazione DB, Caching lato client, Batch processing prezzi.
 
-| Soglia | Durata (Giorni) | Metodo di Calcolo | Motivo |
-|--------|----------------|-------------------|--------|
-| **TIER 1** | `< T1` (default 30gg) | **Simple Return** `(Valore - Costo) / Costo` | L'annualizzazione su pochi giorni proietta tassi irreali (es. +1% in 2gg = +500% annuo). |
-| **TIER 2** | `T1 <= d < T2` (default 365gg) | **Period XIRR** (De-annualizzato) | Calcola l'XIRR ma mostra il rendimento effettivo *del periodo* (non annualizzato). |
-| **TIER 3** | `>= T2` (365gg+) | **Annualized XIRR** | Mostra il rendimento composto medio annuo (CAGR), standard per investimenti a lungo termine. |
+### Prossimi Passi (Roadmap Future V2.1+)
+- [ ] **Multi-Currency Support**: Gestione nativa cambi valuta storici.
+- [ ] **Advanced Reporting**: Generazione PDF periodici.
+- [ ] **Goal Tracking**: Impostazione obiettivi di risparmio e proiezione.
 
-#### Calcolo Grafico MWR (Time-Series)
-Il grafico dell'andamento MWR non è uno storico salvato, ma viene **ricalcolato dinamicamente** per ogni punto temporale:
-
-1.  **MWR Singolo Asset**:
-    - Il sistema genera dei "Checkpoint" temporali (es. ogni mese).
-    - Per ogni checkpoint, simula una **Vendita Fittizia** di tutte le quote possedute in quel momento.
-    - Il **Prezzo di Vendita** usato è determinato dalla logica **LOCF** (Last Observation Carried Forward): se per quella data manca un prezzo ufficiale, si usa l'ultimo prezzo noto precedente (es. transazione o upload manuale).
-    - **Formula**: `XIRR(Flussi Passati + [Vendita Fittizia])`.
-
-2.  **MWR Portafoglio**:
-    - **IMPORTANTE**: L'MWR del portafoglio **NON è la media ponderata** degli MWR dei singoli asset.
-    - È un calcolo XIRR unico su **tutti i flussi di cassa aggregati** del portafoglio.
-    - Esempio: Un portafoglio con un asset in guadagno (che ho appena comprato) e uno in perdita (che ho da anni) avrà un MWR che riflette il *peso temporale* del capitale investito nell'asset più vecchio.
-    - Questo metodo (Real MWR) è l'unico che rappresenta fedelmente l'esperienza dell'investitore.
-
-### Gestione Ciclo di Vita Asset (Active vs Historical)
-- **Asset Attivi**:
-    - Sono gli strumenti con quantità > 0 nel portafoglio attuale.
-    - Sono visibili nel grafico a torta "Allocation", contribuiscono al "Total Value" e vengono aggiornati con i prezzi correnti (manuali).
-    - Nella UI sono raggruppati in cima alla lista filtri.
-- **Asset Storici (Chiusi)**:
-    - Sono strumenti interamente venduti (quantità = 0).
-    - **Performance**: Continuano a contribuire al calcolo del XIRR globale (cash flows passati).
-    - **Visualizzazione**: Sono esclusi dall'Allocation corrente (valore nullo).
-    - **UI**: Compaiono in una sezione separata "Storici (Venduti)" per permettere l'analisi ex-post, ma sono distinti visivamente (grigio/italico) per non confondere la view corrente.
-    - **Prezzi**: Non richiedono aggiornamenti prezzi futuri.
-
-## 5. Stato Attuale (V1.0)
-
-### Funzionalità Completate
-- [x] **Safe Ingestion**: Implementato protocollo Read-Preview-Write.
-- [x] **Dividend & Expense Support**: Parsing file 3 colonne con classificazione automatica per tipo (`DIVIDEND`/`EXPENSE`), aggregazione in-file e con DB, riconciliazione visiva separata.
-- [x] **Manual Prices**: Salvataggio storico prezzi da Excel.
-- [x] **Integrazione AI Avanzata**: Supporto GPT-5, Web Search e Reasoning Effort.
-- [x] **Audit Logging**: Sistema di tracciamento professionale delle operazioni.
-- [x] **UI/UX**: Integrazione modali di conferma e feedback visivi.
-- [x] **Performance**: Caching client-side per navigazione istantanea.
-- [x] **Dashboard 2.0 & UI Enhancements**:
-    - **Asset Filtering**: Lista "Asset Attivi" con checkbox per filtrare il grafico MWR.
-    - **Asset Type**: Visualizzazione corretta categorie asset (ETF, Bond, Azioni).
-    - **Dual Axis**: Grafico a doppio asse per performance asset vs portafoglio.
-    - **Time Window**: Range Slider bi-direzionale per zoomare su specifici periodi temporali.
-    - **Persistent Colors**: Assegnazione colori univoci e persistenti per Asset nel database.
-
-    - **Resizable Layout**: Layout a pannelli ridimensionabile.
-    - **Empty Selection Logic**: Il filtro "Nessuno selezionato" svuota la dashboard invece di mostrare tutto il portafoglio.
-
-### Ottimizzazioni Performance (Feb 2026)
-- [x] **Database Indexing**: Aggiunti indici su `transactions`, `dividends` e `asset_prices` per query istantanee.
-- [x] **Batch Processing**: Sostituiti loop N+1 con operazioni batch per prezzi e sync.
-- [x] **Smart Caching**: 
-    - **LocalStorage**: Persistenza dashboard e settings (TTL 5 min).
-    - **Server Filters**: Filtraggio lato DB delle date per ridurre il payload.
-- [x] **MWRR Engine**: Motore di calcolo ottimizzato con logica Tiered (Simple -> Period -> Annualized).
-- [x] **Data Compaction**: Strategia (pianificata) per ridurre la densità dei dati storici.
-*Dettagli completi in [Analisi Performance](performance.md)*
-
-### Prossimi Passi (Roadmap Future V1.1+)
-- [ ] **MWRR Engine Refinement**: Aggiornare il calcolo XIRR per includere i dividendi in modo più granulare.
-- [ ] **Asset History Fill**: Popolare `asset_metrics_history` in modo asincrono.
-- [ ] **Performance Optimization**: Valutare migrazione aggregazioni su DB (Materialized Views) o Caching Layer (Redis) se il volume dati cresce > 50k transazioni.
-
-## 6. Ambiente di Test e Produzione
-
-Il progetto è configurato per supportare due ambienti distinti:
-
-### 1. Locale (Sviluppo & Test)
-L'ambiente locale utilizza **Docker Desktop** e richiede l'avvio coordinato di tre componenti in terminali separati.
-
-#### Procedura di Avvio (Step-by-Step)
-
-1.  **Tab 1: Infrastructure (Supabase)**
-    - `supabase start`
-2.  **Tab 2: Backend (Python API)**
-    - Attiva venv: `.\.venv\Scripts\activate`
-    - `python api/index.py` (Porta 5328)
-3.  **Tab 3: Frontend (Next.js)**
-    - `npm run dev` (Porta 3500)
-
-### 2. Produzione (Vercel)
-L'ambiente live accessibile via web.
-- **Frontend & Backend**: Deployed su Vercel (Next.js + Serverless Python).
-- **Database**: Supabase Cloud.
-
-## 7. Vincoli di Progetto (Free Tier)
-Il progetto è strettamente vincolato all'utilizzo dei piani **Free** di Vercel e Supabase. Le scelte architetturali riflettono questi limiti:
-
-1.  **Vercel (Hobby Plan)**:
-    - **Serverless Function Timeout**: Max 10 secondi (default) o fino a 60s per funzioni. L'ingestione di file Excel molto grandi (> 5MB) potrebbe fallire se l'elaborazione Python supera questo limite.
-    - **Back-end Strategy**: Ottimizzazione del codice Python (`pandas`) per processare i dati rapidamente ed evitare timeout.
-
-2.  **Supabase (Free Plan)**:
-    - **Database Size**: Limite di 500MB. I file binari (PDF/Excel) non vengono salvati nel database. Vengono salvati solo i metadati e le transazioni estratte.
-    - **Compute**: Risorse CPU condivise. Le query complesse devono essere ottimizzate e indicizzate.
-    - **No Pro Features**: Non si utilizzano feature a pagamento come PITR (Point in Time Recovery) o Log retention estesa.
-
-3.  **Strategia "Zero Cost"**:
-    - **Nessun Redis/Cache esterno a pagamento**: Il caching avviene in memoria lato client (React Context) o tramite ottimizzazioni SQL, senza aggiungere servizi esterni a pagamento.
-    - **OpenAI**: Unico costo vivo accettato (pay-per-use), ma opzionale. Il sistema funziona anche senza arricchimento AI.
+## 6. Ambiente e Vincoli
+Progettato per **Vercel Hobby Tier** (Serverless Function timeout 10-60s) e **Supabase Free Tier** (500MB DB). 
+L'architettura minimizza le chiamate DB ("Chatty" APIs evitate) e sposta il carico computazionale (aggregazioni) sul livello Python (Pandas) ottimizzato.
