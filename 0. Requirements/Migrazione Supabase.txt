@@ -1,0 +1,6 @@
+Sulla Produzione: Esatto, quando vorrai andare in produzione, dovrai "portare" queste modifiche sul Cloud. Supabase rende questo processo semplice. Dovrai collegare il progetto locale al cloud e fare il push:
+
+npx supabase login (se non l'hai fatto)
+npx supabase link --project-ref <tuo-project-id>
+npx supabase db push
+Questo comando invierà tutte le migrazioni (inclusa questa nuova per i grafici) al database di produzione, mantenendo tutto sincronizzato.

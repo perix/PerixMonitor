@@ -1,0 +1,90 @@
+# Obiettivo
+Recupera informazioni sull'asset:
+{isin} - {nome_asset}
+da siti di settore affidabili e crea una sintesi sintetica ma completa seguendo questi criteri:
+## Istruzioni
+- Ricava i seguenti dati, se disponibili:
+- Emittente/Gestore
+- TER (Total Expense Ratio)
+- Composizione dell’asset (es. ripartizione geografica, tipologia di sottostanti)
+- Scopo dell’asset
+- Benchmark di riferimento
+- Regole dividendi/cedole
+- Data di emissione (formato: AAAA-MM-GG)
+- Duration
+- Altri dati rilevanti
+- Procedi confrontando i risultati tra più fonti autorevoli per garantire accuratezza.
+Inizia con una checklist concettuale dei passi che eseguirai: raccolta delle fonti, estrazione e confronto dei dati, validazione delle discrepanze, sintesi secondo il formato richiesto.
+Dopo aver prodotto la sintesi, verifica che tutte le informazioni siano corrispondenti alle fonti consultate; se rilevi discrepanze durante il confronto dei dati tra le fonti, evidenziale chiaramente nel campo interessato.
+## Requisiti
+1. Se un’informazione non è disponibile pubblicamente, omettere (non inventare o inserire placeholder);
+2. Non inserire valori di quotazione corrente;
+3. Confrontare almeno due fonti diverse per validare ogni dato. In caso di incoerenza, segnalare la discrepanza nel campo specifico, indicando entrambe le versioni e le rispettive fonti;
+4. Strutturare la sintesi in markdown secondo lo schema fornito nella sezione Output Format;
+5. Non concludere la descrizione con note aggiuntive, domande o frasi di circostanza. Privilegiare la sintesi.
+## Output Format
+Presenta la sintesi con questo schema markdown:
+```markdown
+# [Nome Asset]
+- **Emittente/Gestore:** ...
+- **TER:** ...
+- **Composizione:** ...
+- **Scopo:** ...
+- **Yield:** ...
+- **Rating creditizio:** ...
+- **Dividendi/Cedole:** ...
+- **Data di emissione:** AAAA-MM-GG
+- **Duration:** ...
+- **Area geografica:** ...
+- **Settore:** ...
+- **Rischio cambio:** ...
+*Eventuali discrepanze vanno annotate direttamente nel campo interessato, specificando dettagli e fonti.*
+```
+Elencare solo i campi disponibili. Le date vanno sempre in formato AAAA-MM-GG.
+
+
+========================
+
+# Obiettivo
+Recupera informazioni sull'asset:
+IE000UL6CLP7 - GLB X SILV USD-A EUR
+da siti di settore affidabili e crea una sintesi sintetica ma completa seguendo questi criteri:
+## Istruzioni
+- Ricava i seguenti dati, se disponibili:
+- Emittente/Gestore
+- TER (Total Expense Ratio)
+- Composizione dell’asset (es. ripartizione geografica, tipologia di sottostanti)
+- Scopo dell’asset
+- Benchmark di riferimento
+- Regole dividendi/cedole
+- Data di emissione (formato: AAAA-MM-GG)
+- Duration
+- Altri dati rilevanti
+- Procedi confrontando i risultati tra più fonti autorevoli per garantire accuratezza.
+Inizia con una checklist concettuale dei passi che eseguirai: raccolta delle fonti, estrazione e confronto dei dati, validazione delle discrepanze, sintesi secondo il formato richiesto.
+Dopo aver prodotto la sintesi, verifica che tutte le informazioni siano corrispondenti alle fonti consultate; se rilevi discrepanze durante il confronto dei dati tra le fonti, evidenziale chiaramente nel campo interessato.
+## Requisiti
+1. Se un’informazione non è disponibile pubblicamente, omettere (non inventare o inserire placeholder);
+2. Non inserire valori di quotazione corrente;
+3. Confrontare almeno due fonti diverse per validare ogni dato. In caso di incoerenza, segnalare la discrepanza nel campo specifico, indicando entrambe le versioni e le rispettive fonti;
+4. Strutturare la sintesi in markdown secondo lo schema fornito nella sezione Output Format;
+5. Non concludere la descrizione con note aggiuntive, domande o frasi di circostanza. Privilegiare la sintesi.
+## Output Format
+Presenta la sintesi con questo schema markdown:
+```markdown
+# [Nome Asset]
+- **Emittente/Gestore:** ...
+- **TER:** ...
+- **Composizione:** ...
+- **Scopo:** ...
+- **Yield:** ...
+- **Rating creditizio:** ...
+- **Dividendi/Cedole:** ...
+- **Data di emissione:** AAAA-MM-GG
+- **Duration:** ...
+- **Area geografica:** ...
+- **Settore:** ...
+- **Rischio cambio:** ...
+*Eventuali discrepanze vanno annotate direttamente nel campo interessato, specificando dettagli e fonti.*
+```
+Elencare solo i campi disponibili. Le date vanno sempre in formato AAAA-MM-GG.
