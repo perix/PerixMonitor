@@ -1153,31 +1153,27 @@ def manage_portfolios():
             if not user_id:
                 return jsonify(error="Missing user_id"), 400
             
-            supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-            service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+            # Use db_helper to ensure specific headers and error handling
+            from db_helper import execute_request, get_supabase_credentials
+            
+            # Debug credentials
+            url, key = get_supabase_credentials()
+            if not url or not key:
+                 logger.error("PORTFOLIO FETCH FAIL: Missing credentials")
+                 return jsonify(error="Server Misconfiguration (Missing Credentials)"), 500
 
-            if not supabase_url or not service_key:
-                return jsonify(error="Missing credentials"), 500
+            resp = execute_request('portfolios', 'GET', params={
+                'user_id': f'eq.{user_id}',
+                'select': 'id,name,description,user_id,created_at',
+                'order': 'created_at.desc'
+            })
             
-            # Use direct HTTP to bypass Supabase client issues
-            from db_helper import query_table
-            # query_table supports simple equality filters, but we need ordering.
-            # Let's use custom request here for ordering, or update query_table?
-            # Custom request is safer for specific ordering needs.
-            
-            headers = {
-                "apikey": service_key,
-                "Authorization": f"Bearer {service_key}",
-                "Content-Type": "application/json"
-            }
-            
-            resp = requests.get(
-                f"{supabase_url}/rest/v1/portfolios?user_id=eq.{user_id}&select=id,name,description,user_id,created_at&order=created_at.desc",
-                headers=headers,
-                timeout=10
-            ) 
-            
+            if not resp:
+                 logger.error("PORTFOLIO FETCH FAIL: No response from execute_request")
+                 return jsonify(error="Database Connection Failed"), 500
+
             if resp.status_code != 200:
+                 logger.error(f"PORTFOLIO FETCH FAIL: {resp.status_code} - {resp.text}")
                  return jsonify(error=f"DB Error: {resp.status_code}"), 500
                  
             return jsonify(portfolios=resp.json()), 200

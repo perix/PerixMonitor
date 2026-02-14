@@ -85,6 +85,11 @@ def create_backup_payload(portfolio_id):
             if t.get('assets') and t['assets'].get('isin'): isins.add(t['assets']['isin'])
         for d in dividends:
             if d.get('assets') and d['assets'].get('isin'): isins.add(d['assets']['isin'])
+        # [NEW] Collect from Notes and Settings
+        for n in notes:
+            if n.get('assets') and n['assets'].get('isin'): isins.add(n['assets']['isin'])
+        for s in settings:
+            if s.get('assets') and s['assets'].get('isin'): isins.add(s['assets']['isin'])
         
         prices = []
         if isins:
@@ -94,15 +99,51 @@ def create_backup_payload(portfolio_id):
             # We assume execute_request can handle this or we might need batching if too many assets.
             # safe batching 
             isin_list = list(isins)
-            batch_size = 50
+            batch_size = 30 # Reduced to prevent URL overly long
             for i in range(0, len(isin_list), batch_size):
                 batch = isin_list[i:i+batch_size]
                 p_filter = f"in.({','.join(batch)})"
                 
-                # Order by date asc to be clean
-                res_prices = execute_request('asset_prices', 'GET', params={'isin': p_filter, 'order': 'date.asc'})
-                if res_prices and res_prices.status_code == 200:
-                    prices.extend(res_prices.json())
+                # [FIX] Pagination Loop
+                offset = 0
+                limit = 1000
+                while True:
+                    # Order by date asc to be clean
+                    res_prices = execute_request('asset_prices', 'GET', params={
+                        'isin': p_filter, 
+                        'order': 'date.asc',
+                        'limit': limit,
+                        'offset': offset
+                    })
+                    
+                    if not res_prices or res_prices.status_code != 200:
+                        logger.error(f"BACKUP: Failed to fetch prices batch offset {offset}")
+                        break
+                    
+                    batch_data = res_prices.json()
+                    if not batch_data:
+                        break
+                        
+                    prices.extend(batch_data)
+                    
+                    if len(batch_data) < limit:
+                        break # End of data for this batch
+                        
+                    offset += limit
+        
+        # 4b. [NEW] Fetch Full Asset Details (Metadata, Trends, Sector, etc.)
+        assets_full = []
+        if isins:
+            isin_list = list(isins)
+            asset_batch_size = 50
+            for i in range(0, len(isin_list), asset_batch_size):
+                batch = isin_list[i:i+asset_batch_size]
+                in_filter = f"in.({','.join(batch)})"
+                res_assets = execute_request('assets', 'GET', params={'isin': in_filter, 'select': '*'})
+                if res_assets and res_assets.status_code == 200:
+                    assets_full.extend(res_assets.json())
+                else:
+                    logger.error(f"BACKUP: Failed to fetch assets batch {i}")
 
         # 5. Generate Report (Summary)
         report = generate_backup_report(portfolio, transactions, dividends, snapshots)
@@ -110,18 +151,19 @@ def create_backup_payload(portfolio_id):
         # 6. Assemble Payload
         payload = {
             "metadata": {
-                "version": "1.2", # Bump for Prices support
+                "version": "1.3", # Bump for Assets support
                 "created_at": datetime.now().isoformat(),
                 "app": "PerixMonitor"
             },
             "portfolio": portfolio,
+            "assets": assets_full, # [NEW] Full Asset Metadata
             "transactions": transactions,
             "dividends": dividends,
             "snapshots": snapshots,
             "notes": notes,
             "settings": settings,
             "ui_config": ui_config,
-            "prices": prices, # New field
+            "prices": prices,
             "report": report
         }
         
@@ -254,107 +296,90 @@ def restore_backup(data_json, new_name, user_id=None):
         new_pid = res_p.json()[0]['id']
         logger.info(f"RESTORE: Created new portfolio {new_pid} ('{new_name}')")
 
-        # 2. RESTORE ASSETS (Handle missing assets & Remap IDs)
-        # Scan all transactions/dividends/etc in backup to find ISINs
-        backup_isins = set()
-        
-        # Helper to extract ISINs from rows if available
-        # Note: Backup JSON usually contains 'assets' nested object in transactions
-        # We need to rely on that or 'asset_id' won't be enough if DB is empty.
-        # Let's check how create_backup_payload builds it:
-        # 'transactions': ..., 'select': '*, assets(isin, name, currency, asset_class)'
-        
-        # We need a map: old_asset_id -> new_asset_id
+        # 2. RESTORE ASSETS (Improved with Metadata Support)
         asset_id_map = {}
+        existing_assets = {} # isin -> id
         
-        # Collect all asset info from backup source (Transactions, Dividends, etc.)
-        # We create a dictionary isin -> metadata to recreate if needed
-        assets_to_restore = {} 
+        backup_assets_list = data_json.get("assets", [])
+        assets_payload = [] # List of dicts for upsert
+        old_id_map_by_isin = {} # isin -> old_id (from backup)
         
-        # 2a. Scan Transactions
-        txs = data_json.get("transactions", [])
-        for t in txs:
-            asset_info = t.get('assets')
-            old_aid = t.get('asset_id')
-            if asset_info and asset_info.get('isin'):
-                isin = asset_info.get('isin')
-                assets_to_restore[isin] = {
-                    'name': asset_info.get('name') or isin,
-                    'asset_class': asset_info.get('asset_class') or 'ETF', # Default
-                    'currency': asset_info.get('currency') or 'EUR',
-                    'original_id': old_aid
-                }
+        if backup_assets_list:
+            # --- NEW BACKUP FORMAT (Rich Metadata) ---
+            logger.info(f"RESTORE: Using rich asset metadata from backup ({len(backup_assets_list)} assets).")
+            for a in backup_assets_list:
+                isin = a.get('isin')
+                if not isin: continue
                 
-        # 2b. Scan Dividends
-        divs = data_json.get("dividends", [])
-        for d in divs:
-            asset_info = d.get('assets')
-            old_aid = d.get('asset_id')
-            if asset_info and asset_info.get('isin'):
-                isin = asset_info.get('isin')
-                if isin not in assets_to_restore:
-                     assets_to_restore[isin] = {
-                        'name': isin, # Dividend might have less info
-                        'asset_class': 'ETF',
-                        'currency': 'EUR',
-                        'original_id': old_aid
-                    }
+                old_id_map_by_isin[isin] = a.get('id')
+                
+                # Prepare for upsert: remove IDs/Timestamp, keep metadata
+                cleaned = a.copy()
+                if 'id' in cleaned: del cleaned['id']
+                if 'created_at' in cleaned: del cleaned['created_at']
+                
+                assets_payload.append(cleaned)
+                
+        else:
+            # --- LEGACY BACKUP FORMAT (Scan Transactions) ---
+            logger.info("RESTORE: Legacy backup format detected. Scanning transactions for assets...")
+            assets_found = {} # isin -> info
+            
+            def scan_source(source_list, key_prefix="Transaction"):
+                for item in source_list:
+                    asset_info = item.get('assets')
+                    old_aid = item.get('asset_id')
+                    if asset_info and asset_info.get('isin'):
+                        isin = asset_info.get('isin')
+                        # Capture mapping
+                        old_id_map_by_isin[isin] = old_aid
+                        
+                        if isin not in assets_found:
+                            assets_found[isin] = {
+                                'isin': isin,
+                                'name': asset_info.get('name') or isin,
+                                'asset_class': asset_info.get('asset_class') or 'ETF',
+                                'currency': asset_info.get('currency') or 'EUR'
+                            }
+
+            scan_source(data_json.get("transactions", []), "Transaction")
+            scan_source(data_json.get("dividends", []), "Dividend")
+            scan_source(data_json.get("notes", []), "Note")
+            scan_source(data_json.get("settings", []), "Setting")
+            
+            assets_payload = list(assets_found.values())
+
+        # 3. UPSERT ASSETS (Create Missing or Update Metadata)
+        if assets_payload:
+            # Batch Upsert using on_conflict='isin'
+            chunk_size = 50
+            for i in range(0, len(assets_payload), chunk_size):
+                chunk = assets_payload[i:i+chunk_size]
+                if not upsert_table('assets', chunk, on_conflict='isin'):
+                    logger.warning(f"RESTORE: Asset batch {i} upsert had issues.")
         
-        # 2c. Fetch existing assets from DB to get their IDs
-        if assets_to_restore:
-            target_isins = list(assets_to_restore.keys())
+        # 4. RE-BUILD ID MAP (Fetch actual IDs from DB)
+        if old_id_map_by_isin:
+            target_isins = list(old_id_map_by_isin.keys())
+            chunk_size = 100
+            for i in range(0, len(target_isins), chunk_size):
+                batch = target_isins[i:i+chunk_size]
+                in_filter = f"in.({','.join(batch)})"
+                res_assets = execute_request('assets', 'GET', params={'select': 'id,isin', 'isin': in_filter})
+                
+                if res_assets and res_assets.status_code == 200:
+                    for row in res_assets.json():
+                        existing_assets[row['isin']] = row['id']
             
-            # Fetch existing
-            # res_assets = execute_request('assets', 'GET', params={'isin': f'in.({",".join(target_isins)})', 'select': 'id,isin'})
-            # URL length might be an issue for many assets, but let's try batching or POST filter if needed.
-            # For now simple IN, assuming < 100 assets.
-            
-            in_filter = f"in.({','.join(target_isins)})"
-            res_assets = execute_request('assets', 'GET', params={'select': 'id,isin', 'isin': in_filter})
-            existing_assets = {r['isin']: r['id'] for r in res_assets.json()} if res_assets and res_assets.status_code == 200 else {}
-            
-            # 2d. Create Missing Assets
-            new_assets_payload = []
-            for isin, info in assets_to_restore.items():
-                if isin not in existing_assets:
-                    new_assets_payload.append({
-                        "isin": isin,
-                        "name": info['name'],
-                        "asset_class": info['asset_class'],
-                        "currency": info['currency']
-                    })
-            
-            if new_assets_payload:
-                logger.info(f"RESTORE: Creating {len(new_assets_payload)} missing assets...")
-                res_create = execute_request('assets', 'POST', body=new_assets_payload, headers={"Prefer": "return=representation"})
-                if res_create and res_create.status_code == 201:
-                    created = res_create.json()
-                    for c in created:
-                        existing_assets[c['isin']] = c['id']
-                else:
-                    logger.error(f"RESTORE: Failed to create assets: {res_create.text if res_create else 'No response'}")
-            
-            # 2e. Build ID Map (Old ID -> New/Real ID)
-            # We must map based on 'original_id' we captured from scan, linked to 'isin'.
-            # BUT: A backup might have multiple 'original_id' for same ISIN if data was somehow inconsistent (unlikely).
-            # We assume 1-to-1 ISIN linkage.
-            
-            # We need to loop again through the SOURCE data to map their IDs
-            # This is tricky because we only scanned unique ISINs.
-            # Let's map isin -> new_id first
-            isin_to_new_id = existing_assets
-            
-            # Now build map: old_id -> new_id
-            # We iterate transactions/divs again? OR we use the captured info.
-            # Problem: assets_to_restore stored ONE original_id per ISIN.
-            # If the backup is consistent, that's fine.
-            
-            # Use 'assets_to_restore' to map
-            for isin, info in assets_to_restore.items():
-                old_id = info['original_id']
-                new_id = isin_to_new_id.get(isin)
-                if old_id and new_id:
+            # Populate Map
+            for isin, new_id in existing_assets.items():
+                old_id = old_id_map_by_isin.get(isin)
+                if old_id:
                     asset_id_map[old_id] = new_id
+
+        # Define variables used in subsequent blocks (previously defined in scanning block)
+        txs = data_json.get("transactions", [])
+        divs = data_json.get("dividends", [])
 
         # 3. Restore Transactions (with Remapping)
         if txs:
