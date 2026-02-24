@@ -52,8 +52,7 @@ export default function SettingsPage() {
     }, []);
 
     // Dynamic grid columns based on enabled tabs
-    const baseCols = 4; // Asset, AI, Maintenance, Reset
-    const gridCols = logEnabled ? `grid-cols-${baseCols + 1}` : `grid-cols-${baseCols}`;
+    const gridCols = logEnabled ? 'grid-cols-5' : 'grid-cols-4';
 
     return (
         <div className="max-w-5xl lg:max-w-6xl xl:max-w-7xl mx-auto pb-20 px-4">
