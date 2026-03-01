@@ -1,0 +1,13 @@
+Aggiorna lo stato del certificato VAL_ISIN=DE000VJ20861 controllando le caratteristiche in https://www.certificatiederivati.it/db_bs_scheda_certificato.asp?isin=VAL_ISIN e seguendo il seguente formato:
+
+Al gg/mm/aaaa:
+Asset A1: a1 strike vs a1 (valore attuale) → distanza da barriera x%
+Asset A2: a2 strike vs a2 (valore attuale) → distanza da barriera x%
+etc.
+
+Voglio che tu mi fornisca l'aggiornamento dello statement alla data più recente disponibile.
+Fornisci la risposta esattamente nel formato richiesto: nessuna parola o elemento in più.
+Una volta trovati gli elementi numerici confrontali con almeno un altro sito finanziario per validarli.
+Al posto di "Asset A1" metterai il nome dell'asset mentre "a1 strike", a1 saranno i valori dello strike price e del valore attuale relativi all'asset.
+Calcola la distanza dalla barriera così: (val. corrente-valore barriera)/(valore corrente) x 100 ma non mostrare il calcolo.
+Parti solo con la data dell'aggiornamento: "Al gg/mm/aaaa: ..."

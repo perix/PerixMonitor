@@ -16,10 +16,12 @@ interface DashboardChartsProps {
     allocationData: { name: string; value: number; sector: string; color?: string }[];
     history: {
         series: { isin: string; name: string; color?: string; data: { date: string; value: number; pnl?: number, market_value?: number }[] }[];
-        portfolio: { date: string; value: number, market_value?: number }[];
+        portfolio: { date: string; value: number, market_value?: number, pnl?: number }[];
     };
     initialSettings?: {
         timeWindow?: number;
+        timeWindowStart?: string;
+        timeWindowEnd?: string;
         mwr?: { yMin: number, yMax: number };
         value?: { yMin: number, yMax: number };
         // Legacy support
@@ -32,7 +34,7 @@ interface DashboardChartsProps {
     portfolioName?: string;
     hidePortfolio?: boolean;
     className?: string;
-    onVisibleStatsChange?: (stats: { pnl: number; mwr: number; market_value: number; date: string }) => void;
+    onVisibleStatsChange?: (stats: { pnl: number; mwr: number; market_value: number; date: string; startDate?: string; isFullRange: boolean }) => void;
     mwrMode?: 'xirr' | 'simple_return' | 'mixed';
     xirrMode?: string;
     onXirrModeChange?: (mode: string) => void;
@@ -87,10 +89,10 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
 
         const allDates = new Set<string>();
         // Pre-process Portfolio data into a Map for O(1) lookup
-        const portfolioMap = new Map<string, { value: number, market_value: number }>();
+        const portfolioMap = new Map<string, { value: number, market_value: number, pnl: number }>();
         history.portfolio.forEach(d => {
             allDates.add(d.date);
-            portfolioMap.set(d.date, { value: d.value, market_value: d.market_value || 0 });
+            portfolioMap.set(d.date, { value: d.value, market_value: d.market_value || 0, pnl: d.pnl || 0 });
         });
 
         // Pre-process Series data into Maps
@@ -116,9 +118,13 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
             if (portVal) {
                 item.Portfolio = viewMode === 'value' ? portVal.market_value : portVal.value;
                 item["Portafoglio Totale_pnl"] = (portVal as any).pnl ?? 0;
+                item["Portfolio_raw_mv"] = portVal.market_value;
+                item["Portfolio_raw_mwr"] = portVal.value;
             } else {
                 item.Portfolio = null;
                 item["Portafoglio Totale_pnl"] = null;
+                item["Portfolio_raw_mv"] = null;
+                item["Portfolio_raw_mwr"] = null;
             }
 
             history.series?.forEach(s => {
@@ -245,12 +251,36 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
     useEffect(() => {
         if (rawChartData.length > 0 && initialSettings !== null && !initializedRef.current) {
             // Restore Time Window
-            if (initialSettings?.timeWindow !== undefined && initialSettings.timeWindow >= 0) {
-                const maxIdx = rawChartData.length - 1;
+            const maxIdx = rawChartData.length - 1;
+            
+            if (initialSettings?.timeWindowStart && initialSettings?.timeWindowEnd) {
+                // Find indices closest to saved dates
+                let startIdx = 0;
+                let endIdx = maxIdx;
+                
+                // Find start index
+                const startMatch = rawChartData.findIndex(d => d.date >= initialSettings.timeWindowStart!);
+                if (startMatch !== -1) startIdx = startMatch;
+                
+                // Find end index (reverse search for closest date <= timeWindowEnd)
+                for (let i = maxIdx; i >= 0; i--) {
+                    if (rawChartData[i].date <= initialSettings.timeWindowEnd!) {
+                        endIdx = i;
+                        break;
+                    }
+                }
+                
+                // Ensure valid range
+                if (startIdx > endIdx) startIdx = endIdx;
+                
+                setDateRange([startIdx, endIdx]);
+            } else if (initialSettings?.timeWindow !== undefined && initialSettings.timeWindow >= 0) {
+                // Legacy fallback: Use index for start, default to max for end
                 const start = Math.min(Math.max(0, initialSettings.timeWindow), maxIdx);
                 setDateRange([start, maxIdx]);
             } else {
-                setDateRange([0, rawChartData.length - 1]);
+                // Default: Full range
+                setDateRange([0, maxIdx]);
             }
 
             // Restore Y-Ranges
@@ -294,25 +324,36 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
         }
     }, [yMinLimit, yMaxLimit, viewMode]);
 
-    // Effect to notify settings change
-    useEffect(() => {
-        if (onSettingsChange && initializedRef.current) {
-            const timer = setTimeout(() => {
-                onSettingsChange({
-                    timeWindow: dateRange[0],
-                    mwr: { yMin: mwrRange[0], yMax: mwrRange[1] },
-                    value: { yMin: valueRange[0], yMax: valueRange[1] },
-                    yAxisScale: mwrRange[1],
-                    showMajorGrid,
-                    showMinorGrid,
-                    viewMode
-                });
-            }, 1000);
+    // Explicit Settings Commit Helper
+    const commitSettings = (partials: {
+        dateRange?: number[],
+        mwrRange?: number[],
+        valueRange?: number[],
+        showMajorGrid?: boolean,
+        showMinorGrid?: boolean,
+        viewMode?: 'mwr' | 'value'
+    } = {}) => {
+        if (!onSettingsChange || !initializedRef.current) return;
 
-            return () => clearTimeout(timer);
-        }
-    }, [dateRange, mwrRange, valueRange, showMajorGrid, showMinorGrid]);
+        const effectiveDateRange = partials.dateRange || dateRange;
+        const effectiveMwrRange = partials.mwrRange || mwrRange;
+        const effectiveValueRange = partials.valueRange || valueRange;
+        
+        const settingsPayload = {
+            timeWindow: effectiveDateRange[0], // Keep for backward compatibility 
+            timeWindowStart: rawChartData[effectiveDateRange[0]]?.date,
+            timeWindowEnd: rawChartData[effectiveDateRange[1]]?.date,
+            mwr: { yMin: effectiveMwrRange[0], yMax: effectiveMwrRange[1] },
+            value: { yMin: effectiveValueRange[0], yMax: effectiveValueRange[1] },
+            yAxisScale: effectiveMwrRange[1],
+            showMajorGrid: partials.showMajorGrid !== undefined ? partials.showMajorGrid : showMajorGrid,
+            showMinorGrid: partials.showMinorGrid !== undefined ? partials.showMinorGrid : showMinorGrid,
+            viewMode: partials.viewMode || viewMode
+        };
 
+        onSettingsChange(settingsPayload);
+    };
+    
     // 3. Filter data
     const chartData = useMemo(() => {
         if (rawChartData.length === 0) return [];
@@ -473,38 +514,45 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
 
     // Callback for visible stats
     useEffect(() => {
-        if (!onVisibleStatsChange || !history?.series || history.series.length === 0 || rawChartData.length === 0) return;
+        if (!onVisibleStatsChange || rawChartData.length === 0) return;
 
         const startIndex = dateRange[0];
         const endIndex = dateRange[1];
+
+        // Determine if we are showing the full available range
+        const isFullRange = startIndex === 0 && endIndex === rawChartData.length - 1;
 
         const startPoint = rawChartData[startIndex];
         const endPoint = rawChartData[endIndex];
 
         if (startPoint && endPoint) {
-            // Assume single asset context if using this callback, or pick the first one
-            const s = history.series[0];
-            const displayName = `${s.name} (${s.isin})`;
+            let endPnl = 0, endMv = 0, startPnl = 0, startMv = 0, backendMwr = 0;
 
-            const endPnl = endPoint[`${displayName}_pnl`] ?? 0;
-            const endMv = endPoint[`${displayName}_raw_mv`] ?? 0;
-            const startPnl = startPoint[`${displayName}_pnl`] ?? 0;
-            const startMv = startPoint[`${displayName}_raw_mv`] ?? 0;
+            if (hidePortfolio && history?.series && history.series.length > 0) {
+                // Asset Context: use the first series
+                const s = history.series[0];
+                const displayName = `${s.name} (${s.isin})`;
+                endPnl = endPoint[`${displayName}_pnl`] ?? 0;
+                endMv = endPoint[`${displayName}_raw_mv`] ?? 0;
+                startPnl = startPoint[`${displayName}_pnl`] ?? 0;
+                startMv = startPoint[`${displayName}_raw_mv`] ?? 0;
+                backendMwr = endPoint[`${displayName}_raw_mwr`] ?? 0;
+            } else {
+                // Dashboard Context: use global Portfolio
+                endPnl = endPoint["Portafoglio Totale_pnl"] ?? 0;
+                endMv = endPoint["Portfolio_raw_mv"] ?? 0;
+                startPnl = startPoint["Portafoglio Totale_pnl"] ?? 0;
+                startMv = startPoint["Portfolio_raw_mv"] ?? 0;
+                backendMwr = endPoint["Portfolio_raw_mwr"] ?? 0;
+            }
 
             // Calculate Delta PnL for the visible period
             const deltaPnl = endPnl - startPnl;
 
             // Calculate Period Return (Modified Dietz Approximation)
-            // Invested = Value - PnL
-            // If PnL data is consistent, this gives us the Net Invested Capital at that point.
             const invStart = startMv - startPnl;
             const invEnd = endMv - endPnl;
-
-            // Net Flows during period
             const netFlows = invEnd - invStart;
-
-            // Average Capital Invested
-            // We assume flows happen roughly in the middle or evenly distributed
             const avgCapital = invStart + (netFlows / 2);
 
             let periodReturn = 0;
@@ -512,28 +560,22 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                 periodReturn = (deltaPnl / avgCapital) * 100;
             }
 
-            // If we are at the very beginning (startIndex 0) and it matches the "inception" logic of the backend MWR,
-            // we might prefer the backend's pre-calculated MWR if accuracy is critical.
-            // However, to keep interaction consistent (and allow zooming), the Dietz approx is better than nothing.
-            // But if startIndex === 0, let's check if we can just use the endPoint's MWR?
-            // "MWR" from backend is likely XIRR. Our Dietz is approx.
-            // If startIndex === 0, the backend MWR at endIndex IS the correct XIRR for that period.
+            // If we are at the very beginning, the backend MWR is exact
             let finalMwr = periodReturn;
-            if (startIndex === 0) {
-                const backendMwr = endPoint[`${displayName}_raw_mwr`];
-                if (backendMwr !== undefined) {
-                    finalMwr = backendMwr;
-                }
+            if (startIndex === 0 && backendMwr !== undefined) {
+                finalMwr = backendMwr;
             }
 
             onVisibleStatsChange({
                 pnl: deltaPnl,
                 mwr: finalMwr,
                 market_value: endMv,
-                date: endPoint.date
+                date: endPoint.date,
+                startDate: startPoint.date,
+                isFullRange
             });
         }
-    }, [dateRange, rawChartData, history?.series, onVisibleStatsChange]);
+    }, [dateRange, rawChartData, history?.series, hidePortfolio, onVisibleStatsChange]);
 
     if (!history || !history.portfolio) {
         return <div className="p-4 text-center text-muted-foreground">Caricamento grafico...</div>
@@ -570,7 +612,9 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                     variant="outline"
                                     size="sm"
                                     className={`h-7 px-2 gap-1 text-xs ${xirrMode === 'multi_guess' ? 'bg-primary/20 border-primary text-primary' : 'text-muted-foreground'}`}
-                                    onClick={() => onXirrModeChange(xirrMode === 'multi_guess' ? 'standard' : 'multi_guess')}
+                                    onClick={() => {
+                                        onXirrModeChange(xirrMode === 'multi_guess' ? 'standard' : 'multi_guess');
+                                    }}
                                     title="Cambia metodo di calcolo XIRR (Standard vs Multi-Guess)"
                                 >
                                     <Calculator className="h-3 w-3" />
@@ -583,7 +627,10 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                 <Checkbox
                                     id="view-mode-value"
                                     checked={viewMode === 'value'}
-                                    onCheckedChange={handleViewModeChange}
+                                    onCheckedChange={(checked) => {
+                                        handleViewModeChange(checked as boolean);
+                                        commitSettings({ viewMode: checked ? 'value' : 'mwr' });
+                                    }}
                                     className="border-white/50"
                                     disabled={isPending}
                                 />
@@ -600,7 +647,10 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                 <Checkbox
                                     id="major-grid"
                                     checked={showMajorGrid}
-                                    onCheckedChange={(checked) => setShowMajorGrid(checked === true)}
+                                    onCheckedChange={(checked) => {
+                                        setShowMajorGrid(checked === true);
+                                        commitSettings({ showMajorGrid: checked === true });
+                                    }}
                                     className="border-white/50 disabled:opacity-50"
                                     disabled={viewMode === 'value'} // Forced ON for Value mode mostly
                                 />
@@ -612,7 +662,10 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                 <Checkbox
                                     id="minor-grid"
                                     checked={showMinorGrid}
-                                    onCheckedChange={(checked) => setShowMinorGrid(checked === true)}
+                                    onCheckedChange={(checked) => {
+                                        setShowMinorGrid(checked === true);
+                                        commitSettings({ showMinorGrid: checked === true });
+                                    }}
                                     className="border-white/50 disabled:opacity-50"
                                     disabled={viewMode === 'value'} // Forced OFF for Value mode
                                 />
@@ -644,7 +697,16 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                             max={yMaxLimit}
                             step={viewMode === 'value' ? 100 : 1}
                             value={yRange}
-                            onValueChange={setYRange}
+                            onValueChange={(val) => {
+                                setYRange(val);
+                            }}
+                            onValueCommit={(val) => {
+                                if (viewMode === 'value') {
+                                    commitSettings({ valueRange: val });
+                                } else {
+                                    commitSettings({ mwrRange: val });
+                                }
+                            }}
                             orientation="vertical"
                             className="h-[85%]"
                         />
@@ -870,7 +932,12 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                         max={Math.max(0, rawChartData.length - 1)}
                         step={1}
                         value={dateRange}
-                        onValueChange={setDateRange}
+                        onValueChange={(val) => {
+                            setDateRange(val);
+                        }}
+                        onValueCommit={(val) => {
+                            commitSettings({ dateRange: val });
+                        }}
                         className="w-full"
                     />
                 </div>

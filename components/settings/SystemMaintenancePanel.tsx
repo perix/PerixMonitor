@@ -43,7 +43,7 @@ interface User {
 }
 
 // Restore Component
-function RestoreBackupArea({ userId }: { userId: string | null }) {
+function RestoreBackupArea({ userId, onRestoreComplete }: { userId: string | null; onRestoreComplete: (newPortfolioId: string) => void }) {
     const [file, setFile] = useState<File | null>(null);
     const [analyzing, setAnalyzing] = useState(false);
     const [analysisResult, setAnalysisResult] = useState<any>(null);
@@ -95,15 +95,13 @@ function RestoreBackupArea({ userId }: { userId: string | null }) {
             });
 
             if (res.data.new_portfolio_id) {
-                // Set the new portfolio as selected for the next load
-                localStorage.setItem('selectedPortfolioId', res.data.new_portfolio_id);
+                onRestoreComplete(res.data.new_portfolio_id);
             }
 
             alert("Ripristino completato con successo!");
             setRestoreModalOpen(false);
             setFile(null);
             setAnalysisResult(null);
-            window.location.reload();
         } catch (error: any) {
             console.error("Restore failed", error);
             alert("Errore ripristino: " + (error.response?.data?.error || error.message));
@@ -245,8 +243,7 @@ export default function SystemMaintenancePanel() {
     const [loadingUsers, setLoadingUsers] = useState<boolean>(false);
 
     // BACKUP STATE
-    const { selectedPortfolioId } = usePortfolio();
-    const [portfolios, setPortfolios] = useState<any[]>([]);
+    const { selectedPortfolioId, setSelectedPortfolioId, portfolios, refreshPortfolios } = usePortfolio();
 
     const [selectedPortfolioBackup, setSelectedPortfolioBackup] = useState<string>(selectedPortfolioId || "");
     const [backupPreviewData, setBackupPreviewData] = useState<any>(null);
@@ -268,7 +265,6 @@ export default function SystemMaintenancePanel() {
     useEffect(() => {
         fetchCurrentUser();
         fetchUsers();
-        fetchPortfolios();
     }, []);
 
     // Set default backup portfolio if not set
@@ -291,10 +287,7 @@ export default function SystemMaintenancePanel() {
         }
     };
 
-    const fetchPortfolios = async () => {
-        const { data } = await supabase.from('portfolios').select('id, name');
-        if (data) setPortfolios(data);
-    };
+
 
     const fetchUsers = async () => {
         setLoadingUsers(true);
@@ -647,7 +640,10 @@ export default function SystemMaintenancePanel() {
                                 </p>
                             </div>
 
-                            <RestoreBackupArea userId={currentUserId} />
+                            <RestoreBackupArea userId={currentUserId} onRestoreComplete={async (newPortfolioId) => {
+                                await refreshPortfolios();
+                                setSelectedPortfolioId(newPortfolioId);
+                            }} />
                         </div>
 
                     </CardContent>

@@ -148,5 +148,8 @@ Solo confermando la preview i dati vengono scritti nel database.
 - **Ottimizzazioni UX & Core**:
     - **Safe Ingestion**: Protocollo Read-Preview-Write per file Excel (Transazioni, Dividendi, Spese).
     - **Color Manager**: Assegnazione colori persistenti e unici per asset.
-    - **Trend Coloring**: Logica a soglia configurabile per variazioni di prezzo.
-    - **AI Audit**: Integrazione avanzata GPT-5 e Conditional Logging.
+- **AI Audit**: Integrazione avanzata GPT-5 e Conditional Logging.
+
+### Ottimizzazioni MWR e Dashboard Dinamica (28/02/2026)
+- **Bugfix MWR Subset**: Risolto un problema di distorsione del MWR (XIRR) quando si filtra la dashboard per un sottoinsieme di asset. I dividendi considerati nel calcolo dei cash flow sono stati scollegati dal portafoglio globale e ora vengono filtrati dinamicamente per appartenere *solo* agli asset selezionati.
+- **Metriche Slider Dinamiche**: Le card KPI principali della Dashboard (Controvalore, MWR, Profitto/Perdita) visualizzano ora istantaneamente le performance relative *al solo periodo selezionato* visivamente tramite il range slider sul grafico. L'engine applica un'approssimazione "Modified Dietz" sul frontend per un'esperienza a latenza zero, senza sovraccaricare il server backend.

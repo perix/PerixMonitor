@@ -8,6 +8,8 @@ python api/index.py
 
 3. Avvio del Frontend (React + Vite)
 npm run dev
+(se serve forzare la cancellazione della cache: Remove-Item -Recurse -Force .next)
+
 
 4. Esecuzione dei Test (Vitest)
 - Modalità Interattiva (Watch): Ricarica i test automaticamente ad ogni modifica.

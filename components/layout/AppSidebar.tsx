@@ -115,9 +115,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     const router = useRouter();
     const supabase = createClient();
     const [user, setUser] = React.useState<{ id?: string, name?: string, email?: string } | null>(null);
-    const { selectedPortfolioId, setSelectedPortfolioId } = usePortfolio();
-    const [portfolios, setPortfolios] = React.useState<any[]>([]);
-    const [loadingPortfolios, setLoadingPortfolios] = React.useState(false);
+    const { selectedPortfolioId, setSelectedPortfolioId, portfolios, loadingPortfolios } = usePortfolio();
 
     React.useEffect(() => {
         const getUser = async () => {
@@ -147,35 +145,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         return () => subscription.unsubscribe();
     }, []);
 
-    // Fetch portfolios when user changes
-    React.useEffect(() => {
-        if (user?.id) {
-            fetchPortfolios();
-        }
-    }, [user?.id]);
-
-    const fetchPortfolios = async () => {
-        setLoadingPortfolios(true);
-        try {
-            const { data, error } = await supabase
-                .from('portfolios')
-                .select('id, name')
-                .order('name');
-
-            if (error) throw error;
-            if (data) {
-                setPortfolios(data);
-                // If only one portfolio and none selected, select it
-                if (data.length > 0 && !selectedPortfolioId) {
-                    setSelectedPortfolioId(data[0].id);
-                }
-            }
-        } catch (e) {
-            console.error("Error fetching portfolios for sidebar:", e);
-        } finally {
-            setLoadingPortfolios(false);
-        }
-    };
 
     const handleLogout = async () => {
         await supabase.auth.signOut();

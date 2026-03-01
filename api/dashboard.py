@@ -97,6 +97,11 @@ def calculate_portfolio_summary(portfolio_id, assets_filter=None, mwr_t1=30, mwr
         })
         dividends = res_div.json() if (res_div and res_div.status_code == 200) else []
         
+        if assets_filter is not None:
+            # transactions was already filtered above, so we can extract the valid asset_ids
+            selected_asset_ids = set([t['assets']['id'] for t in transactions])
+            dividends = [d for d in dividends if d.get('asset_id') in selected_asset_ids]
+            
         total_dividends = 0
         for d in dividends:
             amount = float(d['amount_eur'])
@@ -758,10 +763,15 @@ def register_dashboard_routes(app):
                     if calculated:
                         # Clamp ragionevole: ±500%
                         final_mwr = max(-5.0, min(final_mwr, 5.0))
+                        
+                        # Calcolo P&L Globale Storico: (Valore Corrente) + Sum(Vendite + Cedole - Acquisti)
+                        port_pnl_at_cp = port_value_at_cp + sum(f['amount'] for f in current_port_cash_flows)
+
                         portfolio_series.append({
                             "date": cp_str,
                             "value": round(final_mwr * 100, 2),
-                            "market_value": round(port_value_at_cp, 2)
+                            "market_value": round(port_value_at_cp, 2),
+                            "pnl": round(port_pnl_at_cp, 2)
                         })
                 else:
                     diag_counts["SKIPPED"] += 1

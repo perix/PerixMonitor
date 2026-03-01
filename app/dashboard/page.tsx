@@ -5,8 +5,8 @@ import { PanelHeader } from "@/components/layout/PanelHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { ArrowUpRight, Euro, Wallet, Activity, Loader2 } from "lucide-react";
-import { formatSwissMoney, getAccessibleColor } from "@/lib/utils";
-import { useEffect, useState, useMemo } from "react";
+import { formatSwissMoney, formatSwissNumber, getAccessibleColor } from "@/lib/utils";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDashboardSummary, useDashboardHistory, usePortfolioSettings, useUpdatePortfolioSettings, usePortfolioDetails } from "@/hooks/useDashboard";
@@ -32,6 +32,9 @@ export default function DashboardPage() {
 
     // Calculation Mode
     const [xirrMode, setXirrMode] = useState('standard');
+
+    // Period Stats from Chart Slider
+    const [periodStats, setPeriodStats] = useState<{ pnl: number; mwr: number; market_value: number; date: string; startDate?: string; isFullRange: boolean } | null>(null);
 
     // --- Queries ---
 
@@ -69,9 +72,13 @@ export default function DashboardPage() {
 
     // --- Effects ---
 
-    // Sync Settings to State when loaded
+    // Initialization Locks: Prevent React Query continuous refetches from overwriting local state
+    const initializedSettingsForPortfolioRef = useRef<string | null>(null);
+    const autoFilledPortfolioRef = useRef<string | null>(null);
+
+    // Sync Settings to State when loaded (ONCE per portfolio to prevent optimistic cache overwrites)
     useEffect(() => {
-        if (settings) {
+        if (settings && initializedSettingsForPortfolioRef.current !== selectedPortfolioId) {
             if (settings.mwr_t1) {
                 setMwrT1(settings.mwr_t1);
                 setInputT1(settings.mwr_t1.toString());
@@ -84,40 +91,44 @@ export default function DashboardPage() {
             // Restore selection
             if (settings.dashboardSelection && Array.isArray(settings.dashboardSelection)) {
                 setSelectedAssets(new Set(settings.dashboardSelection));
+            } else {
+                // If the user's settings explicitly don't have dashboardSelection, 
+                // we clear it so the history effect below can provide the default fallback.
+                setSelectedAssets(new Set());
             }
 
             if (settings.xirrMode) {
                 setXirrMode(settings.xirrMode);
             }
+            
+            initializedSettingsForPortfolioRef.current = selectedPortfolioId;
         }
-    }, [settings]);
+    }, [settings, selectedPortfolioId]);
 
-    // Update selection when history loads (if no selection yet)
+    // Reset period stats when portfolio changes
     useEffect(() => {
-        if (history?.series && selectedAssets.size === 0 && !settings?.dashboardSelection) {
+        setPeriodStats(null);
+    }, [selectedPortfolioId]);
+
+    // Update selection when history loads (if no selection yet) (ONCE per portfolio)
+    useEffect(() => {
+        if (history?.series && !settings?.dashboardSelection && autoFilledPortfolioRef.current !== selectedPortfolioId) {
             const allIsins = new Set<string>(history.series.map((s: any) => s.isin));
             setSelectedAssets(allIsins);
+            autoFilledPortfolioRef.current = selectedPortfolioId;
         }
-    }, [history, settings]);
+    }, [history, settings, selectedPortfolioId]);
 
-    // Auto-save selection (throttled/debounced)
-    useEffect(() => {
-        if (!selectedPortfolioId || !history?.series) return;
-
-        const timer = setTimeout(() => {
-            const selectionArray = Array.from(selectedAssets);
-            // Only update if different from loaded settings to avoid loop? 
-            // The mutation updates the cache/settings, so it might re-trigger if we aren't careful.
-            // But settings.dashboardSelection comes from server.
-
-            // Allow update
+    // Handle explicit selection changes
+    const handleSelectionChange = (newSelection: Set<string>) => {
+        setSelectedAssets(newSelection);
+        if (selectedPortfolioId) {
             updateSettingsMutation.mutate({
                 portfolioId: selectedPortfolioId,
-                settings: { dashboardSelection: selectionArray }
+                settings: { dashboardSelection: Array.from(newSelection) }
             });
-        }, 2000);
-        return () => clearTimeout(timer);
-    }, [selectedAssets]); // Depends on selectedAssets
+        }
+    };
 
     // Handle T1/T2 Commit
     const handleCommitSettings = () => {
@@ -135,6 +146,17 @@ export default function DashboardPage() {
     };
 
     // --- Render Helpers ---
+
+    const getPeriodDateString = () => {
+        if (!periodStats) return "";
+        const formatPortion = (isoDate: string) => {
+            const parts = (isoDate || '').split('T')[0].split('-');
+            return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : '';
+        };
+        const sDate = formatPortion(periodStats.startDate || '');
+        const eDate = formatPortion(periodStats.date);
+        return sDate ? `(${sDate} - ${eDate})` : `al ${eDate}`;
+    };
 
     const isLoading = isLoadingSummary || isLoadingHistory || isLoadingSettings;
 
@@ -224,12 +246,29 @@ export default function DashboardPage() {
                             </p>
                             {!isFullSelection && displaySummary && (
                                 <div className="mt-2 pt-2 border-t border-white/10">
-                                    <div className="text-sm font-semibold text-muted-foreground">
-                                        €{formatSwissMoney(displaySummary.total_value)}
+                                    <div className="flex items-center gap-2">
+                                        <div className="text-sm font-semibold text-muted-foreground">
+                                            €{formatSwissMoney(displaySummary.total_value)}
+                                        </div>
+                                        <p className="text-[10px] text-muted-foreground/70 uppercase">
+                                            (Asset selezionati)
+                                        </p>
                                     </div>
-                                    <p className="text-[10px] text-muted-foreground/70">
-                                        Selezione
-                                    </p>
+                                </div>
+                            )}
+                            {periodStats && !periodStats.isFullRange && (
+                                <div className="mt-2 pt-2 border-t border-blue-500/30">
+                                    <div className="flex items-center gap-2">
+                                        <div className="text-sm font-semibold text-blue-400">
+                                            €{formatSwissMoney(periodStats.market_value)}
+                                        </div>
+                                        <p className="text-[10px] text-blue-400/70 uppercase">
+                                            (al {(() => {
+                                                const parts = periodStats.date.split('T')[0].split('-');
+                                                return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : periodStats.date;
+                                            })()})
+                                        </p>
+                                    </div>
                                 </div>
                             )}
                         </CardContent>
@@ -248,12 +287,26 @@ export default function DashboardPage() {
                             </p>
                             {!isFullSelection && displaySummary && (
                                 <div className="mt-2 pt-2 border-t border-white/10">
-                                    <div className={`text-sm font-semibold ${displaySummary.xirr >= 0 ? 'text-green-500/80' : 'text-red-500/80'}`}>
-                                        {displaySummary.xirr}%
+                                    <div className="flex items-center gap-2">
+                                        <div className={`text-sm font-semibold ${displaySummary.xirr >= 0 ? 'text-green-500/80' : 'text-red-500/80'}`}>
+                                            {displaySummary.xirr}%
+                                        </div>
+                                        <p className="text-[10px] text-muted-foreground/70 uppercase">
+                                            (Asset selezionati)
+                                        </p>
                                     </div>
-                                    <p className="text-[10px] text-muted-foreground/70">
-                                        {getMwrLabel(displaySummary.mwr_type || summary.mwr_type)}
-                                    </p>
+                                </div>
+                            )}
+                            {periodStats && !periodStats.isFullRange && (
+                                <div className="mt-2 pt-2 border-t border-blue-500/30">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`text-sm font-semibold ${periodStats.mwr >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                            {formatSwissNumber(periodStats.mwr, 2)}%
+                                        </div>
+                                        <p className="text-[10px] text-blue-400/70 uppercase">
+                                            {getPeriodDateString()}
+                                        </p>
+                                    </div>
                                 </div>
                             )}
                         </CardContent>
@@ -272,12 +325,26 @@ export default function DashboardPage() {
                             </p>
                             {!isFullSelection && displaySummary && (
                                 <div className="mt-2 pt-2 border-t border-white/10">
-                                    <div className={`text-sm font-semibold ${displaySummary.pl_value >= 0 ? 'text-green-500/80' : 'text-red-500/80'}`}>
-                                        €{formatSwissMoney(displaySummary.pl_value)}
+                                    <div className="flex items-center gap-2">
+                                        <div className={`text-sm font-semibold ${displaySummary.pl_value >= 0 ? 'text-green-500/80' : 'text-red-500/80'}`}>
+                                            €{formatSwissMoney(displaySummary.pl_value)}
+                                        </div>
+                                        <p className="text-[10px] text-muted-foreground/70 uppercase">
+                                            (Asset selezionati)
+                                        </p>
                                     </div>
-                                    <p className="text-[10px] text-muted-foreground/70">
-                                        Selezione
-                                    </p>
+                                </div>
+                            )}
+                            {periodStats && !periodStats.isFullRange && (
+                                <div className="mt-2 pt-2 border-t border-blue-500/30">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`text-sm font-semibold ${periodStats.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                            €{formatSwissMoney(periodStats.pnl)}
+                                        </div>
+                                        <p className="text-[10px] text-blue-400/70 uppercase">
+                                            {getPeriodDateString()}
+                                        </p>
+                                    </div>
                                 </div>
                             )}
                         </CardContent>
@@ -312,11 +379,11 @@ export default function DashboardPage() {
                                         checked={selectedAssets.size > 0}
                                         onCheckedChange={(checked) => {
                                             if (history?.series) {
-                                                if (selectedAssets.size > 0) {
-                                                    setSelectedAssets(new Set());
+                                                if (isFullSelection) {
+                                                    handleSelectionChange(new Set());
                                                 } else {
                                                     const allIsins = new Set<string>(history.series.map((s: any) => s.isin));
-                                                    setSelectedAssets(allIsins);
+                                                    handleSelectionChange(allIsins);
                                                 }
                                             }
                                         }}
@@ -352,11 +419,11 @@ export default function DashboardPage() {
                                                                         next.delete(s.isin);
                                                                     }
                                                                 });
-                                                                setSelectedAssets(next);
+                                                                handleSelectionChange(next);
                                                             }}
                                                             className="border-white/50 data-[state=checked]:bg-primary"
                                                         />
-                                                        <label
+                                                            <label
                                                             htmlFor={`type-${type}`}
                                                             className="text-xs font-medium cursor-pointer flex-1 truncate"
                                                             title={type}
@@ -364,7 +431,7 @@ export default function DashboardPage() {
                                                                 e.preventDefault();
                                                                 const next = new Set<string>();
                                                                 assetsOfType.forEach((s: any) => next.add(s.isin));
-                                                                setSelectedAssets(next);
+                                                                handleSelectionChange(next);
                                                             }}
                                                         >
                                                             {type} <span className="opacity-50 text-[10px]">({countSelected}/{assetsOfType.length})</span>
@@ -398,7 +465,7 @@ export default function DashboardPage() {
                                                                 } else {
                                                                     next.delete(s.isin);
                                                                 }
-                                                                setSelectedAssets(next);
+                                                                handleSelectionChange(next);
                                                             }}
                                                             className="border-2 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground h-4 w-4"
                                                             style={{
@@ -453,6 +520,7 @@ export default function DashboardPage() {
                 <div className="flex-1 min-h-0 flex flex-col">
                     <div className="flex-1 min-h-0">
                         <DashboardCharts
+                            key={selectedPortfolioId}
                             allocationData={summary.allocation}
                             history={displayHistory || { series: [], portfolio: [] }}
                             initialSettings={settings as any}
@@ -461,6 +529,8 @@ export default function DashboardPage() {
                             className="h-full"
                             mwrMode={displayHistory?.mwr_mode}
                             xirrMode={xirrMode}
+                            onVisibleStatsChange={setPeriodStats}
+                            hidePortfolio={false}
                             onXirrModeChange={(mode) => {
                                 setXirrMode(mode);
                                 if (selectedPortfolioId) {

@@ -168,8 +168,17 @@ Per evitare distorsioni su periodi brevi:
 | **30-365gg** | Period XIRR | XIRR de-annualizzato. Mostra il rendimento effettivo guadagnato nel periodo. |
 | **> 365gg** | Annualized XIRR | CAGR classico. Rendimento medio annuo composto. |
 
-### Calcolo Time-Series
+### Calcolo Time-Series (Grafici storici)
 Il grafico MWR viene generato dinamicamente simulando una "vendita fittizia" (Mark-to-Market) ad ogni punto storico, utilizzando i prezzi noti (LOCF - Last Observation Carried Forward) per valutare il portafoglio nel passato.
+
+### Filtro per Sottoinsieme di Asset
+Quando la dashboard è filtrata per un sottoinsieme specifico di asset, il calcolo (MWR, P&L, e flussi) filtra rigorosamente sia le **transazioni** (buys/sells) sia le specifiche **cedole/dividendi** associate esclusivamente agli `asset_id` selezionati, evitando distorsioni del rendimento causate dai flussi di cassa globali del portafoglio.
+
+### Rendimenti Dinamici (Sliding Window)
+Per l'interazione fluida della UI, il grafico della Dashboard permette di isolare una specifica finestra temporale tramite slider. Invece di richiedere pesanti ricalcoli XIRR al backend ad ogni movimento:
+- Il frontend calcola istantaneamente la variazione netta del *Profitto (Delta P&L)* tra data iniziale e finale visibile.
+- Applica la **Modified Dietz Approximation** (`(Delta P&L / Capitale Medio Investito) * 100`) per fornire una stima in tempo reale rigorosa del MWR per la specifica parentesi storica.
+- I KPI aggregati (Controvalore, MWR, P&L) nella parte superiore della dashboard mostrano dinamicamente questi valori della finestra visibile ("Periodo Visibile").
 
 ## 5. Stato Attuale (V2.0)
 
@@ -180,8 +189,10 @@ Il grafico MWR viene generato dinamicamente simulando una "vendita fittizia" (Ma
 - [x] **Data Integrity**: Backup/Restore completo con storico prezzi.
 - [x] **UI Persistence**: Salvataggio preferenze tabelle, colori custom asset, note.
 - [x] **AI Integration**: Supporto GPT-5/Search opzionale per arricchimento dati.
-- [x] **Performance**: Indicizzazione DB, Caching lato client, Batch processing prezzi.
+- [x] **Performance**: Indicizzazione DB, Caching lato client, Batch processing prezzi, UI fluida (Modified Dietz frontend approx).
 - [x] **Settings Refactoring**: "Danger Zone" isolata, Auto-selezione post-restore.
+- [x] **Metriche Dinamiche**: KPI Dashboard (Controvalore, MWR, P&L) reagiscono istantaneamente in base alla finestra temporale (slider) visibile.
+
 
 ### Prossimi Passi (Roadmap Future V2.1+)
 - [ ] **Multi-Currency Support**: Gestione nativa cambi valuta storici.

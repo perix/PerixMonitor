@@ -1,6 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
+import { createClient } from '@/utils/supabase/client';
 
 // Define cache data types
 export interface DashboardData {
@@ -19,9 +20,20 @@ export interface PortfolioData {
     timestamp: number;
 }
 
+export interface PortfolioInfo {
+    id: string;
+    name: string;
+}
+
 interface PortfolioContextType {
     selectedPortfolioId: string | null;
     setSelectedPortfolioId: (id: string | null) => void;
+
+    // Global portfolio list
+    portfolios: PortfolioInfo[];
+    loadingPortfolios: boolean;
+    refreshPortfolios: () => Promise<void>;
+
     // Caching
     portfolioCache: Record<string, PortfolioData>;
     setPortfolioCache: (portfolioId: string, data: Omit<PortfolioData, 'timestamp'>) => void;
@@ -44,6 +56,9 @@ const PortfolioContext = createContext<PortfolioContextType | undefined>(undefin
 
 export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
     const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null);
+    const [portfolios, setPortfolios] = useState<PortfolioInfo[]>([]);
+    const [loadingPortfolios, setLoadingPortfolios] = useState(false);
+    const supabase = createClient();
 
     // Caches
     const [portfolioCache, setPortfolioCacheState] = useState<Record<string, PortfolioData>>({});
@@ -55,6 +70,27 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
     // Cache TTL: 5 minutes
     const CACHE_TTL = 5 * 60 * 1000;
     const isCacheInitialized = useRef(false);
+
+    // Refresh portfolios from Supabase
+    const refreshPortfolios = useCallback(async () => {
+        setLoadingPortfolios(true);
+        try {
+            const { data, error } = await supabase
+                .from('portfolios')
+                .select('id, name')
+                .order('name');
+
+            if (error) throw error;
+            if (data) {
+                console.log("PORTFOLIO CONTEXT: Refreshed portfolios, count:", data.length);
+                setPortfolios(data);
+            }
+        } catch (e) {
+            console.error("PORTFOLIO CONTEXT: Error fetching portfolios:", e);
+        } finally {
+            setLoadingPortfolios(false);
+        }
+    }, []);
 
     // Initial load from local storage
     useEffect(() => {
@@ -92,6 +128,9 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
 
             // Mark initialized so we can start syncing back
             isCacheInitialized.current = true;
+
+            // Fetch portfolios on initial load
+            refreshPortfolios();
         }
     }, []);
 
@@ -182,6 +221,9 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
         <PortfolioContext.Provider value={{
             selectedPortfolioId,
             setSelectedPortfolioId,
+            portfolios,
+            loadingPortfolios,
+            refreshPortfolios,
             portfolioCache,
             setPortfolioCache,
             analysisCache,

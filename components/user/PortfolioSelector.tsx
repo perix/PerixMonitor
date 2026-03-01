@@ -15,6 +15,7 @@ import { PlusCircle, Loader2, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { usePortfolio } from '@/context/PortfolioContext';
 
 export interface Portfolio {
     id: string;
@@ -29,60 +30,34 @@ interface PortfolioSelectorProps {
 }
 
 export const PortfolioSelector: React.FC<PortfolioSelectorProps> = ({ selectedPortfolioId, onSelect }) => {
-    const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { portfolios, loadingPortfolios, refreshPortfolios } = usePortfolio();
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [newPortfolioName, setNewPortfolioName] = useState("");
     const [creating, setCreating] = useState(false);
+    const [deleting, setDeleting] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
 
     const supabase = createClient();
 
     useEffect(() => {
-        fetchUserAndPortfolios();
+        const fetchUser = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) setUserId(user.id);
+        };
+        fetchUser();
     }, []);
 
-    const fetchUserAndPortfolios = async () => {
-        setLoading(true);
-        // Check User
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-            console.log("No user logged in for PortfolioSelector");
-            setLoading(false);
-            return;
-        }
-        setUserId(user.id);
-
-        // Fetch Portfolios via API (Backend Service Role)
-        try {
-            console.log("PORTFOLIO SELECTOR: Fetching portfolios for user", user.id);
-            const response = await axios.get(`/api/portfolios?user_id=${user.id}`);
-            const data = response.data.portfolios;
-
-            console.log("PORTFOLIO SELECTOR: Found portfolios:", data?.length || 0);
-
-            // Re-use existing logic variable 'data'
-            setPortfolios(data || []);
-
-            // Validation Logic: Ensure selectedPortfolioId exists in the new list
-            if (data && data.length > 0) {
-                const isValid = selectedPortfolioId && data.some((p: Portfolio) => p.id === selectedPortfolioId);
-
-                if (!isValid) {
-                    onSelect(data[0].id);
-                } else if (!selectedPortfolioId) {
-                    onSelect(data[0].id);
-                }
-            } else {
-                if (selectedPortfolioId) onSelect("");
+    // Auto-select first portfolio if current selection is invalid
+    useEffect(() => {
+        if (portfolios.length > 0 && !loadingPortfolios) {
+            const isValid = selectedPortfolioId && portfolios.some(p => p.id === selectedPortfolioId);
+            if (!isValid) {
+                onSelect(portfolios[0].id);
             }
-
-        } catch (error) {
-            console.error("Error fetching portfolios:", error);
-            setPortfolios([]);
+        } else if (portfolios.length === 0 && !loadingPortfolios && selectedPortfolioId) {
+            onSelect("");
         }
-        setLoading(false);
-    };
+    }, [portfolios, loadingPortfolios]);
 
     const handleCreatePortfolio = async () => {
         if (!newPortfolioName.trim() || !userId) return;
@@ -90,7 +65,6 @@ export const PortfolioSelector: React.FC<PortfolioSelectorProps> = ({ selectedPo
 
         try {
             console.log("PORTFOLIO SELECTOR: Creating new portfolio", newPortfolioName);
-            // Use Backend API for logging
             const response = await axios.post('/api/portfolios', {
                 user_id: userId,
                 name: newPortfolioName
@@ -98,7 +72,9 @@ export const PortfolioSelector: React.FC<PortfolioSelectorProps> = ({ selectedPo
             const data = response.data;
             console.log("PORTFOLIO SELECTOR: Created", data);
 
-            setPortfolios([data, ...portfolios]);
+            // Refresh the global portfolio list
+            await refreshPortfolios();
+            // Select the newly created portfolio
             onSelect(data.id);
             setNewPortfolioName("");
             setIsCreateOpen(false);
@@ -114,28 +90,20 @@ export const PortfolioSelector: React.FC<PortfolioSelectorProps> = ({ selectedPo
         const portfolioName = portfolios.find(p => p.id === selectedPortfolioId)?.name;
         if (!confirm(`Sei sicuro di voler eliminare il portafoglio "${portfolioName}"? Questa azione è irreversibile e cancellerà tutte le transazioni associate.`)) return;
 
-        setLoading(true);
+        setDeleting(true);
         try {
-            // Use Backend API for logging
             await axios.delete(`/api/portfolios/${selectedPortfolioId}`);
 
-            // Update local state
-            const newInfos = portfolios.filter(p => p.id !== selectedPortfolioId);
-            setPortfolios(newInfos);
-            // Select another one if available
-            if (newInfos.length > 0) {
-                onSelect(newInfos[0].id);
-            } else {
-                onSelect(""); // Clear selection
-            }
+            // Refresh the global portfolio list
+            await refreshPortfolios();
             alert("Portafoglio eliminato.");
         } catch (e: any) {
             alert(`Errore durante l'eliminazione: ${e.response?.data?.error || e.message}`);
         }
-        setLoading(false);
+        setDeleting(false);
     };
 
-    if (loading) return <div className="flex items-center text-sm text-gray-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Caricamento portafogli...</div>;
+    if (loadingPortfolios && portfolios.length === 0) return <div className="flex items-center text-sm text-gray-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Caricamento portafogli...</div>;
 
     if (!userId) {
         return <div className="text-sm text-red-500">Effettua il login per gestire i portafogli.</div>;
