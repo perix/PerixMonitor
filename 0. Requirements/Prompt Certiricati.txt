@@ -10,4 +10,4 @@ Fornisci la risposta esattamente nel formato richiesto: nessuna parola o element
 Una volta trovati gli elementi numerici confrontali con almeno un altro sito finanziario per validarli.
 Al posto di "Asset A1" metterai il nome dell'asset mentre "a1 strike", a1 saranno i valori dello strike price e del valore attuale relativi all'asset.
 Calcola la distanza dalla barriera così: (val. corrente-valore barriera)/(valore corrente) x 100 ma non mostrare il calcolo.
-Parti solo con la data dell'aggiornamento: "Al gg/mm/aaaa: ..."
+Parti solo con la data dell'aggiornamento: "Al gg/mm/aaaa: ..." 

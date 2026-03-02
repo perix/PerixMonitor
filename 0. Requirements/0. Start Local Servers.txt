@@ -1,9 +1,9 @@
 1. Avvio del Backend (Docker + Supabase)
-supabase start
+Basta far partire Docekr Desktop (così fa partire supabase start)
 
 2. Avvio del Backend (Python/Edge Functions)
 supabase functions serve
-2
+e
 python api/index.py
 
 3. Avvio del Frontend (React + Vite)
