@@ -61,3 +61,7 @@ env_*.txt
 0. Requirements/**/*.xlsx
 0. Requirements/**/*.xlsm
 0. Requirements/**/*.xls
+
+# Backup DB
+0. Backup DB/*.json 
+
