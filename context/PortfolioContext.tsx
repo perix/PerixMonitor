@@ -132,7 +132,28 @@ export const PortfolioProvider = ({ children }: { children: ReactNode }) => {
             // Fetch portfolios on initial load
             refreshPortfolios();
         }
-    }, []);
+    }, [refreshPortfolios]);
+
+    // aspetta i cambiamenti dell'autenticazione (login/logout)
+    useEffect(() => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+            console.log("PORTFOLIO CONTEXT: Auth state changed:", event);
+            if (event === 'SIGNED_IN') {
+                refreshPortfolios();
+            } else if (event === 'SIGNED_OUT') {
+                setPortfolios([]);
+                setSelectedPortfolioId(null);
+                setPortfolioCacheState({});
+                setAnalysisCacheState({});
+                setAssetHistoryCacheState({});
+                setAssetSettingsCacheState({});
+            }
+        });
+
+        return () => {
+            subscription.unsubscribe();
+        };
+    }, [supabase.auth, refreshPortfolios]);
 
     useEffect(() => {
         if (selectedPortfolioId) {
