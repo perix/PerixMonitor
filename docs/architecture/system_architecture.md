@@ -168,6 +168,19 @@ Per evitare distorsioni su periodi brevi:
 | **30-365gg** | Period XIRR | XIRR de-annualizzato. Mostra il rendimento effettivo guadagnato nel periodo. |
 | **> 365gg** | Annualized XIRR | CAGR classico. Rendimento medio annuo composto. |
 
+### Metodi di Calcolo XIRR (Standard vs Multi-Guess)
+L'XIRR basa il suo calcolo sul metodo iterativo di Newton-Raphson. Tale approccio matematico necessita di un punto di partenza ("Guess" iniziale, tipicamente 10%). A causa della complessità di alcuni portafogli (sequenze irregolari di versamenti e prelievi che generano zeri multipli nella funzione NPV), la formula matematica originale può fallire o restituire risultati paradossali (non-convergenza). Per ovviare a ciò, PerixMonitor implementa due varianti di calcolo controllabili on-demand dalla UI della Dashboard:
+- **Standard**: Utilizza il calcolo matematico tradizionale partendo da un guess base fisso (10%). È più veloce e ideale per sequenze di flussi standard e continue.
+- **Multi-Guess**: Esegue tentativi in parallelo utilizzando molteplici guess iniziali diversi (es. 0%, -10%, 20%, -50% ecc.). Alla fine valuta quale dei risultati teorici azzera meglio la curva NPV (Net Present Value) scegliendo il risultato matematicamente più "stabile". Questo rallenta marginalmente il backend ma consente di trovare soluzioni corrette dove il metodo standard fallirebbe a causa del cambio segno irregolare.
+
+### Fallback e Warning "Simple Return" nell'Andamento MWR
+In contesti particolari (sia Standard che Multi-Guess), la funzione matematica XIRR non restituisce alcun tasso di convergenza logico (es. divisioni per zero o funzioni divergenti). Per evitare il blocco totale del cruscotto ("Andamento MWR"), il backend attua la seguente logica difensiva progressiva:
+1. Tenta il metodo XIRR impostato dall'utente (es. Standard).
+2. Se fallisce, forza un tentativo automatico in modalità Multi-Guess "salvavita".
+3. Se anche il Multi-Guess non restituisce risultati validi (o genera valori fuori scala >1000%), attua il **Fallback a Simple Return (Ritorno Semplice)**.
+
+**Visibilità Lato UI**: Quando il backend innesca questo Fallback estremo al livello base `(Valore Attuale - Costo Totale) / Costo Totale`, il Frontend se ne accorge leggendo il flag restituito. Di conseguenza espone immediatamente **l'indicazione (warning rosso) "(simple return)" a fianco del titolo "Andamento MWR - Portafoglio"**. Questo serve per avvisare in totale trasparenza l'utente che: *Il calcolo che stai guardando non è pesato nel tempo poichè impossibile da parametrizzare matematicamente date le scarse o errate transazioni fornite.*
+
 ### Calcolo Time-Series (Grafici storici)
 Il grafico MWR viene generato dinamicamente simulando una "vendita fittizia" (Mark-to-Market) ad ogni punto storico, utilizzando i prezzi noti (LOCF - Last Observation Carried Forward) per valutare il portafoglio nel passato.
 
