@@ -3,7 +3,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { TrendingUp, TrendingDown, Euro, Database, Activity, ArrowUpRight, ArrowDownRight, Loader2 } from "lucide-react";
+import { TrendingUp, TrendingDown, Euro, Database, Activity, ArrowUpRight, ArrowDownRight, Loader2, List } from "lucide-react";
+import { AssetMovementsModal } from "@/components/portfolio/AssetMovementsModal";
 import { formatSwissMoney, formatSwissNumber } from "@/lib/utils";
 import { DashboardCharts } from "@/components/dashboard/DashboardCharts";
 import { usePortfolio } from "@/context/PortfolioContext";
@@ -29,6 +30,7 @@ interface Asset {
     current_qty?: number;
     current_value?: number;
     invested?: number;
+    gross_invested?: number;
     pnl_value?: number;
     pnl_percent?: number;
 
@@ -215,6 +217,7 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
     const [visibleStats, setVisibleStats] = useState<{ pnl: number; mwr: number } | null>(null);
     const [threshold, setThreshold] = useState(0.1);
     const [chartSettings, setChartSettings] = useState<any>(null);
+    const [showMovements, setShowMovements] = useState(false);
     const lastAssetIdRef = useRef<string | null>(null);
 
     // Synchronous reset on asset change to avoid race conditions/leakage
@@ -383,7 +386,16 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                             <div className="flex items-center gap-1">
                                 {isPnlPositive ? <ArrowUpRight className="h-4 w-4 text-green-500 shrink-0" /> : <ArrowDownRight className="h-4 w-4 text-red-500 shrink-0" />}
                                 <span className={`font-medium text-base truncate ${isPnlPositive ? 'text-green-500' : 'text-red-500'}`}>
-                                    {activePnl !== undefined && activePnl !== null ? `€${formatSwissMoney(activePnl)}` : '-'}
+                                    {activePnl !== undefined && activePnl !== null ? (
+                                        <>
+                                            €{formatSwissMoney(activePnl)}
+                                            {asset.pnl_percent !== undefined && asset.pnl_percent !== null && (
+                                                <span className="text-xs ml-1.5 opacity-80 font-normal">
+                                                    ({asset.pnl_percent > 0 ? '+' : ''}{formatSwissMoney(asset.pnl_percent, 2)}%)
+                                                </span>
+                                            )}
+                                        </>
+                                    ) : '-'}
                                 </span>
                             </div>
                         </div>
@@ -469,9 +481,19 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                 {/* Right: Details (1 col) */}
                 <Card className="bg-card/80 backdrop-blur-xl border-white/40 overflow-hidden flex flex-col min-h-0 lg:col-span-1">
                     <CardHeader className="pb-2 border-b border-white/10 shrink-0">
-                        <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                            <Database className="h-4 w-4" />
-                            Info Asset (Dettagli)
+                        <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+                            <span className="flex items-center gap-2">
+                                <Database className="h-4 w-4" />
+                                Info Asset (Dettagli)
+                            </span>
+                            <button
+                                onClick={() => setShowMovements(true)}
+                                className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium border border-primary/40 text-primary bg-primary/10 hover:bg-primary/20 hover:border-primary/60 transition-colors duration-200 cursor-pointer uppercase tracking-wide"
+                                title="Dettagli Movimenti"
+                            >
+                                <List className="h-3.5 w-3.5" />
+                                Movimenti
+                            </button>
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="pt-4 overflow-y-auto flex-1">
@@ -479,6 +501,15 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Asset Movements Modal */}
+            <AssetMovementsModal
+                portfolioId={selectedPortfolioId || ''}
+                assetId={asset.id}
+                assetName={displayName}
+                open={showMovements}
+                onOpenChange={setShowMovements}
+            />
         </div>
     );
 }

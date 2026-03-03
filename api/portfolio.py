@@ -125,13 +125,15 @@ def register_portfolio_routes(app):
                     holdings[isin] = {
                         "asset": asset,
                         "qty": 0,
-                        "total_cost": 0,  # Total invested
+                        "total_cost": 0,  # Net invested
+                        "gross_invested": 0, # Total gross purchases
                         "cashflows": []   # For XIRR calculation
                     }
                 
                 if is_buy:
                     holdings[isin]['qty'] += qty
                     holdings[isin]['total_cost'] += (qty * price)
+                    holdings[isin]['gross_invested'] += (qty * price)
                     # Cashflow: outflow (negative) for buys
                     holdings[isin]['cashflows'].append({
                         "date": datetime.fromisoformat(trans_date).replace(tzinfo=None),
@@ -226,13 +228,19 @@ def register_portfolio_routes(app):
                     
                     # Calculate P&L
                     invested = data['total_cost']
+                    gross_invested = data.get('gross_invested', 0)
                     total_div = data.get('total_dividends', 0)
                     asset_info['invested'] = round(invested, 2)
+                    asset_info['gross_invested'] = round(gross_invested, 2)
                     asset_info['total_dividends'] = round(total_div, 2)
                     
                     # P&L including dividends: (Current Value - Net Invested) + Dividends
                     pnl_value = (current_value - invested) + total_div
-                    pnl_percent = (pnl_value / invested * 100) if invested > 0 else 0
+                    
+                    # Usa gross_invested come base per la % del P&L come richiesto dall'utente
+                    pnl_base = gross_invested if gross_invested > 0 else invested
+                    pnl_percent = (pnl_value / pnl_base * 100) if pnl_base > 0 else 0
+                    
                     asset_info['pnl_value'] = round(pnl_value, 2)
                     asset_info['pnl_percent'] = round(pnl_percent, 2)
                     

@@ -39,6 +39,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ArrowUpDown } from "lucide-react";
+import { AssetMovementsModal } from "@/components/portfolio/AssetMovementsModal";
 import {
     Select,
     SelectContent,
@@ -174,6 +175,7 @@ export function MemoryTable({
 
 
     const [threshold, setThreshold] = useState(0.1);
+    const [movementsAsset, setMovementsAsset] = useState<{ id: string; name: string } | null>(null);
 
     useEffect(() => {
         if (data.length > 0) {
@@ -252,7 +254,15 @@ export function MemoryTable({
                     ISIN <ArrowUpDown className="ml-2 h-4 w-4" />
                 </Button>
             ),
-            cell: ({ row }) => <div className="truncate">{row.getValue("isin")}</div>,
+            cell: ({ row }) => (
+                <div
+                    className="truncate cursor-pointer hover:text-blue-400 hover:underline"
+                    onDoubleClick={() => setMovementsAsset({ id: row.original.id, name: row.original.description })}
+                    title="Doppio click per dettagli movimenti"
+                >
+                    {row.getValue("isin")}
+                </div>
+            ),
             size: 130,
         },
         {
@@ -609,6 +619,17 @@ export function MemoryTable({
                     </TableBody>
                 </Table>
             </div>
+
+            {/* Asset Movements Modal — triggered by double-click on ISIN */}
+            {movementsAsset && (
+                <AssetMovementsModal
+                    portfolioId={portfolioId || ''}
+                    assetId={movementsAsset.id}
+                    assetName={movementsAsset.name}
+                    open={true}
+                    onOpenChange={(open) => { if (!open) setMovementsAsset(null); }}
+                />
+            )}
         </div>
     );
 }

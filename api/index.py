@@ -39,6 +39,7 @@ from portfolio import register_portfolio_routes
 from analysis import register_analysis_routes
 from settings import register_settings_routes
 from memory import memory_bp
+from asset_movements import movements_bp
 
 from config_api import config_bp
 app = Flask(__name__)
@@ -51,6 +52,7 @@ register_portfolio_routes(app)
 register_analysis_routes(app)
 register_settings_routes(app)
 app.register_blueprint(memory_bp)
+app.register_blueprint(movements_bp)
 
 
 import sys
