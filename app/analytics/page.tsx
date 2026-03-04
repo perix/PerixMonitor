@@ -180,12 +180,15 @@ export default function AnalyticsPage() {
 
     // Fetch threshold configuration
     useEffect(() => {
-        axios.get('/api/config/assets').then(res => {
+        if (!selectedPortfolioId) return;
+        axios.get('/api/config/assets', {
+            params: { portfolio_id: selectedPortfolioId }
+        }).then(res => {
             if (res.data?.priceVariationThreshold !== undefined) {
                 setThreshold(res.data.priceVariationThreshold);
             }
         }).catch(err => console.error("Failed to load asset config", err));
-    }, []);
+    }, [selectedPortfolioId]);
 
     // [PERSISTENCE] Save selection to DB
     useEffect(() => {

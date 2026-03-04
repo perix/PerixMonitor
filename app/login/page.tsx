@@ -16,9 +16,12 @@ export default function LoginPage() {
     const router = useRouter();
     const supabase = createClient();
 
+    const [message, setMessage] = useState<string | null>(null);
+
     const handleLogin = async () => {
         setLoading(true);
         setError(null);
+        setMessage(null);
 
         console.log("LOGIN ATTEMPT: Starting login for", email);
 
@@ -40,6 +43,7 @@ export default function LoginPage() {
     const handleSignUp = async () => {
         setLoading(true);
         setError(null);
+        setMessage(null);
 
         const { error } = await supabase.auth.signUp({
             email,
@@ -49,7 +53,29 @@ export default function LoginPage() {
         if (error) {
             setError(error.message);
         } else {
-            alert("Registrazione effettuata! Prova ad accedere (se richiesto, controlla l'email).");
+            setMessage("Registrazione effettuata! Prova ad accedere (se richiesto, controlla l'email).");
+        }
+        setLoading(false);
+    };
+
+    const handleResetPassword = async () => {
+        if (!email) {
+            setError("Inserisci la tua email per resettare la password.");
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+        setMessage(null);
+
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+            redirectTo: `${window.location.origin}/change-password`,
+        });
+
+        if (error) {
+            setError(error.message);
+        } else {
+            setMessage("Email per il reset inviata! Controlla la tua casella di posta.");
         }
         setLoading(false);
     };
@@ -71,8 +97,18 @@ export default function LoginPage() {
                             onChange={e => setEmail(e.target.value)}
                         />
                     </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="password">Password</Label>
+                    <div className="space-y-2 relative">
+                        <div className="flex items-center justify-between">
+                            <Label htmlFor="password">Password</Label>
+                            <button
+                                onClick={handleResetPassword}
+                                className="text-xs text-indigo-500 hover:text-indigo-400 font-medium"
+                                type="button"
+                                disabled={loading}
+                            >
+                                Password dimenticata?
+                            </button>
+                        </div>
                         <Input
                             id="password"
                             type="password"
@@ -82,6 +118,7 @@ export default function LoginPage() {
                     </div>
 
                     {error && <p className="text-sm text-red-500">{error}</p>}
+                    {message && <p className="text-sm text-green-500">{message}</p>}
 
                     <div className="flex space-x-2 pt-2">
                         <Button className="flex-1" onClick={handleLogin} disabled={loading}>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { usePortfolio } from "@/context/PortfolioContext";
 import axios from 'axios';
 import {
     Table,
@@ -26,18 +27,24 @@ interface Holding {
 
 interface HoldingsTableProps {
     data: Holding[];
+    portfolioId?: string;
 }
 
-export function HoldingsTable({ data }: HoldingsTableProps) {
+export function HoldingsTable({ data, portfolioId }: HoldingsTableProps) {
+    const { selectedPortfolioId } = usePortfolio();
+    const effectivePortfolioId = portfolioId || selectedPortfolioId;
     const [selectedIsin, setSelectedIsin] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [threshold, setThreshold] = useState(0.1);
 
     useEffect(() => {
-        axios.get('/api/config/assets').then(res => {
+        if (!effectivePortfolioId) return;
+        axios.get('/api/config/assets', {
+            params: { portfolio_id: effectivePortfolioId }
+        }).then(res => {
             if (res.data?.priceVariationThreshold !== undefined) setThreshold(res.data.priceVariationThreshold);
         }).catch(err => console.error("Failed to load asset config", err));
-    }, []);
+    }, [effectivePortfolioId]);
 
     const handleOpenDetails = (isin: string) => {
         setSelectedIsin(isin);
