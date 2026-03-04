@@ -9,6 +9,7 @@ import os
 import json
 import openai
 from logger import logger
+from llm_utils import call_llm
 
 # Path to the DescrAsset.json template
 DESCR_ASSET_TEMPLATE_PATH = os.path.join(
@@ -93,115 +94,40 @@ def fetch_asset_info_from_llm(isin: str, model: str = None, asset_name: str = No
             name_to_use = asset_name or isin  # Fallback to ISIN if no name provided
             final_prompt = final_prompt.replace('{nome_asset}', name_to_use)
 
-        # Create OpenAI client
-        client = openai.OpenAI(api_key=api_key)
+        # Chiamata centralizzata
+        response_text = call_llm(final_prompt, temperature_override=0.1)
         
-        # Prepare parameters
-        api_params = {
-            "model": model_to_use,
-            "messages": [{"role": "user", "content": final_prompt}]
-        }
+        if not response_text:
+            return None
+            
+        original_response = response_text
         
-        # [MODIFIED] Reasoning Effort Support
-        # Logic: If reasoning_effort is set (and not None/none), we use it. 
-        # API requires temperature to NOT be present if reasoning_effort is used (for some models like o1).
-        # We assume 'gpt-5' or 'o1' class models use reasoning.
-        is_reasoning_model = model_to_use.startswith('gpt-5') or model_to_use.startswith('o')
+        # Try to parse as JSON (Handle markdown blocks)
+        if response_text.startswith('```'):
+            lines = response_text.split('\n')
+            start_idx = 1 if lines[0].startswith('```') else 0
+            end_idx = len(lines) - 1 if lines[-1].strip() == '```' else len(lines)
+            response_text = '\n'.join(lines[start_idx:end_idx])
         
-        if is_reasoning_model and reasoning_effort:
-             api_params["reasoning_effort"] = reasoning_effort
-             # Max Tokens handling for reasoning models often uses max_completion_tokens
-             api_params["max_completion_tokens"] = int(max_tokens)
-        else:
-             # Standard models
-             api_params["temperature"] = 0.3
-             api_params["max_tokens"] = int(max_tokens)
-        
-        # DETAILED LOGGING - PRE-FLIGHT
-        logger.info(f"LLM REQUEST [ISIN: {isin}]")
-        logger.info(f"  > Model: {model_to_use}")
-        logger.info(f"  > Params: Reasoning={reasoning_effort if is_reasoning_model else 'N/A'}, WebSearch={web_search_enabled}")
-        logger.info(f"  > Prompt Length: {len(final_prompt)} chars")
-
-        # Send Request
+        # Parsing
         try:
-            if web_search_enabled:
-                 logger.info("LLM ASSET INFO: Using Native Responses API for Web Search")
-                 response = client.responses.create(
-                    model=model_to_use,
-                    tools=[{"type": "web_search_preview"}],
-                    input=[{"role": "user", "content": final_prompt}]
-                 )
-                 
-                 # Extract content from Responses API object
-                 if hasattr(response, 'output_text'):
-                    response_text = response.output_text
-                 elif hasattr(response, 'message'):
-                    response_text = response.message.content
-                 else:
-                    response_text = str(response)
-                 
-                 original_response = response_text
-                 finish_reason = "stop (responses-api)" # Placeholder
-                 usage = None 
-            else:
-                 # Standard Chat Completion
-                 response = client.chat.completions.create(**api_params)
-                
-                 # DETAILED LOGGING - POST-FLIGHT
-                 usage = response.usage
-                 finish_reason = response.choices[0].finish_reason
-                 
-                 msg = response.choices[0].message
-                 response_text = msg.content
-                 
-                 if response_text is None:
-                     if msg.tool_calls:
-                         tool_call = msg.tool_calls[0]
-                         logger.warning(f"LLM tried to use tool: {tool_call.function.name} with args: {tool_call.function.arguments}")
-                         response_text = json.dumps({
-                            "assetType": "Unknown (Tool Call)",
-                            "description": f"Model attempted to use tool: {tool_call.function.name}",
-                            "identifiers": {"isin": isin}
-                         }) 
-                     else:
-                         logger.warning("LLM returned NO content and NO tool calls.")
-                         return None
-                 
-                 original_response = response_text
+            metadata = json.loads(response_text)
             
-            logger.info(f"LLM RESPONSE [ISIN: {isin}]")
-            logger.info(f"  > Finish Reason: {finish_reason}")
-            if usage:
-                 logger.info(f"  > Tokens: In={usage.prompt_tokens}, Out={usage.completion_tokens}, Total={usage.total_tokens}")
+            # Log success details
+            parsed_isin = metadata.get('identifiers', {}).get('isin', 'N/A')
+            parsed_type = metadata.get('assetType', 'N/A')
+            logger.info(f"LLM RESPONSE [ISIN: {isin}] - Parsed Valid JSON. AssetType: {parsed_type}, MatchISIN: {parsed_isin == isin}")
             
-            # Try to parse as JSON (Handle markdown blocks)
-            # Standard parsing logic continues below...
-            if response_text.startswith('```'):
-                lines = response_text.split('\n')
-                start_idx = 1 if lines[0].startswith('```') else 0
-                end_idx = len(lines) - 1 if lines[-1].strip() == '```' else len(lines)
-                response_text = '\n'.join(lines[start_idx:end_idx])
-            
-            # Parsing
-            try:
-                metadata = json.loads(response_text)
-                
-                # Log success details
-                parsed_isin = metadata.get('identifiers', {}).get('isin', 'N/A')
-                parsed_type = metadata.get('assetType', 'N/A')
-                logger.info(f"  > Parsed Valid JSON. AssetType: {parsed_type}, MatchISIN: {parsed_isin == isin}")
-                
-                return {
-                    "response_type": "json",
-                    "data": metadata
-                }
-            except json.JSONDecodeError:
-                logger.warning(f"  > Failed to parse JSON. Returning raw text (Length: {len(original_response)})")
-                return {
-                    "response_type": "text",
-                    "data": original_response
-                }
+            return {
+                "response_type": "json",
+                "data": metadata
+            }
+        except json.JSONDecodeError:
+            logger.warning(f"LLM RESPONSE [ISIN: {isin}] - Failed to parse JSON. Returning raw text.")
+            return {
+                "response_type": "text",
+                "data": original_response
+            }
                 
         except openai.APIStatusError as e:
             logger.error(f"LLM API ERROR [ISIN: {isin}] - Status: {e.status_code}")

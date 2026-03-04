@@ -1,4 +1,4 @@
-# PerixMonitor - Architettura e Stato Corrente (V2.0)
+# PerixMonitor - Architettura e Stato Corrente (V2.5)
 
 ## 1. Panoramica
 PerixMonitor è un'applicazione web per il tracciamento del patrimonio personale (Wealth Tracker) ottimizzata per residenti fiscali italiani. 
@@ -83,7 +83,9 @@ api/
 ├── price_manager.py  # Gestione storico prezzi (salvataggio manuale, recupero efficiente)
 ├── color_manager.py  # [V2.0] Gestione colori persistenti per asset
 ├── config_api.py     # [V2.0] API per settings UI persistenti (colonne, filtri)
-├── llm_asset_info.py # Integrazione AI (GPT-5, Web Search)
+├── llm_asset_info.py # [LEGACY] API base per info asset via AI
+├── llm_report.py     # [V2.5] API Analisi Asincrona: gestione job, thread e polling per report
+├── llm_utils.py      # [V2.5] Utility LLM: setup client, Responses API, sanificazione testo PDF
 ├── supabase_client.py# Client DB centralizzato
 └── logger.py         # Sistema di audit e logging professionale
 ```
@@ -94,6 +96,9 @@ api/
 |----------|--------|----------|
 | `/api/ingest` | POST | Preview Import: analizza Excel e propone modifiche (senza salvare) |
 | `/api/sync` | POST | Safe Sync: Commit atomico delle modifiche approvate nel DB |
+| `/api/report/generate` | GET | Genera dati strutturati per il report PDF (incl. calcolo costi pro-rata) |
+| `/api/report/llm-analysis/start` | POST | [V2.5] Avvia task asincrono di analisi AI per il report |
+| `/api/report/llm-analysis/status/<id>` | GET | [V2.5] Verifica stato e recupera risultato del job AI |
 | `/api/memory/data` | GET | Recupera dati aggregati per pagina "Note & Storico" (incl. P&L netto) |
 | `/api/analysis/allocation` | GET | Recupera dati allocazione per pagina "Analisi" |
 | `/api/backup/download` | GET | Scarica JSON backup completo (incl. storico prezzi) |
@@ -193,7 +198,7 @@ Per l'interazione fluida della UI, il grafico della Dashboard permette di isolar
 - Applica la **Modified Dietz Approximation** (`(Delta P&L / Capitale Medio Investito) * 100`) per fornire una stima in tempo reale rigorosa del MWR per la specifica parentesi storica.
 - I KPI aggregati (Controvalore, MWR, P&L) nella parte superiore della dashboard mostrano dinamicamente questi valori della finestra visibile ("Periodo Visibile").
 
-## 5. Stato Attuale (V2.0)
+## 5. Stato Attuale (V2.5)
 
 ### Feature Completate (Stable)
 - [x] **Core**: Safe Ingestion, Dashboard interattiva, Calcolo XIRR Tiered.
@@ -205,11 +210,12 @@ Per l'interazione fluida della UI, il grafico della Dashboard permette di isolar
 - [x] **Performance**: Indicizzazione DB, Caching lato client, Batch processing prezzi, UI fluida (Modified Dietz frontend approx).
 - [x] **Settings Refactoring**: "Danger Zone" isolata, Auto-selezione post-restore.
 - [x] **Metriche Dinamiche**: KPI Dashboard (Controvalore, MWR, P&L) reagiscono istantaneamente in base alla finestra temporale (slider) visibile.
+- [x] **Asynchronous Reporting (V2.5)**: Sistema a task per analisi LLM lunghe, polling frontend, sanificazione caratteri speciali e calcolo costi pro-rata inclusivo.
+- [x] **Asset Movements Tracking**: Dettaglio movimenti e calcolo P&L basato su `gross_invested`.
 
-
-### Prossimi Passi (Roadmap Future V2.1+)
+### Prossimi Passi (Roadmap Future V2.6+)
 - [ ] **Multi-Currency Support**: Gestione nativa cambi valuta storici.
-- [ ] **Advanced Reporting**: Generazione PDF periodici.
+- [x] **Advanced Reporting**: Generazione PDF periodici (Completato con V2.5).
 - [ ] **Goal Tracking**: Impostazione obiettivi di risparmio e proiezione.
 
 ## 6. Ambiente e Vincoli

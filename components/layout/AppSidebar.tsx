@@ -19,7 +19,8 @@ import {
     Upload,
     LogOut,
     LayoutDashboard,
-    Loader2
+    Loader2,
+    Download
 } from "lucide-react"
 
 import {
@@ -94,6 +95,11 @@ const data = {
                     icon: Upload,
                     className: "text-red-400 hover:text-red-300 hover:bg-red-500/10 data-[active=true]:bg-red-500/10 data-[active=true]:text-red-400",
                     separatorAbove: true
+                },
+                {
+                    title: "Export",
+                    url: "/export",
+                    icon: Download,
                 },
             ],
         },

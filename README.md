@@ -153,3 +153,20 @@ Solo confermando la preview i dati vengono scritti nel database.
 ### Ottimizzazioni MWR e Dashboard Dinamica (28/02/2026)
 - **Bugfix MWR Subset**: Risolto un problema di distorsione del MWR (XIRR) quando si filtra la dashboard per un sottoinsieme di asset. I dividendi considerati nel calcolo dei cash flow sono stati scollegati dal portafoglio globale e ora vengono filtrati dinamicamente per appartenere *solo* agli asset selezionati.
 - **Metriche Slider Dinamiche**: Le card KPI principali della Dashboard (Controvalore, MWR, Profitto/Perdita) visualizzano ora istantaneamente le performance relative *al solo periodo selezionato* visivamente tramite il range slider sul grafico. L'engine applica un'approssimazione "Modified Dietz" sul frontend per un'esperienza a latenza zero, senza sovraccaricare il server backend.
+
+### Release 2.5 - "Asynchronous Analytics & Robust Reporting" (04/03/2026)
+
+- **Asynchronous LLM Processing**: 
+    - Nuovo sistema a task asincroni (`/start`, `/status`) per gestire analisi AI di lunga durata (fino a 180s) senza timeout del browser.
+    - Logica di polling integrata nel frontend per un monitoraggio fluido dello stato dell'analisi.
+- **Reporting PDF Avanzato**:
+    - **Sanificazione Testo**: Funzione `clean_text_for_pdf` lato backend per convertire/rimuovere caratteri speciali incompatibili (smart quotes, UTF-8 symbols) garantendo un rendering perfetto.
+    - **Logica Pro-rata Precisa**: Correzione del calcolo dei costi simulati (Consulenza, Patrimoniale); il conteggio dei giorni del periodo è ora inclusivo (+1), garantendo ratei matematicamente esatti.
+    - **Visual Excellence**: Label migliorate ("TOTALE COSTI (espliciti)DEL PERIODO") e rendering robusto delle tabelle con `jspdf-autotable`.
+- **OpenAI Responses API Optimization**: 
+    - Parametrizzazione specifica per `gpt-5-mini` per abilitare la ricerca web nativa bypassando i limiti dei parametri legacy.
+    - Estensione timeout client server a 180s per supportare sessioni di reasoning complesse.
+
+- **Tag Added**: Git tag `20260304_AsynchronousReporting` created to mark this release.
+
+*All changes are included in the latest commit on `master`.*
