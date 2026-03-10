@@ -204,7 +204,7 @@ export const UploadForm = () => {
                 <CardContent className="space-y-4">
                     <Input
                         type="file"
-                        accept=".xlsx"
+                        accept=".xlsx,.xlsm"
                         onChange={handleFileChange}
                         disabled={!selectedPortfolioId}
                         className="file:text-foreground text-foreground border-white/20 bg-secondary/20"
