@@ -113,3 +113,35 @@ Il sistema assume questo formato se il file **NON** contiene le colonne `Operazi
 *   È possibile inserire più righe con date diverse per lo stesso ISIN (per ricostruire lo storico).
 *   Se un ISIN non è presente nel portafoglio, verrà ignorato (con warning).
 *   Se sono presenti prezzi diversi per lo stesso ISIN nella stessa data, verrà generato un warning e usato l'ultimo valore.
+
+---
+
+## 4. Logica di Ingestion ed Errori (Protocollo Semplificato)
+ 
+L'importazione dei file Excel segue una logica diretta basata sulle operazioni di transazione:
+ 
+### 4.1 Transazioni (Acquisto / Vendita)
+Se una riga contiene un'operazione esplicita (**"Acquisto"** o **"Vendita"**), il valore nella colonna **Quantità** indica esattamente il numero di quote acquistate o vendute (Transaction Delta).
+-   **Acquisto**: Le quote vengono *sommate* al portafoglio esistente.
+-   **Vendita**: Le quote vengono *sottratte* dal portafoglio esistente.
+    -   *Errore*: Se si tenta di vendere una quantità superiore a quella posseduta nel database, l'operazione viene bloccata (`ERROR_NEGATIVE_QTY`).
+ 
+### 4.2 Aggiornamento Prezzi
+Se una riga **NON** contiene alcuna operazione:
+-   Il sistema considera la riga come **Aggiornamento di Prezzo**.
+-   **Controllo**: La quantità indicata nel file DEVE corrispondere a quella presente nel database.
+    -   *Eccezione*: Se la cella **Quantità è vuota**, il sistema ignora il controllo (valido per aggiornamenti listino).
+-   **Errore**: Se la quantità è **presente ma diversa** da quella in DB (e.g. file dice 100, DB ha 50), il sistema genera un errore di discrepanza (`ERROR_QTY_MISMATCH_NO_OP`). Questo segnala una probabile operazione mancante.
+-   **Risultato**: L'ingestion viene bloccata per quella riga.
+ 
+### 4.3 Logica Semplificata (Transaction-Only)
+Il sistema **NON** effettua più una riconciliazione "State-Based" (confronto saldo totale).
+-   Non verifica se un asset presente nel DB manca nel file Excel.
+-   Non calcola automaticamente delta per allineare le quantità totali.
+-   Si basa **esclusivamente** sulle operazioni esplicite dichiarate nel file.
+ 
+### 4.4 Regole di Coerenza (Strict Checks)
+Per le operazioni dichiarate (**Acquisto** o **Vendita**), il sistema applica regole rigide:
+1.  **Quantità Obbligatoria**: La cella *Quantità* non può essere vuota.
+2.  **Prezzo Operazione Obbligatorio**: La cella *Prezzo Operazione* deve essere presente.
+Se manca uno di questi dati, l'operazione viene segnalata come **Incompleta** (`ERROR_INCOMPLETE_OP`) e l'ingestione viene bloccata per quella riga.

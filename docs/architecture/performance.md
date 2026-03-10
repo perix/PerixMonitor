@@ -181,7 +181,14 @@ Implementata persistenza della cache del portafoglio e della dashboard su `local
 **File**: `api/data_compaction.py`, `api/index.py`
 Creato endpoint `/api/admin/compact-prices` per ottimizzare le dimensioni della tabella `asset_prices` eliminando dati ridondanti storici secondo la strategia tiered (Recent/Medium/Old).
 
-### 6.7 Aggregation Views (P1)
-**Migration**: `20260212190200_add_aggregation_views.sql`
-Create viste SQL (`portfolio_holdings`, `dividend_totals`, `portfolio_stats`) per spostare il calcolo delle aggregazioni dal livello applicativo al database.
+### 6.8 Prezzi: Virtualizzazione e Filtro (P1 — Marzo 2026)
+**File**: `AssetPricesModal.tsx`, `price_manager.py`
+
+Per gestire asset con serie storiche decennali (migliaia di punti prezzo) senza degradare la UX:
+- **Virtualizzazione (Windowing)**: La tabella dei prezzi ora utilizza una logica di rendering condizionale che mantiene nel DOM solo le ~20 righe visibili nell'area di scroll, indipendentemente dalla dimensione totale del dataset.
+- **Lazy Loading Temporale**: Il backend e il frontend ora supportano il parametro `days`. Di default viene caricato solo l'ultimo anno di prezzi, riducendo drasticamente il payload JSON iniziale e il tempo di parsing.
+- **Scroll Optimization**: Reset automatico dello scroll al cambio di intervallo temporale e layout ottimizzato per fluidità 60fps.
+
+---
+*Tutte le ottimizzazioni mirano a mantenere l'applicazione entro i limiti del Free Tier di Supabase e Vercel.*
 

@@ -1,4 +1,4 @@
-# PerixMonitor - Architettura e Stato Corrente (V2.5)
+# PerixMonitor - Architettura e Stato Corrente (V2.6)
 
 ## 1. Panoramica
 PerixMonitor è un'applicazione web per il tracciamento del patrimonio personale (Wealth Tracker) ottimizzata per residenti fiscali italiani. 
@@ -68,24 +68,25 @@ Per far funzionare PerixMonitor in locale, **entrambi i server devono essere att
 > [!IMPORTANT]
 > Se avvii solo il frontend senza il backend Python, vedrai errori del tipo `ECONNREFUSED 127.0.0.1:5328` perché il frontend non riesce a contattare l'API.
 
-#### Struttura dei File Backend (Version 2.0)
+#### Struttura dei File Backend (Version 2.6)
 
 ```
 api/
-├── index.py          # Entry point principale - avvia Flask e registra tutte le route
+├── index.py          # Entry point principale
 ├── dashboard.py      # API Dashboard: grafici, KPI, storico MWR, trend
-├── memory.py         # [V2.0] API Memory/Storico: aggregazione transazioni, P&L, note, dividendi
-├── analysis.py       # [V2.0] API Analisi: allocazione asset class, componenti, metriche granulari
+├── memory.py         # API Memory/Storico: aggregazione transazioni, P&L, note, dividendi
+├── analysis.py       # API Analisi: allocazione asset class, componenti, metriche granulari
 ├── portfolio.py      # Gestione portafogli (CRUD)
 ├── ingest.py         # Parsing e Safe Ingestion file Excel (Transazioni, Cedole)
-├── backup_service.py # [V2.0] Logica avanzata Backup/Restore (full price history support)
+├── backup_service.py # Logica avanzata Backup/Restore
 ├── finance.py        # Core Engine: Calcoli finanziari XIRR/MWR tiered
 ├── price_manager.py  # Gestione storico prezzi (salvataggio manuale, recupero efficiente)
-├── color_manager.py  # [V2.0] Gestione colori persistenti per asset
-├── config_api.py     # [V2.0] API per settings UI persistenti (colonne, filtri)
-├── llm_asset_info.py # [LEGACY] API base per info asset via AI
-├── llm_report.py     # [V2.5] API Analisi Asincrona: gestione job, thread e polling per report
-├── llm_utils.py      # [V2.5] Utility LLM: setup client, Responses API, sanificazione testo PDF
+├── asset_prices.py   # API Prezzi: endpoint per CRUD e range filtering (V2.6)
+├── color_manager.py  # Gestione colori persistenti per asset
+├── config_api.py     # API per settings UI persistenti
+├── llm_asset_info.py # API base per info asset via AI
+├── llm_report.py     # API Analisi Asincrona: reportistica
+├── llm_utils.py      # Utility LLM
 ├── supabase_client.py# Client DB centralizzato
 └── logger.py         # Sistema di audit e logging professionale
 ```
@@ -94,130 +95,87 @@ api/
 
 | Endpoint | Metodo | Funzione |
 |----------|--------|----------|
-| `/api/ingest` | POST | Preview Import: analizza Excel e propone modifiche (senza salvare) |
-| `/api/sync` | POST | Safe Sync: Commit atomico delle modifiche approvate nel DB |
-| `/api/report/generate` | GET | Genera dati strutturati per il report PDF (incl. calcolo costi pro-rata) |
-| `/api/report/llm-analysis/start` | POST | [V2.5] Avvia task asincrono di analisi AI per il report |
-| `/api/report/llm-analysis/status/<id>` | GET | [V2.5] Verifica stato e recupera risultato del job AI |
-| `/api/memory/data` | GET | Recupera dati aggregati per pagina "Note & Storico" (incl. P&L netto) |
+| `/api/ingest` | POST | Preview Import: analizza Excel e propone modifiche |
+| `/api/sync` | POST | Safe Sync: Commit atomico nel DB |
+| `/api/report/generate` | GET | Genera dati strutturati per il report PDF |
+| `/api/asset-prices` | GET | Recupera storico prezzi con filtro temporale (V2.6) |
+| `/api/memory/data` | GET | Recupera dati aggregati per pagina "Note & Storico" |
 | `/api/analysis/allocation` | GET | Recupera dati allocazione per pagina "Analisi" |
-| `/api/backup/download` | GET | Scarica JSON backup completo (incl. storico prezzi) |
-| `/api/dashboard/summary` | GET | KPI Dashboard e grafici andamento |
-
-#### Tecnologie Utilizzate
-
-- **Runtime**: Python 3.9+
-- **Framework API**: Flask (micro-framework web leggero)
-- **Librerie Core**:
-    - `pandas`: Parsing ed elaborazione dati Excel
-    - `scipy`: Calcoli finanziari (XIRR ottimizzato)
-    - `openai`: Integrazione con modelli AI per arricchimento dati asset
-    - Sistema di audit professionale (`log_audit`) per operazioni critiche.
+| `/api/backup/download` | GET | Scarica JSON backup completo |
 
 ### Sicurezza e RLS
 
 - **Row Level Security (RLS)**: Attiva su tutte le tabelle. Accesso diretto bloccato per utenti anonimi.
-- **Service Role Proxy**: Il backend Python agisce come gatekeeper unico, utilizzando la `SERVICE_ROLE_KEY` per operazioni privilegiate previa validazione.
+- **Service Role Proxy**: Il backend Python agisce come gatekeeper unico utilizzando la `SERVICE_ROLE_KEY`.
 
-### Database (Schema V2.0)
+### Database (Schema V2.6)
 
 - **Core Tables**:
-    - `assets`: Anagrafica titoli (ISIN, Nome, Settore, Metadata AI).
-    - `transactions`: Storico operazioni (Acquisto, Vendita).
-    - `dividends`: Flussi di cassa (Cedole/Dividendi e Spese/Costi). Colonna `type` discrimina entrate/uscite.
+    - `assets`: Anagrafica titoli.
+    - `transactions`: Storico operazioni.
+    - `dividends`: Flussi di cassa (Cedole/Dividendi e Spese/Costi).
     - `portfolios`: Contenitori logici.
-    - `asset_prices`: Storico prezzi manuale (Timestamped). Fonte primaria per calcoli MWR.
-    - `snapshots`: Storico aggregato valori totali post-upload.
+    - `asset_prices`: Storico prezzi manuale.
+    - `snapshots`: Storico aggregato valori totali.
 
-- **New V2.0 Tables**:
-    - `asset_notes`: Note testuali utente sugli asset (persistenti per portfolio).
-    - `portfolio_asset_settings`: Configurazioni specifiche per asset nel contesto portfolio (es. `color` per grafici).
-    - `app_config`: Key-Value store per impostazioni UI (es. visibilità colonne, ordinamento tabelle, config AI).
+- **UI & Persistence Tables**:
+    - `asset_notes`: Note testuali utente sugli asset.
+    - `portfolio_asset_settings`: Configurazioni specifiche (es. `color` per grafici).
+    - `app_config`: Key-Value store per impostazioni UI.
 
-## 3. Moduli Funzionali Chiave (V2.0 architecture)
+## 3. Moduli Funzionali Chiave
 
 ### Gestione "Memory" & Storico
-La nuova pagina "Note & Storico" (`memory.py`) centralizza la vista dettagliata dell'investimento:
-- **Aggregazione**: Unifica transazioni di acquisto/vendita per calcolare giacenza media, costo totale e ricavi.
-- **P&L Netto**: Calcola il Profit & Loss includendo non solo plusvalenze da prezzo (Capital Gain), ma anche Dividendi netti e Spese.
-- **Note Persistenti**: Permette di annotare strategie su ogni singolo asset.
-- **UI Settings**: Salva le preferenze di visualizzazione tabella (colonne nascoste, sort) per esperienza utente continua.
+La pagina "Note & Storico" (`memory.py`) centralizza la vista dettagliata dell'investimento:
+- **Aggregazione**: Unifica transazioni per calcolare giacenza media e costo totale.
+- **P&L Netto**: Include Capital Gain, Dividendi netti e Spese.
 
-### Gestione "Analysis" & Allocazione
-Il modulo Analisi (`analysis.py`) scompone il portafoglio in Componenti (Asset Class):
-- **Logica Componenti**: Raggruppa asset (es. ETF Azionari, Bond Governativi) calcolando pesi percentuali e performance aggregate per classe.
-- **Liquidità Manuale**: Supporta l'iniezione di una posizione di liquidità virtuale (tramite settings portfolio) che partecipa all'asset allocation totale.
+### Gestione Prezzi & Virtualizzazione (V2.6)
+Il modulo prezzi è stato potenziato per scalabilità massiva:
+- **Dialog Prezzi**: Permette l'editing granulare, l'eliminazione e la visualizzazione dello storico.
+- **Windowing**: Utilizzo di virtualizzazione React per gestire tabelle con migliaia di righe a 60fps.
+- **Time Filtering**: Caricamento lazy dei dati storici (1A, 2A, Tutto) per ottimizzare il network payload.
 
 ### Protocollo Safe Ingestion & Dividend Management
 - **Preview First**: Nessun dato viene scritto senza conferma esplicita post-analisi delta.
-- **Dividend/Expense separation**: Rilevamento automatico dal segno dell'importo (Positivo=Cedola, Negativo=Spesa).
-- **Idempotenza**: Gestione duplicati tramite chiave composita `(portfolio, asset, data, type)`.
+- **Dividend/Expense separation**: Rilevamento automatico dal segno dell'importo.
 
 ### Backup & Restore "Full Fidelity"
-Il servizio di Backup (`backup_service.py`) è stato riscritto per garantire **Zero Data Loss**:
-- **Price History Inclusion**: Il JSON di backup include TUTTI i prezzi storici degli asset coinvolti, permettendo di ricostruire fedelmente i grafici MWRR anche su nuove installazioni.
-- **Smart Restore**: 
-    - Ricrea automaticamente anagrafiche asset mancanti.
-    - Rimappa ID per entità dipendenti (Note, Settings, Colori).
-    - Preserva configurazioni UI e preferenze.
+- **Price History Inclusion**: Il JSON include TUTTI i prezzi storici degli asset.
+- **Smart Restore**: Ricrea anagrafiche asset e rimappa ID per entità dipendenti.
 
 ## 4. Metodologia MWR (Money Weighted Return)
 
-Il sistema calcola la performance reale tramite **XIRR (Extended Internal Rate of Return)**, l'unico metodo che pesa correttamente il timing dei flussi di cassa.
+Il sistema calcola la performance reale tramite **XIRR (Extended Internal Rate of Return)**.
 
 ### Logica "Tiered" (Stabilità vs Precisione)
 Per evitare distorsioni su periodi brevi:
 | Periodo | Metodo | Descrizione |
 |---------|--------|-------------|
-| **< 30gg** | Simple Return | `(Valore - Costo) / Costo`. Evita proiezioni annualizzate folli su pochi giorni. |
-| **30-365gg** | Period XIRR | XIRR de-annualizzato. Mostra il rendimento effettivo guadagnato nel periodo. |
-| **> 365gg** | Annualized XIRR | CAGR classico. Rendimento medio annuo composto. |
+| **< 30gg** | Simple Return | `(Valore - Costo) / Costo`. |
+| **30-365gg** | Period XIRR | XIRR de-annualizzato. |
+| **> 365gg** | Annualized XIRR | CAGR classico. |
 
-### Metodi di Calcolo XIRR (Standard vs Multi-Guess)
-L'XIRR basa il suo calcolo sul metodo iterativo di Newton-Raphson. Tale approccio matematico necessita di un punto di partenza ("Guess" iniziale, tipicamente 10%). A causa della complessità di alcuni portafogli (sequenze irregolari di versamenti e prelievi che generano zeri multipli nella funzione NPV), la formula matematica originale può fallire o restituire risultati paradossali (non-convergenza). Per ovviare a ciò, PerixMonitor implementa due varianti di calcolo controllabili on-demand dalla UI della Dashboard:
-- **Standard**: Utilizza il calcolo matematico tradizionale partendo da un guess base fisso (10%). È più veloce e ideale per sequenze di flussi standard e continue.
-- **Multi-Guess**: Esegue tentativi in parallelo utilizzando molteplici guess iniziali diversi (es. 0%, -10%, 20%, -50% ecc.). Alla fine valuta quale dei risultati teorici azzera meglio la curva NPV (Net Present Value) scegliendo il risultato matematicamente più "stabile". Questo rallenta marginalmente il backend ma consente di trovare soluzioni corrette dove il metodo standard fallirebbe a causa del cambio segno irregolare.
-
-### Fallback e Warning "Simple Return" nell'Andamento MWR
-In contesti particolari (sia Standard che Multi-Guess), la funzione matematica XIRR non restituisce alcun tasso di convergenza logico (es. divisioni per zero o funzioni divergenti). Per evitare il blocco totale del cruscotto ("Andamento MWR"), il backend attua la seguente logica difensiva progressiva:
-1. Tenta il metodo XIRR impostato dall'utente (es. Standard).
-2. Se fallisce, forza un tentativo automatico in modalità Multi-Guess "salvavita".
-3. Se anche il Multi-Guess non restituisce risultati validi (o genera valori fuori scala >1000%), attua il **Fallback a Simple Return (Ritorno Semplice)**.
-
-**Visibilità Lato UI**: Quando il backend innesca questo Fallback estremo al livello base `(Valore Attuale - Costo Totale) / Costo Totale`, il Frontend se ne accorge leggendo il flag restituito. Di conseguenza espone immediatamente **l'indicazione (warning rosso) "(simple return)" a fianco del titolo "Andamento MWR - Portafoglio"**. Questo serve per avvisare in totale trasparenza l'utente che: *Il calcolo che stai guardando non è pesato nel tempo poichè impossibile da parametrizzare matematicamente date le scarse o errate transazioni fornite.*
-
-### Calcolo Time-Series (Grafici storici)
-Il grafico MWR viene generato dinamicamente simulando una "vendita fittizia" (Mark-to-Market) ad ogni punto storico, utilizzando i prezzi noti (LOCF - Last Observation Carried Forward) per valutare il portafoglio nel passato.
-
-### Filtro per Sottoinsieme di Asset
-Quando la dashboard è filtrata per un sottoinsieme specifico di asset, il calcolo (MWR, P&L, e flussi) filtra rigorosamente sia le **transazioni** (buys/sells) sia le specifiche **cedole/dividendi** associate esclusivamente agli `asset_id` selezionati, evitando distorsioni del rendimento causate dai flussi di cassa globali del portafoglio.
+### Metodi di Calcolo XIRR
+- **Standard**: Newton-Raphson tradizionale (Guess 10%).
+- **Multi-Guess**: Tentativi paralleli con molteplici punti di partenza per evitare non-convergenza su flussi irregolari.
 
 ### Rendimenti Dinamici (Sliding Window)
-Per l'interazione fluida della UI, il grafico della Dashboard permette di isolare una specifica finestra temporale tramite slider. Invece di richiedere pesanti ricalcoli XIRR al backend ad ogni movimento:
-- Il frontend calcola istantaneamente la variazione netta del *Profitto (Delta P&L)* tra data iniziale e finale visibile.
-- Applica la **Modified Dietz Approximation** (`(Delta P&L / Capitale Medio Investito) * 100`) per fornire una stima in tempo reale rigorosa del MWR per la specifica parentesi storica.
-- I KPI aggregati (Controvalore, MWR, P&L) nella parte superiore della dashboard mostrano dinamicamente questi valori della finestra visibile ("Periodo Visibile").
+- Il frontend calcola la variazione netta del *Profitto (Delta P&L)* visibile.
+- Applica la **Modified Dietz Approximation** per fornire una stima in tempo reale senza ricaricare dal backend.
 
-## 5. Stato Attuale (V2.5)
+## 5. Stato Attuale (V2.6)
 
 ### Feature Completate (Stable)
 - [x] **Core**: Safe Ingestion, Dashboard interattiva, Calcolo XIRR Tiered.
-- [x] **Memory Module**: Tabella storico avanzata, P&L granulare, Net Dividend support.
-- [x] **Analysis Module**: Asset allocation dinamica, supporto Liquidità manuale.
+- [x] **Memory Module**: Tabella storico avanzata, P&L granulare, Dividendi.
+- [x] **Analysis Module**: Asset allocation dinamica, Liquidità manuale.
 - [x] **Data Integrity**: Backup/Restore completo con storico prezzi.
-- [x] **UI Persistence**: Salvataggio preferenze tabelle, colori custom asset, note.
-- [x] **AI Integration**: Supporto GPT-5/Search opzionale per arricchimento dati.
-- [x] **Performance**: Indicizzazione DB, Caching lato client, Batch processing prezzi, UI fluida (Modified Dietz frontend approx).
-- [x] **Settings Refactoring**: "Danger Zone" isolata, Auto-selezione post-restore.
-- [x] **Metriche Dinamiche**: KPI Dashboard (Controvalore, MWR, P&L) reagiscono istantaneamente in base alla finestra temporale (slider) visibile.
-- [x] **Asynchronous Reporting (V2.5)**: Sistema a task per analisi LLM lunghe, polling frontend, sanificazione caratteri speciali e calcolo costi pro-rata inclusivo.
-- [x] **Asset Movements Tracking**: Dettaglio movimenti e calcolo P&L basato su `gross_invested`.
-
-### Prossimi Passi (Roadmap Future V2.6+)
-- [ ] **Multi-Currency Support**: Gestione nativa cambi valuta storici.
-- [x] **Advanced Reporting**: Generazione PDF periodici (Completato con V2.5).
-- [ ] **Goal Tracking**: Impostazione obiettivi di risparmio e proiezione.
+- [x] **UI Persistence**: Salvataggio preferenze tabelle, colori custom, note.
+- [x] **AI Integration**: Supporto GPT-5/Search opzionale.
+- [x] **Scalabilità Prezzi**: Virtualizzazione della tabella e filtro temporale (V2.6).
+- [x] **Asynchronous Reporting (V2.5)**: Sistema a task per analisi LLM lunghe.
 
 ## 6. Ambiente e Vincoli
 Progettato per **Vercel Hobby Tier** (Serverless Function timeout 10-60s) e **Supabase Free Tier** (500MB DB). 
-L'architettura minimizza le chiamate DB ("Chatty" APIs evitate) e sposta il carico computazionale (aggregazioni) sul livello Python (Pandas) ottimizzato.
+L'architettura minimizza le chiamate DB e sposta il carico computazionale sul livello Python (Pandas) ottimizzato.
