@@ -1002,6 +1002,7 @@ def ingest_excel():
                     "variation_pct": trend_data['variation_pct'],
                     "days_delta": trend_data['days_delta'],
                     "old_price": trend_data.get('previous_price'),
+                    "old_price_date": trend_data.get('previous_date'),
                     "new_price": trend_data.get('latest_price'),
                     "is_hidden": False,
                     "price_count": len(candidates)

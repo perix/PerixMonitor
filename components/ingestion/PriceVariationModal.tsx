@@ -8,6 +8,7 @@ interface PriceVariation {
     name: string;
     isin: string;
     old_price?: number;
+    old_price_date?: string;
     new_price?: number;
     variation_pct?: number;
     days_delta?: number;
@@ -78,6 +79,7 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
                                 <TableRow className="border-b-2 border-white/40 bg-white/10 hover:bg-white/10">
                                     <TableHead className="border-r border-white/20">Asset</TableHead>
                                     <TableHead className="border-r border-white/20">ISIN</TableHead>
+                                    <TableHead className="border-r border-white/20">Data</TableHead>
                                     <TableHead className="text-right">Prezzi nel File</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -86,6 +88,7 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
                                     <TableRow key={idx} className="border-b-2 border-white/20 hover:bg-white/10">
                                         <TableCell className="font-medium border-r border-white/20">{item.name}</TableCell>
                                         <TableCell className="text-muted-foreground text-xs border-r border-white/20">{item.isin}</TableCell>
+                                        <TableCell className="text-muted-foreground text-xs border-r border-white/20">-</TableCell>
                                         <TableCell className="text-right text-blue-400">
                                             {item.price_count || 1} date
                                         </TableCell>
@@ -100,15 +103,16 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
                                 <TableRow className="border-b-2 border-white/40 bg-white/10 hover:bg-white/10">
                                     <TableHead className="border-r border-white/20">Asset</TableHead>
                                     <TableHead className="border-r border-white/20">ISIN</TableHead>
-                                    <TableHead className="text-right border-r border-white/20">Vecchio</TableHead>
-                                    <TableHead className="text-right border-r border-white/20">Nuovo</TableHead>
-                                    <TableHead className="text-right">Variazione</TableHead>
+                                    <TableHead className="border-r border-white/20">Data</TableHead>
+                                    <TableHead className="text-right border-r border-white/20">Old Price</TableHead>
+                                    <TableHead className="text-right border-r border-white/20">New Price</TableHead>
+                                    <TableHead className="text-right">Var.</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {visibleVariations.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                                             Nessuna variazione significativa ({'>'}{absThreshold}%) rilevata.
                                         </TableCell>
                                     </TableRow>
@@ -117,6 +121,7 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
                                         <TableRow key={idx} className="border-b-2 border-white/20 hover:bg-white/10">
                                             <TableCell className="font-medium border-r border-white/20">{item.name}</TableCell>
                                             <TableCell className="text-muted-foreground text-xs border-r border-white/20">{item.isin}</TableCell>
+                                            <TableCell className="text-muted-foreground text-xs border-r border-white/20">{item.old_price_date || '-'}</TableCell>
                                             <TableCell className="text-right border-r border-white/20">{(item.old_price || 0).toFixed(2)} €</TableCell>
                                             <TableCell className="text-right border-r border-white/20">{(item.new_price || 0).toFixed(2)} €</TableCell>
                                             <TableCell className={`text-right font-bold ${getColor(item.variation_pct || 0)}`}>
