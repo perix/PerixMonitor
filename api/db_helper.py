@@ -242,10 +242,6 @@ def update_table(table: str, data: dict, filters: dict) -> bool:
         logger.error(f"DB_HELPER update_table error: {e}")
         return False
 
-    except Exception as e:
-        logger.error(f"DB_HELPER delete_table error: {e}")
-        return False
-
 def delete_table(table: str, filters: dict) -> bool:
     """
     Generic delete function.

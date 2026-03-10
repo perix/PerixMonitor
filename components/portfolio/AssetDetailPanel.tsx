@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { TrendingUp, TrendingDown, Euro, Database, Activity, ArrowUpRight, ArrowDownRight, Loader2, List } from "lucide-react";
 import { AssetMovementsModal } from "@/components/portfolio/AssetMovementsModal";
+import { AssetPricesModal } from "@/components/portfolio/AssetPricesModal";
 import { formatSwissMoney, formatSwissNumber } from "@/lib/utils";
 import { DashboardCharts } from "@/components/dashboard/DashboardCharts";
 import { usePortfolio } from "@/context/PortfolioContext";
@@ -218,6 +219,7 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
     const [threshold, setThreshold] = useState(0.1);
     const [chartSettings, setChartSettings] = useState<any>(null);
     const [showMovements, setShowMovements] = useState(false);
+    const [showPrices, setShowPrices] = useState(false);
     const lastAssetIdRef = useRef<string | null>(null);
 
     // Synchronous reset on asset change to avoid race conditions/leakage
@@ -486,14 +488,23 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                 <Database className="h-4 w-4" />
                                 Info Asset (Dettagli)
                             </span>
-                            <button
-                                onClick={() => setShowMovements(true)}
-                                className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium border border-primary/40 text-primary bg-primary/10 hover:bg-primary/20 hover:border-primary/60 transition-colors duration-200 cursor-pointer uppercase tracking-wide"
-                                title="Dettagli Movimenti"
-                            >
-                                <List className="h-3.5 w-3.5" />
-                                Movimenti
-                            </button>
+                            <div className="flex flex-col gap-2">
+                                <button
+                                    onClick={() => setShowMovements(true)}
+                                    className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium border border-primary/40 text-primary bg-primary/10 hover:bg-primary/20 hover:border-primary/60 transition-colors duration-200 cursor-pointer uppercase tracking-wide"
+                                    title="Dettagli Movimenti"
+                                >
+                                    <List className="h-3.5 w-3.5" />
+                                    Movimenti
+                                </button>
+                                <button
+                                    onClick={() => setShowPrices(true)}
+                                    className="inline-flex justify-center items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium border border-primary/40 text-primary bg-primary/10 hover:bg-primary/20 hover:border-primary/60 transition-colors duration-200 cursor-pointer uppercase tracking-wide w-full"
+                                    title="Prezzi Storici"
+                                >
+                                    Prezzi
+                                </button>
+                            </div>
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="pt-4 overflow-y-auto flex-1">
@@ -509,6 +520,16 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                 assetName={displayName}
                 open={showMovements}
                 onOpenChange={setShowMovements}
+            />
+
+            {/* Asset Prices Modal */}
+            <AssetPricesModal
+                portfolioId={selectedPortfolioId || ''}
+                assetId={asset.id}
+                assetName={displayName}
+                isin={asset.isin}
+                open={showPrices}
+                onOpenChange={setShowPrices}
             />
         </div>
     );

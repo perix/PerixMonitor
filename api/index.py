@@ -40,6 +40,7 @@ from analysis import register_analysis_routes
 from settings import register_settings_routes
 from memory import memory_bp
 from asset_movements import movements_bp
+from asset_prices import prices_bp
 from report import report_bp
 from llm_report import llm_report_bp
 
@@ -55,6 +56,7 @@ register_analysis_routes(app)
 register_settings_routes(app)
 app.register_blueprint(memory_bp)
 app.register_blueprint(movements_bp)
+app.register_blueprint(prices_bp)
 app.register_blueprint(report_bp)
 app.register_blueprint(llm_report_bp)
 

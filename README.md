@@ -167,6 +167,17 @@ Solo confermando la preview i dati vengono scritti nel database.
     - Parametrizzazione specifica per `gpt-5-mini` per abilitare la ricerca web nativa bypassando i limiti dei parametri legacy.
     - Estensione timeout client server a 180s per supportare sessioni di reasoning complesse.
 
-- **Tag Added**: Git tag `20260304_AsynchronousReporting` created to mark this release.
+### Release 2.6 - "Price History & Performance" (10/03/2026)
+
+- **Asset Price History Management**:
+    - Nuova finestra modale per la gestione granulare dello storico prezzi (accessibile dal dettaglio asset).
+    - Supporto per **Editing Diretto** (con validazione numerica e mantenimento precisione float) ed **Eliminazione** di punti prezzo manuali.
+    - Feedback visivo immediato: prezzi modificati in rosso, righe eliminate semitrasparenti.
+    - Ricalcolo automatico del trend ("Ultima Variazione") e refresh del portafoglio al salvataggio.
+
+- **Ottimizzazioni Performance (Scalabilità)**:
+    - **Filtro Temporale (Lazy Loading)**: Caricamento predefinito dell'ultimo anno di dati per minimizzare la latenza, con opzioni UI per caricare 2 anni o l'intero storico su richiesta.
+    - **Virtualizzazione della Tabella**: Implementata logica di "windowing" che renderizza solo le righe visibili (costanti ~20 elementi DOM). Questo garantisce fluidità assoluta anche con serie storiche di migliaia di record (es. 10+ anni di dati giornalieri).
+    - **UI/UX Polishing**: Uniformità del separatore decimale (punto `.`), reset automatico dello scroll al cambio filtro e layout ottimizzato per prevenire sovrapposizioni.
 
 *All changes are included in the latest commit on `master`.*

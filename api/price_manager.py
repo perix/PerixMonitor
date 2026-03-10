@@ -1,7 +1,7 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
-from db_helper import execute_request, upsert_table
+from db_helper import execute_request, upsert_table, update_table
 
 logger = logging.getLogger("perix_monitor")
 
@@ -35,41 +35,52 @@ def save_price_snapshot(isin, price, date=None, source="Manual Upload"):
         logger.error(f"SALVATAGGIO PREZZO FALLITO: {isin} -> {e}")
         return False
 
-def get_price_history(isin):
+def get_price_history(isin, days=None):
     """
-    Recupera tutta la storia prezzi per un ISIN, unendo:
+    Recupera la storia prezzi per un ISIN, unendo:
     1. 'asset_prices' (Dati Manuali/Mercato)
     2. 'transactions' (Prezzi impliciti da Acquisti/Vendite)
+    
+    Parametro 'days': se fornito, limita il recupero agli ultimi N giorni.
     
     Restituisce lista di dict: [{'date': 'YYYY-MM-DD', 'price': float, 'source': str}, ...]
     ordinata per data crescente.
     """
     try:
+        cutoff_date = None
+        if days:
+            cutoff_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+
         # 1. Recupera Prezzi Espliciti
-        # query: select=price,date,source&isin=eq.{isin}&order=date.asc
+        params = {
+            'select': 'price,date,source',
+            'isin': f'eq.{isin}',
+            'order': 'date.asc'
+        }
+        if cutoff_date:
+            params['date'] = f'gte.{cutoff_date}'
+
         res_prices = execute_request(
             'asset_prices', 
             'GET', 
-            params={
-                'select': 'price,date,source',
-                'isin': f'eq.{isin}',
-                'order': 'date.asc'
-            }
+            params=params
         )
         prices_list = res_prices.json() if res_prices and res_prices.status_code == 200 else []
         
         # 2. Recupera Prezzi Transazioni (Impliciti)
-        # select=price_eur,date,type,assets!inner(isin)&assets.isin=eq.{isin}&price_eur=neq.0&order=date.asc
-        # Note: Nested queries in url params
+        trans_params = {
+            'select': 'price_eur,date,type,assets!inner(isin)',
+            'assets.isin': f'eq.{isin}',
+            'price_eur': 'neq.0',
+            'order': 'date.asc'
+        }
+        if cutoff_date:
+            trans_params['date'] = f'gte.{cutoff_date}'
+
         res_trans = execute_request(
             'transactions',
             'GET',
-            params={
-                'select': 'price_eur,date,type,assets!inner(isin)',
-                'assets.isin': f'eq.{isin}',
-                'price_eur': 'neq.0',
-                'order': 'date.asc'
-            }
+            params=trans_params
         )
         trans_data = res_trans.json() if res_trans and res_trans.status_code == 200 else []
 
@@ -88,10 +99,26 @@ def get_price_history(isin):
         if not prices_list:
             return []
 
-        # 3. Unione e Ordinamento
+        # 3. Unione e Deduplicazione
+        if not prices_list:
+            return []
+
         df = pd.DataFrame(prices_list)
         df['date'] = pd.to_datetime(df['date'], format='mixed', dayfirst=False)
-        df = df.sort_values(by='date')
+        
+        # Deduplicazione logica: se abbiamo la stessa data e lo stesso prezzo, 
+        # preferiamo la fonte più specifica "Transaction (BUY)" rispetto a "Transaction"
+        # o preserviamo "Manual Upload" se differente.
+        
+        # Sort by date, then source length descending (so 'Transaction (BUY)' > 'Transaction')
+        df['source_len'] = df['source'].str.len()
+        df = df.sort_values(by=['date', 'source_len'], ascending=[True, False])
+        
+        # Drop duplicates where date, price are identical (keep the first which is longest source name)
+        df = df.drop_duplicates(subset=['date', 'price'], keep='first')
+        
+        # Final sort by date descending (per il frontend)
+        df = df.sort_values(by='date', ascending=False)
         
         result = []
         for _, row in df.iterrows():
@@ -106,6 +133,50 @@ def get_price_history(isin):
     except Exception as e:
         logger.error(f"Errore recupero storia unificata per {isin}: {e}")
         return []
+
+def update_asset_trend(isin):
+    """
+    Ricalcola e salva il trend dell'asset basandosi sugli ultimi due prezzi disponibili.
+    """
+    try:
+        history = get_price_history(isin) # Già ordinata DESC dalla mia modifica precedente
+        if len(history) < 2:
+            # Non ci sono abbastanza dati per un trend
+            update_table('assets', {
+                'last_trend_variation': None,
+                'last_trend_days': None,
+                'last_trend_ts': datetime.now().isoformat()
+            }, {'isin': isin})
+            return
+
+        latest = history[0]
+        penultimate = history[1]
+        
+        p1 = float(latest['price'])
+        p2 = float(penultimate['price'])
+        
+        logger.info(f"[TREND DEBUG] ISIN={isin} | Latest: data={latest['date']}, prezzo={p1} | Penultimate: data={penultimate['date']}, prezzo={p2}")
+        
+        if p2 == 0:
+            return
+
+        variation = ((p1 - p2) / p2) * 100
+        
+        # Calcola i giorni di differenza
+        d1 = datetime.strptime(latest['date'], '%Y-%m-%d')
+        d2 = datetime.strptime(penultimate['date'], '%Y-%m-%d')
+        days = (d1 - d2).days
+
+        update_table('assets', {
+            'last_trend_variation': variation,
+            'last_trend_days': days,
+            'last_trend_ts': datetime.now().isoformat()
+        }, {'isin': isin})
+        
+        logger.info(f"TREND AGGIORNATO per {isin}: {variation:.2f}% ({days} giorni)")
+
+    except Exception as e:
+        logger.error(f"Errore ricalcolo trend per {isin}: {e}")
 
 def get_latest_price(isin):
     """
