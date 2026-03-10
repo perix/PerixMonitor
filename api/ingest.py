@@ -63,6 +63,14 @@ def parse_date(raw_date):
     """
     Parsing robusto di date da vari formati.
     Ritorna stringa YYYY-MM-DD o None se non parsabile.
+    
+    Ordine tentativi espliciti (evita ambiguità su date tipo 01-02-2024):
+    1. YYYY-MM-DD (ISO, non ambiguo)
+    2. DD/MM/YYYY (formato EU con /)
+    3. DD-MM-YYYY (formato EU con -)
+    4. DD/MM/YY (formato EU abbreviato)
+    5. DD-MM-YY (formato EU abbreviato)
+    6. Fallback generico con dayfirst=True
     """
     if pd.isna(raw_date) or raw_date is None:
         return None
@@ -73,12 +81,15 @@ def parse_date(raw_date):
         
         str_d = str(raw_date).strip()
         
-        # Gestione formato con /
-        if '/' in str_d:
-            pd_date = pd.to_datetime(str_d, dayfirst=True)
-        else:
-            pd_date = pd.to_datetime(str_d)
-            
+        # Tentativi espliciti in ordine di priorità
+        for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%d/%m/%y', '%d-%m-%y'):
+            try:
+                return datetime.strptime(str_d, fmt).strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+        
+        # Fallback generico (con dayfirst=True per convenzione EU)
+        pd_date = pd.to_datetime(str_d, dayfirst=True)
         return pd_date.strftime("%Y-%m-%d")
     except:
         return None
@@ -186,12 +197,15 @@ def parse_transactions_file(df, holdings_map=None):
     transactions = []
     errors = []
     
+    # Risolvi mappa colonne una sola volta (ottimizzazione: evita lookup ripetuto per riga)
+    resolved = {key: find_column(df.columns, candidates) for key, candidates in col_map.items()}
+    
     for index, row in df.iterrows():
         row_num = index + 2  # +2 per header e 0-index
         
         try:
             # 1. ISIN (Obbligatorio)
-            isin_col = find_column(df.columns, col_map['isin'])
+            isin_col = resolved['isin']
             if not isin_col or pd.isna(row[isin_col]):
                 errors.append(f"Riga {row_num}: ISIN mancante")
                 continue
@@ -201,14 +215,14 @@ def parse_transactions_file(df, holdings_map=None):
                 continue
             
             # 2. Descrizione (Obbligatorio)
-            desc_col = find_column(df.columns, col_map['description'])
+            desc_col = resolved['description']
             if not desc_col or pd.isna(row[desc_col]):
                 errors.append(f"Riga {row_num}: Descrizione mancante per ISIN {isin}")
                 continue
             description = str(row[desc_col]).strip()
             
             # 3. Quantità (Obbligatorio)
-            qty_col = find_column(df.columns, col_map['quantity'])
+            qty_col = resolved['quantity']
             if not qty_col:
                 errors.append(f"Riga {row_num}: Colonna Quantità non trovata")
                 continue
@@ -218,7 +232,7 @@ def parse_transactions_file(df, holdings_map=None):
                 continue
             
             # 4. Data (Obbligatorio)
-            date_col = find_column(df.columns, col_map['date'])
+            date_col = resolved['date']
             if not date_col:
                 errors.append(f"Riga {row_num}: Colonna Data non trovata")
                 continue
@@ -228,14 +242,14 @@ def parse_transactions_file(df, holdings_map=None):
                 continue
             
             # 5. Prezzo (Obbligatorio)
-            price_col = find_column(df.columns, col_map['price'])
+            price_col = resolved['price']
             if not price_col:
                 errors.append(f"Riga {row_num}: Colonna Prezzo Operazione non trovata")
                 continue
             price = clean_money_value(row[price_col])
             
             # 6. Operazione (Obbligatorio: "Acquisto" o "Vendita")
-            op_col = find_column(df.columns, col_map['operation'])
+            op_col = resolved['operation']
             if not op_col or pd.isna(row[op_col]):
                 errors.append(f"Riga {row_num}: Operazione mancante per ISIN {isin}")
                 continue
@@ -247,7 +261,7 @@ def parse_transactions_file(df, holdings_map=None):
             
             # 7. Tipologia (Obbligatorio per Acquisto, Opzionale per Vendita)
             asset_type = None
-            type_col = find_column(df.columns, col_map['asset_type'])
+            type_col = resolved['asset_type']
             
             if type_col and pd.notna(row[type_col]):
                 asset_type = str(row[type_col]).strip()
@@ -397,12 +411,15 @@ def parse_dividends_file(df):
     dividends = []
     errors = []
     
+    # Risolvi mappa colonne una sola volta
+    resolved = {key: find_column(df.columns, candidates) for key, candidates in col_map.items()}
+    
     for index, row in df.iterrows():
         row_num = index + 2
         
         try:
             # 1. ISIN (Obbligatorio)
-            isin_col = find_column(df.columns, col_map['isin'])
+            isin_col = resolved['isin']
             if not isin_col or pd.isna(row[isin_col]):
                 errors.append(f"Riga {row_num}: ISIN mancante")
                 continue
@@ -412,7 +429,7 @@ def parse_dividends_file(df):
                 continue
             
             # 2. Valore Cedola (Obbligatorio - può essere negativo)
-            amount_col = find_column(df.columns, col_map['amount'])
+            amount_col = resolved['amount']
             if not amount_col:
                 errors.append(f"Riga {row_num}: Colonna 'Valore Cedola (EUR)' non trovata")
                 continue
@@ -420,7 +437,7 @@ def parse_dividends_file(df):
             amount = clean_money_value(row[amount_col])
             
             # 3. Data Flusso (Obbligatorio)
-            date_col = find_column(df.columns, col_map['date'])
+            date_col = resolved['date']
             if not date_col:
                 errors.append(f"Riga {row_num}: Colonna Data Flusso non trovata")
                 continue
@@ -503,12 +520,16 @@ def parse_prices_file(df):
     # Campo Opzionale: Descrizione
     desc_keys = ['descrizione', 'titolo', 'descrizione asset', 'nome', 'descrizione titolo']
     
+    # Risolvi mappa colonne una sola volta
+    resolved = {key: find_column(df.columns, candidates) for key, candidates in col_map.items()}
+    resolved_desc = find_column(df.columns, desc_keys)
+    
     for index, row in df.iterrows():
         row_num = index + 2
         
         try:
             # 1. ISIN (Obbligatorio)
-            isin_col = find_column(df.columns, col_map['isin'])
+            isin_col = resolved['isin']
             if not isin_col or pd.isna(row[isin_col]):
                 errors.append(f"Riga {row_num}: ISIN mancante")
                 continue
@@ -518,7 +539,7 @@ def parse_prices_file(df):
                 continue
             
             # 2. Data (Obbligatorio)
-            date_col = find_column(df.columns, col_map['date'])
+            date_col = resolved['date']
             if not date_col:
                 errors.append(f"Riga {row_num}: Colonna Data non trovata")
                 continue
@@ -528,7 +549,7 @@ def parse_prices_file(df):
                 continue
             
             # 3. Prezzo (Obbligatorio)
-            price_col = find_column(df.columns, col_map['price'])
+            price_col = resolved['price']
             if not price_col:
                 errors.append(f"Riga {row_num}: Colonna Prezzo non trovata")
                 continue
@@ -543,7 +564,7 @@ def parse_prices_file(df):
             
             # 4. Descrizione (Opzionale)
             description = None
-            desc_col = find_column(df.columns, desc_keys)
+            desc_col = resolved_desc
             if desc_col and pd.notna(row[desc_col]):
                 description = str(row[desc_col]).strip()
 

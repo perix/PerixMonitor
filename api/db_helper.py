@@ -12,10 +12,22 @@ Works for both:
 import os
 import requests
 import json
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
 try:
     from api.logger import logger
 except ImportError:
     from logger import logger
+
+# Sessione HTTP persistente con retry automatico su errori transient
+_session = requests.Session()
+_retry = Retry(
+    total=3,
+    backoff_factor=0.3,
+    status_forcelist=[429, 500, 502, 503, 504]
+)
+_session.mount("http://", HTTPAdapter(max_retries=_retry))
+_session.mount("https://", HTTPAdapter(max_retries=_retry))
 
 def get_supabase_credentials():
     """Returns (url, service_key) tuple."""
@@ -40,7 +52,7 @@ def get_config(key: str, default=None):
             "Content-Type": "application/json"
         }
         
-        response = requests.get(
+        response = _session.get(
             f"{rest_url}?key=eq.{key}&select=value",
             headers=headers,
             timeout=10
@@ -76,7 +88,7 @@ def set_config(key: str, value: dict) -> bool:
             "Prefer": "resolution=merge-duplicates,return=representation"
         }
         
-        response = requests.post(
+        response = _session.post(
             rest_url,
             headers=headers,
             json={"key": key, "value": value},
@@ -117,7 +129,7 @@ def query_table(table: str, select: str = "*", filters: dict = None) -> list:
             for col, val in filters.items():
                 params += f"&{col}=eq.{val}"
         
-        response = requests.get(
+        response = _session.get(
             f"{rest_url}{params}",
             headers=headers,
             timeout=10
@@ -156,7 +168,7 @@ def upsert_table(table: str, data: dict, on_conflict: str = None) -> bool:
             "Prefer": prefer
         }
         
-        response = requests.post(
+        response = _session.post(
             rest_url,
             headers=headers,
             json=data,
@@ -204,7 +216,7 @@ def execute_request(endpoint: str, method: str = 'GET', params: dict = None, bod
         if headers:
             req_headers.update(headers)
             
-        return requests.request(
+        return _session.request(
             method=method,
             url=full_url,
             params=params,

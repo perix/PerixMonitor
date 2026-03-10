@@ -186,7 +186,7 @@ def get_latest_price(isin):
     try:
         history = get_price_history(isin)
         if history:
-            return history[-1]
+            return history[0]  # history è ordinata per data DESC → [0] = più recente
         return None
     except Exception as e:
         logger.error(f"Errore recupero ultimo prezzo per {isin}: {e}")
