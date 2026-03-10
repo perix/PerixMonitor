@@ -224,51 +224,35 @@ def calculate_projected_trend(isin, candidate_prices):
         history = get_price_history(isin) or []
         price_map = {item['date']: item['price'] for item in history}
         
-        # We process the candidates. Note: candidate_prices might contain multiple dates for the same ISIN.
-        # We assume the most interesting variation is between the *latest candidate* and what was in DB for that date (or before).
-        
-        if not candidate_prices:
-            return None
-            
-        # Sort candidates just in case (though ingest.py already sorts them implicitly by parsing order)
-        candidates_sorted = sorted(candidate_prices, key=lambda x: datetime.strptime(x['date'], "%Y-%m-%d"))
-        latest_cand = candidates_sorted[-1]
-        
-        cand_date = latest_cand['date']
-        cand_price = float(latest_cand['price'])
-        
-        # Determine the "previous" price.
-        # Case 1: The DB already has a price for this exact date.
-        # The user is overwriting/updating the price for this day.
-        # The "previous" price should be the existing price on that day.
-        if cand_date in price_map:
-            old_p = price_map[cand_date]
-            old_date = cand_date
-        else:
-            # Case 2: The DB does NOT have a price for this date.
-            # We must find the most recent price in DB *before* this date.
-            # Or if this is the very first price ever, there is no previous.
-            past_prices = [item for item in history if datetime.strptime(item['date'], "%Y-%m-%d") < datetime.strptime(cand_date, "%Y-%m-%d")]
-            if past_prices:
-                old_p = past_prices[-1]['price']
-                old_date = past_prices[-1]['date']
-            else:
-                old_p = 0.0
-                old_date = cand_date # Fallback to same date if no history
-        
-        # Add all candidates to the history to create the new timeline (optional for this specific logic, 
-        # but kept to maintain any other possible dependencies, though we only care about latest cand variation)
         for cand in candidate_prices:
             d_str = cand.get('date')
             p_val = cand.get('price')
             if d_str and p_val is not None:
                 price_map[d_str] = float(p_val)
-                
-        new_p = cand_price
         
-        d1 = datetime.strptime(old_date, "%Y-%m-%d")
-        d2 = datetime.strptime(cand_date, "%Y-%m-%d")
+        timeline = [{'date': k, 'price': v} for k, v in price_map.items()]
+        timeline.sort(key=lambda x: datetime.strptime(x['date'], "%Y-%m-%d"))
+        
+        if not timeline:
+            return None
+            
+        latest = timeline[-1]
+        
+        if len(timeline) < 2:
+            return {
+                'latest_price': latest['price'],
+                'latest_date': latest['date'],
+                'variation_pct': 0.0,
+                'days_delta': 0
+            }
+            
+        previous = timeline[-2]
+        d1 = datetime.strptime(previous['date'], "%Y-%m-%d")
+        d2 = datetime.strptime(latest['date'], "%Y-%m-%d")
         days_delta = abs((d2 - d1).days)
+        
+        old_p = previous['price']
+        new_p = latest['price']
         
         if old_p == 0:
              pct = 0.0
@@ -277,9 +261,9 @@ def calculate_projected_trend(isin, candidate_prices):
              
         return {
             'latest_price': new_p,
-            'latest_date': cand_date,
+            'latest_date': latest['date'],
             'previous_price': old_p,
-            'previous_date': old_date,
+            'previous_date': previous['date'],
             'variation_pct': pct,
             'days_delta': days_delta
         }
