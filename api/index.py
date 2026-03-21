@@ -587,6 +587,50 @@ def reset_db_route():
         traceback.print_exc()
         return jsonify(error=str(e)), 500
 
+@app.route('/api/reset-dividends', methods=['POST', 'OPTIONS'])
+def reset_dividends_route():
+    """
+    Deletes all dividends/coupons for a specific portfolio.
+    Preserves: Transactions, Assets, Prices, Portfolio itself.
+    """
+    from logger import log_audit
+    if request.method == 'OPTIONS':
+        return jsonify(status="ok"), 200
+
+    logger.warning("RESET DIVIDENDS REQUEST RECEIVED")
+    try:
+        data = request.json
+        portfolio_id = data.get('portfolio_id')
+
+        if not portfolio_id:
+            return jsonify(error="Missing portfolio_id"), 400
+
+        # Count existing dividends before deletion (for audit)
+        existing = query_table('dividends', 'id', {'portfolio_id': portfolio_id})
+        count = len(existing) if existing else 0
+
+        if count == 0:
+            return jsonify(status="ok", message="Nessuna cedola/dividendo trovato per questo portafoglio.", deleted=0), 200
+
+        # Delete all dividends for this portfolio
+        if not delete_table('dividends', {'portfolio_id': portfolio_id}):
+            raise Exception(f"Failed to delete dividends for portfolio {portfolio_id}")
+
+        # Refresh Materialized Views (dividend_totals)
+        try:
+            execute_request('rpc/refresh_materialized_views', 'POST')
+        except Exception as e_mv:
+            logger.error(f"RESET DIVIDENDS: MV Refresh failed: {e_mv}")
+
+        log_audit("RESET_DIVIDENDS", f"Deleted {count} dividends for portfolio {portfolio_id}")
+        return jsonify(status="ok", message=f"Cancellate {count} cedole/dividendi.", deleted=count), 200
+
+    except Exception as e:
+        logger.error(f"RESET DIVIDENDS FAIL: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify(error=str(e)), 500
+
 @app.route('/api/admin/reset-system', methods=['POST', 'OPTIONS'])
 def system_reset_route():
     """

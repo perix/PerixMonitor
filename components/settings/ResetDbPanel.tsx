@@ -2,11 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@/utils/supabase/client';
+import { usePortfolio } from '@/context/PortfolioContext';
 import axios from 'axios';
 import {
     Trash2,
     AlertTriangle,
-    Loader2
+    Loader2,
+    Coins
 } from 'lucide-react';
 import {
     AlertDialog,
@@ -21,10 +23,14 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function ResetDbPanel() {
     const supabase = createClient();
+    const { portfolios, loadingPortfolios } = usePortfolio();
     const [resetLoading, setResetLoading] = useState<boolean>(false);
+    const [dividendResetLoading, setDividendResetLoading] = useState<boolean>(false);
+    const [selectedPortfolioId, setSelectedPortfolioId] = useState<string>('');
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
     useEffect(() => {
@@ -61,6 +67,28 @@ export default function ResetDbPanel() {
         }
     };
 
+    const handleResetDividends = async () => {
+        if (!selectedPortfolioId) return;
+        setDividendResetLoading(true);
+        try {
+            const res = await axios.post('/api/reset-dividends', {
+                portfolio_id: selectedPortfolioId
+            });
+            const deleted = res.data?.deleted ?? 0;
+            alert(res.data?.message || `Cancellate ${deleted} cedole/dividendi.`);
+            if (deleted > 0) {
+                window.location.reload();
+            }
+        } catch (error: any) {
+            console.error('Dividend reset failed:', error);
+            alert('Errore: ' + (error.response?.data?.error || error.message));
+        } finally {
+            setDividendResetLoading(false);
+        }
+    };
+
+    const selectedPortfolioName = portfolios.find(p => p.id === selectedPortfolioId)?.name || '';
+
     return (
         <div className="space-y-8">
             <div className="flex items-center gap-4">
@@ -74,6 +102,84 @@ export default function ResetDbPanel() {
             </div>
 
             <div className="grid grid-cols-1 gap-8">
+
+                {/* SELECTIVE RESET - Dividends/Coupons */}
+                <Card className="bg-amber-900/20 backdrop-blur-md border border-amber-500/40">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-amber-400">
+                            <span className="p-2 bg-amber-500/20 rounded-lg text-amber-400">
+                                <Coins className="w-4 h-4" />
+                            </span>
+                            Cancella Cedole / Dividendi
+                        </CardTitle>
+                        <CardDescription className="text-amber-300/70">
+                            Rimuovi tutte le cedole e i dividendi per un portafoglio specifico
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-lg border border-amber-500/30 bg-amber-500/10">
+                            <div className="space-y-1 flex-1">
+                                <p className="text-sm text-amber-200/80 leading-relaxed">
+                                    Seleziona un portafoglio e cancella <b>tutte</b> le cedole e i dividendi associati ai suoi asset.
+                                    <br />
+                                    <span className="text-green-400/90 font-medium text-xs">Transazioni, Asset e Prezzi NON verranno toccati.</span>
+                                </p>
+                                <div className="pt-2">
+                                    <Select value={selectedPortfolioId} onValueChange={setSelectedPortfolioId}>
+                                        <SelectTrigger className="w-full sm:w-72 bg-black/30 border-amber-500/30 text-white">
+                                            <SelectValue placeholder={loadingPortfolios ? "Caricamento..." : "Seleziona portafoglio..."} />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-slate-900 border-white/10">
+                                            {portfolios.map(p => (
+                                                <SelectItem key={p.id} value={p.id} className="text-white hover:bg-white/10">
+                                                    {p.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+
+                            <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={!selectedPortfolioId || dividendResetLoading}
+                                        className="gap-2 shrink-0 border-amber-500/50 text-amber-300 hover:bg-amber-500/30 hover:text-amber-200 disabled:opacity-40"
+                                    >
+                                        {dividendResetLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                        Cancella Cedole
+                                    </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent className="bg-slate-900 border-amber-500/30 text-white">
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle className="text-amber-400">Confermi la cancellazione?</AlertDialogTitle>
+                                        <AlertDialogDescription className="text-slate-300">
+                                            Verranno cancellate <b>tutte le cedole e i dividendi</b> (incluse le spese) per il portafoglio:
+                                            <br />
+                                            <span className="text-amber-300 font-bold text-base">{selectedPortfolioName}</span>
+                                            <br /><br />
+                                            Le transazioni e gli asset <b>non</b> verranno toccati.
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel className="bg-transparent border-white/10 hover:bg-white/5 text-white hover:text-white">
+                                            Annulla
+                                        </AlertDialogCancel>
+                                        <AlertDialogAction
+                                            onClick={handleResetDividends}
+                                            className="bg-amber-600 hover:bg-amber-700 text-white border-none"
+                                        >
+                                            Sì, Cancella Cedole
+                                        </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
+                        </div>
+                    </CardContent>
+                </Card>
+
                 {/* DANGER ZONE - Database Reset */}
                 <Card className="bg-red-900/40 backdrop-blur-md border border-red-500/50">
                     <CardHeader>
