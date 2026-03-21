@@ -554,34 +554,47 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                 {externalInfo.worst_of && (
                                     <div className="mb-4">
                                         <h4 className="text-sm font-semibold text-primary mb-2 uppercase tracking-wider">Worst Of</h4>
-                                        <div className="bg-destructive/20 rounded-lg p-3 border border-destructive/50 flex justify-between items-center">
-                                            <div className="font-medium text-sm text-foreground">{externalInfo.worst_of.name || externalInfo.worst_of.ticker}</div>
-                                            <div className="text-xs text-muted-foreground">Dist. Barriera: <span className="text-red-400 font-bold ml-1">{typeof externalInfo.worst_of.dist === 'number' ? externalInfo.worst_of.dist.toFixed(2) : externalInfo.worst_of.dist}%</span></div>
-                                        </div>
+                                        {(() => {
+                                            const dist = externalInfo.worst_of.dist ?? 0;
+                                            const bgColor = dist < 0 ? 'bg-red-500/20 border-red-500/50' : dist < 10 ? 'bg-yellow-500/20 border-yellow-500/50' : 'bg-green-500/10 border-green-500/30';
+                                            const textColor = dist < 0 ? 'text-red-400' : dist < 10 ? 'text-yellow-400' : 'text-green-400';
+                                            return (
+                                                <div className={`${bgColor} rounded-lg p-3 border flex justify-between items-center transition-colors`}>
+                                                    <div className="font-medium text-sm text-foreground">{externalInfo.worst_of.name || externalInfo.worst_of.ticker}</div>
+                                                    <div className="text-xs text-muted-foreground">Dist. Barriera: <span className={`${textColor} font-bold ml-1`}>{typeof dist === 'number' ? dist.toFixed(2) : dist}%</span></div>
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 )}
 
                                 {externalInfo.underlyings && externalInfo.underlyings.length > 0 && (
                                     <div className="mb-4">
                                         <h4 className="text-sm font-semibold text-primary mb-2 uppercase tracking-wider">Sottostanti</h4>
-                                        <div className="bg-black/20 rounded-lg p-3 border border-white/5 space-y-3">
-                                            {externalInfo.underlyings.map((u: any, idx: number) => (
-                                                <div key={idx} className="pb-3 border-b border-white/10 last:border-0 last:pb-0">
-                                                    <div className="font-medium text-sm text-foreground flex justify-between items-center">
-                                                        <span>{u.name || u.ticker}</span>
-                                                        <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                                            Dist. Barriera: <span className={`${u.dist !== undefined && u.dist < 10 ? 'text-red-400' : 'text-green-400'} font-bold ml-1`}>
-                                                                {u.dist !== undefined ? `${typeof u.dist === 'number' ? u.dist.toFixed(2) : u.dist}%` : ''}
+                                        <div className="space-y-3">
+                                            {externalInfo.underlyings.map((u: any, idx: number) => {
+                                                const dist = u.dist ?? 0;
+                                                const bgColor = dist < 0 ? 'bg-red-500/15 border-red-500/40' : dist < 10 ? 'bg-yellow-500/15 border-yellow-500/40' : 'bg-black/20 border-white/5';
+                                                const textColor = dist < 0 ? 'text-red-400' : dist < 10 ? 'text-yellow-400' : 'text-green-400';
+                                                
+                                                return (
+                                                    <div key={idx} className={`${bgColor} rounded-lg p-3 border space-y-2 last:mb-0 transition-colors`}>
+                                                        <div className="font-medium text-sm text-foreground flex justify-between items-center">
+                                                            <span>{u.name || u.ticker}</span>
+                                                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                                                Dist. Barriera: <span className={`${textColor} font-bold ml-1`}>
+                                                                    {u.dist !== undefined ? `${typeof u.dist === 'number' ? u.dist.toFixed(2) : u.dist}%` : 'N.D.'}
+                                                                </span>
                                                             </span>
-                                                        </span>
+                                                        </div>
+                                                        <div className="text-xs text-muted-foreground grid grid-cols-3 gap-x-2 mt-1">
+                                                            <span>Strike: {typeof u.strike === 'number' ? u.strike.toFixed(2) : u.strike}</span>
+                                                            <span>Barriera: {typeof u.barrier === 'number' ? u.barrier.toFixed(2) : u.barrier}</span>
+                                                            <span>Corrente: {typeof u.current === 'number' ? u.current.toFixed(2) : u.current}</span>
+                                                        </div>
                                                     </div>
-                                                    <div className="text-xs text-muted-foreground grid grid-cols-3 gap-x-2 mt-1.5">
-                                                        <span>Strike: {typeof u.strike === 'number' ? u.strike.toFixed(2) : u.strike}</span>
-                                                        <span>Barriera: {typeof u.barrier === 'number' ? u.barrier.toFixed(2) : u.barrier}</span>
-                                                        <span>Corrente: {typeof u.current === 'number' ? u.current.toFixed(2) : u.current}</span>
-                                                    </div>
-                                                </div>
-                                            ))}
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 )}
