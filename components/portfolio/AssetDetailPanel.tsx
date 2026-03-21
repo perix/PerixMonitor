@@ -360,7 +360,21 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                     </span>
                                 )}
                             </h2>
-                            <p className="text-sm text-muted-foreground font-mono">{asset.isin}</p>
+                            <p className="text-sm text-muted-foreground font-mono">
+                                {asset.metadata?.assetType === 'Certificato' ? (
+                                    <a 
+                                        href={`https://www.certificatiederivati.it/db_bs_scheda_certificato.asp?isin=${asset.isin}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="hover:text-primary underline transition-colors"
+                                        title="Apri scheda su Certificati e Derivati"
+                                    >
+                                        {asset.isin}
+                                    </a>
+                                ) : (
+                                    asset.isin
+                                )}
+                            </p>
                         </div>
                         <div className="text-right shrink-0">
                             {asset.latest_price && (
