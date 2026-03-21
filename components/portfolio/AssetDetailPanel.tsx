@@ -520,11 +520,11 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                 >
                                     Prezzi
                                 </button>
-                                <button
+                                 <button
                                     onClick={fetchExternalInfo}
-                                    disabled={loadingInfo || !asset.isin}
-                                    className="inline-flex justify-center items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium border border-primary/40 text-primary bg-primary/10 hover:bg-primary/20 hover:border-primary/60 transition-colors duration-200 cursor-pointer uppercase tracking-wide w-full disabled:opacity-50"
-                                    title="Get Info Certificato"
+                                    disabled={loadingInfo || !asset.isin || asset.metadata?.assetType !== 'Certificato'}
+                                    className="inline-flex justify-center items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium border border-primary/40 text-primary bg-primary/10 hover:bg-primary/20 hover:border-primary/60 transition-colors duration-200 cursor-pointer uppercase tracking-wide w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title={asset.metadata?.assetType === 'Certificato' ? "Get Info Certificato" : "Funzionalità disponibile solo per Certificati"}
                                 >
                                     {loadingInfo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CloudDownload className="h-3.5 w-3.5" />}
                                     Get Info
