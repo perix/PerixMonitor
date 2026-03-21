@@ -544,10 +544,10 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                 <div className="bg-black/20 rounded-lg p-3 border border-white/5 space-y-2">
                                     <div className="text-sm text-foreground"><b>Scadenza:</b> {externalInfo.expiry_date || 'N.D.'}</div>
                                     <div className="text-sm text-foreground"><b>Stato:</b> {externalInfo.overall_status || 'N.D.'}</div>
-                                    <div className="text-sm text-foreground"><b>Cedola:</b> {externalInfo.coupon_pct ? `${externalInfo.coupon_pct}%` : 'N.D.'} ({externalInfo.coupon_freq || '-'})</div>
+                                    <div className="text-sm text-foreground"><b>Cedola:</b> {typeof externalInfo.coupon_pct === 'number' ? `${externalInfo.coupon_pct.toFixed(2)}%` : (externalInfo.coupon_pct || 'N.D.')} ({externalInfo.coupon_freq || '-'})</div>
                                     <div className="text-sm text-foreground"><b>Prossimo Stacco:</b> {externalInfo.next_coupon_date || 'N.D.'}</div>
                                     <div className="text-sm text-foreground"><b>Barriera:</b> {externalInfo.barrier_level || 'N.D.'} ({externalInfo.barrier_type || '-'})</div>
-                                    <div className="text-sm text-foreground"><b>Trigger Autocall:</b> {externalInfo.trigger_level || 'N.D.'}</div>
+                                    <div className="text-sm text-foreground"><b>Trigger Autocall:</b> {typeof externalInfo.trigger_level === 'number' ? externalInfo.trigger_level.toFixed(2) : (externalInfo.trigger_level || 'N.D.')}</div>
                                     <div className="text-sm text-foreground"><b>Memoria:</b> {externalInfo.has_memory ? 'Sì' : 'No'} | <b>Autocall:</b> {externalInfo.is_autocallable ? 'Sì' : 'No'}</div>
                                 </div>
 
@@ -556,7 +556,7 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                         <h4 className="text-sm font-semibold text-primary mb-2 uppercase tracking-wider">Worst Of</h4>
                                         <div className="bg-destructive/20 rounded-lg p-3 border border-destructive/50 flex justify-between items-center">
                                             <div className="font-medium text-sm text-foreground">{externalInfo.worst_of.name || externalInfo.worst_of.ticker}</div>
-                                            <div className="text-xs text-muted-foreground">Dist. Barriera: <span className="text-red-400 font-bold ml-1">{externalInfo.worst_of.dist}%</span></div>
+                                            <div className="text-xs text-muted-foreground">Dist. Barriera: <span className="text-red-400 font-bold ml-1">{typeof externalInfo.worst_of.dist === 'number' ? externalInfo.worst_of.dist.toFixed(2) : externalInfo.worst_of.dist}%</span></div>
                                         </div>
                                     </div>
                                 )}
@@ -569,14 +569,14 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                                 <div key={idx} className="pb-3 border-b border-white/10 last:border-0 last:pb-0">
                                                     <div className="font-medium text-sm text-foreground flex justify-between">
                                                         <span>{u.name || u.ticker}</span>
-                                                        <span className={u.dist !== undefined && u.dist < 10 ? 'text-red-400 font-bold' : 'text-green-400 font-bold'}>
-                                                            {u.dist !== undefined ? `${u.dist}%` : ''}
+                                                        <span className={u.dist !== undefined && u.dist < 10 ? 'text-red-400 font-bold text-xs' : 'text-green-400 font-bold text-xs'}>
+                                                            {u.dist !== undefined ? `Dist. Barriera: ${typeof u.dist === 'number' ? u.dist.toFixed(2) : u.dist}%` : ''}
                                                         </span>
                                                     </div>
                                                     <div className="text-xs text-muted-foreground grid grid-cols-3 gap-x-2 mt-1.5">
-                                                        <span>Strike: {u.strike}</span>
-                                                        <span>Barriera: {u.barrier}</span>
-                                                        <span>Corrente: {u.current}</span>
+                                                        <span>Strike: {typeof u.strike === 'number' ? u.strike.toFixed(2) : u.strike}</span>
+                                                        <span>Barriera: {typeof u.barrier === 'number' ? u.barrier.toFixed(2) : u.barrier}</span>
+                                                        <span>Corrente: {typeof u.current === 'number' ? u.current.toFixed(2) : u.current}</span>
                                                     </div>
                                                 </div>
                                             ))}
