@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { TrendingUp, TrendingDown, Euro, Database, Activity, ArrowUpRight, ArrowDownRight, Loader2, List } from "lucide-react";
+import { TrendingUp, TrendingDown, Euro, Database, Activity, ArrowUpRight, ArrowDownRight, Loader2, List, CloudDownload } from "lucide-react";
 import { AssetMovementsModal } from "@/components/portfolio/AssetMovementsModal";
 import { AssetPricesModal } from "@/components/portfolio/AssetPricesModal";
 import { formatSwissMoney, formatSwissNumber } from "@/lib/utils";
@@ -220,6 +220,8 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
     const [chartSettings, setChartSettings] = useState<any>(null);
     const [showMovements, setShowMovements] = useState(false);
     const [showPrices, setShowPrices] = useState(false);
+    const [externalInfo, setExternalInfo] = useState<any>(null);
+    const [loadingInfo, setLoadingInfo] = useState(false);
     const lastAssetIdRef = useRef<string | null>(null);
 
     // Synchronous reset on asset change to avoid race conditions/leakage
@@ -228,6 +230,7 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
         if (history !== null) setHistory(null);
         if (chartSettings !== null) setChartSettings(null);
         if (visibleStats !== null) setVisibleStats(null);
+        if (externalInfo !== null) setExternalInfo(null);
     }
 
     // Fetch threshold settings
@@ -314,6 +317,19 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
             settings: newSettings
         }).catch(err => console.error("Failed to persist asset settings", err));
     }, [asset?.id, selectedPortfolioId]);
+
+    const fetchExternalInfo = async () => {
+        if (!asset?.isin) return;
+        setLoadingInfo(true);
+        try {
+            const res = await axios.get(`/api/assets/${asset.isin}/external`);
+            setExternalInfo(res.data);
+        } catch (err) {
+            console.error("Failed to fetch external info", err);
+        } finally {
+            setLoadingInfo(false);
+        }
+    };
 
     const displayName = getAssetDisplayName(asset);
 
@@ -504,11 +520,73 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                 >
                                     Prezzi
                                 </button>
+                                <button
+                                    onClick={fetchExternalInfo}
+                                    disabled={loadingInfo || !asset.isin}
+                                    className="inline-flex justify-center items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium border border-primary/40 text-primary bg-primary/10 hover:bg-primary/20 hover:border-primary/60 transition-colors duration-200 cursor-pointer uppercase tracking-wide w-full disabled:opacity-50"
+                                    title="Get Info Certificato"
+                                >
+                                    {loadingInfo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CloudDownload className="h-3.5 w-3.5" />}
+                                    Get Info
+                                </button>
                             </div>
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="pt-4 overflow-y-auto flex-1">
-                        <FullMetadataDisplay metadata={asset.metadata} metadataText={asset.metadata_text} />
+                        {externalInfo ? (
+                            <div className="space-y-4">
+                                <div className="flex justify-between items-center bg-primary/10 p-2 rounded-md border border-primary/20">
+                                    <h4 className="text-sm font-semibold text-primary uppercase tracking-wider flex items-center gap-2">
+                                        <Database className="h-4 w-4" /> Dati Live API
+                                    </h4>
+                                    <button onClick={() => setExternalInfo(null)} className="text-xs text-primary hover:text-white underline cursor-pointer">Chiudi</button>
+                                </div>
+                                <div className="bg-black/20 rounded-lg p-3 border border-white/5 space-y-2">
+                                    <div className="text-sm text-foreground"><b>Scadenza:</b> {externalInfo.expiry_date || 'N.D.'}</div>
+                                    <div className="text-sm text-foreground"><b>Stato:</b> {externalInfo.overall_status || 'N.D.'}</div>
+                                    <div className="text-sm text-foreground"><b>Cedola:</b> {externalInfo.coupon_pct ? `${externalInfo.coupon_pct}%` : 'N.D.'} ({externalInfo.coupon_freq || '-'})</div>
+                                    <div className="text-sm text-foreground"><b>Prossimo Stacco:</b> {externalInfo.next_coupon_date || 'N.D.'}</div>
+                                    <div className="text-sm text-foreground"><b>Barriera:</b> {externalInfo.barrier_level || 'N.D.'} ({externalInfo.barrier_type || '-'})</div>
+                                    <div className="text-sm text-foreground"><b>Trigger Autocall:</b> {externalInfo.trigger_level || 'N.D.'}</div>
+                                    <div className="text-sm text-foreground"><b>Memoria:</b> {externalInfo.has_memory ? 'Sì' : 'No'} | <b>Autocall:</b> {externalInfo.is_autocallable ? 'Sì' : 'No'}</div>
+                                </div>
+
+                                {externalInfo.worst_of && (
+                                    <div className="mb-4">
+                                        <h4 className="text-sm font-semibold text-primary mb-2 uppercase tracking-wider">Worst Of</h4>
+                                        <div className="bg-destructive/20 rounded-lg p-3 border border-destructive/50 flex justify-between items-center">
+                                            <div className="font-medium text-sm text-foreground">{externalInfo.worst_of.name || externalInfo.worst_of.ticker}</div>
+                                            <div className="text-xs text-muted-foreground">Dist. Barriera: <span className="text-red-400 font-bold ml-1">{externalInfo.worst_of.dist}%</span></div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {externalInfo.underlyings && externalInfo.underlyings.length > 0 && (
+                                    <div className="mb-4">
+                                        <h4 className="text-sm font-semibold text-primary mb-2 uppercase tracking-wider">Sottostanti</h4>
+                                        <div className="bg-black/20 rounded-lg p-3 border border-white/5 space-y-3">
+                                            {externalInfo.underlyings.map((u: any, idx: number) => (
+                                                <div key={idx} className="pb-3 border-b border-white/10 last:border-0 last:pb-0">
+                                                    <div className="font-medium text-sm text-foreground flex justify-between">
+                                                        <span>{u.name || u.ticker}</span>
+                                                        <span className={u.dist !== undefined && u.dist < 10 ? 'text-red-400 font-bold' : 'text-green-400 font-bold'}>
+                                                            {u.dist !== undefined ? `${u.dist}%` : ''}
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-xs text-muted-foreground grid grid-cols-3 gap-x-2 mt-1.5">
+                                                        <span>Strike: {u.strike}</span>
+                                                        <span>Barriera: {u.barrier}</span>
+                                                        <span>Corrente: {u.current}</span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <FullMetadataDisplay metadata={asset.metadata} metadataText={asset.metadata_text} />
+                        )}
                     </CardContent>
                 </Card>
             </div>

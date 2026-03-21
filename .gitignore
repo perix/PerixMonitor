@@ -66,3 +66,4 @@ env_*.txt
 0. Backup DB/*.json 
 
 0. Requirements/Prompt Certficati.txt
+.agents/skills/test_API_asset.py
