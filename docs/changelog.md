@@ -2,6 +2,17 @@
 
 Archivio storico delle release e delle funzionalità implementate in PerixMonitor.
 
+## Release 2.7 - "Live Certificate Intelligence" (21/03/2026)
+
+- **Integrazione API Esterna (Proxy)**:
+    - Nuovo endpoint `/api/assets/<isin>/external` che agisce come proxy sicuro per l'API di `analisicertificati.vercel.app`.
+    - Gestione sicura delle chiavi API (`API_KEY_AUTHORIZED`) lato backend per proteggere i segreti.
+- **UI "Get Info" Certificati**:
+    - Pulsante dedicato nel pannello dettagli dell'asset per scaricare dati live.
+    - Layout dinamico: visualizzazione completa di Barriere (livello e tipo), Cedole (memoria, frequenza, prossimi stacchi), Autocall e Stato generale.
+    - Sezione **Worst-Of** e **Sottostanti** con calcolo della distanza dalla barriera e codifica colore dinamica per i rischi (es. rosso per distanze < 10%).
+    - Possibilità di switch immediato tra metadati DB storici e dati live API.
+
 ## Release 2.6 - "Price History & Performance" (10/03/2026)
 
 - **Asset Price History Management**:

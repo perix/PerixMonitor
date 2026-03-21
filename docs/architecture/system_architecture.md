@@ -1,4 +1,4 @@
-# PerixMonitor - Architettura e Stato Corrente (V2.6)
+# PerixMonitor - Architettura e Stato Corrente (V2.7)
 
 ## 1. Panoramica
 PerixMonitor è un'applicazione web per il tracciamento del patrimonio personale (Wealth Tracker) ottimizzata per residenti fiscali italiani. 
@@ -102,6 +102,7 @@ api/
 | `/api/memory/data` | GET | Recupera dati aggregati per pagina "Note & Storico" |
 | `/api/analysis/allocation` | GET | Recupera dati allocazione per pagina "Analisi" |
 | `/api/backup/download` | GET | Scarica JSON backup completo |
+| `/api/assets/<isin>/external` | GET | Proxy sicuro per recupero dati live certificati (V2.7) |
 
 ### Sicurezza e RLS
 
@@ -164,10 +165,11 @@ Per evitare distorsioni su periodi brevi:
 - Il frontend calcola la variazione netta del *Profitto (Delta P&L)* visibile.
 - Applica la **Modified Dietz Approximation** per fornire una stima in tempo reale senza ricaricare dal backend.
 
-## 5. Stato Attuale (V2.6)
+## 5. Stato Attuale (V2.7)
 
 ### Feature Completate (Stable)
 - [x] **Core**: Safe Ingestion, Dashboard interattiva, Calcolo XIRR Tiered.
+- [x] **Live Info (V2.7)**: Integrazione API esterna per dati certificati real-time.
 - [x] **Memory Module**: Tabella storico avanzata, P&L granulare, Dividendi.
 - [x] **Analysis Module**: Asset allocation dinamica, Liquidità manuale.
 - [x] **Data Integrity**: Backup/Restore completo con storico prezzi.

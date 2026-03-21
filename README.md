@@ -5,6 +5,11 @@ Il sistema permette l'ingestione intelligente di file Excel bancari, la riconcil
 
 ---
 
+## 🌟 Novità: Integrazione Live Certificati (V2.7)
+L'applicazione ora supporta il recupero in tempo reale delle caratteristiche dei certificati (Barriere, Cedole, Worst-Of) tramite un'integrazione sicura con API esterne. I dati vengono mostrati direttamente nel pannello dettagli dell'asset senza uscire dall'app.
+
+---
+
 ## 🚀 Guida Rapida all'Avvio (Sviluppo Locale)
 
 L'applicazione richiede l'avvio coordinato di 3 componenti in terminali separati:
