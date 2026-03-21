@@ -567,10 +567,12 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                         <div className="bg-black/20 rounded-lg p-3 border border-white/5 space-y-3">
                                             {externalInfo.underlyings.map((u: any, idx: number) => (
                                                 <div key={idx} className="pb-3 border-b border-white/10 last:border-0 last:pb-0">
-                                                    <div className="font-medium text-sm text-foreground flex justify-between">
+                                                    <div className="font-medium text-sm text-foreground flex justify-between items-center">
                                                         <span>{u.name || u.ticker}</span>
-                                                        <span className={u.dist !== undefined && u.dist < 10 ? 'text-red-400 font-bold text-xs' : 'text-green-400 font-bold text-xs'}>
-                                                            {u.dist !== undefined ? `Dist. Barriera: ${typeof u.dist === 'number' ? u.dist.toFixed(2) : u.dist}%` : ''}
+                                                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                                            Dist. Barriera: <span className={`${u.dist !== undefined && u.dist < 10 ? 'text-red-400' : 'text-green-400'} font-bold ml-1`}>
+                                                                {u.dist !== undefined ? `${typeof u.dist === 'number' ? u.dist.toFixed(2) : u.dist}%` : ''}
+                                                            </span>
                                                         </span>
                                                     </div>
                                                     <div className="text-xs text-muted-foreground grid grid-cols-3 gap-x-2 mt-1.5">
