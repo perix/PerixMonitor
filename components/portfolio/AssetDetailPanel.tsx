@@ -360,21 +360,27 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                     </span>
                                 )}
                             </h2>
-                            <p className="text-sm text-muted-foreground font-mono">
-                                {asset.metadata?.assetType === 'Certificato' ? (
-                                    <a 
-                                        href={`https://www.certificatiederivati.it/db_bs_scheda_certificato.asp?isin=${asset.isin}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="hover:text-primary underline transition-colors"
-                                        title="Apri scheda su Certificati e Derivati"
-                                    >
-                                        {asset.isin}
-                                    </a>
-                                ) : (
-                                    asset.isin
-                                )}
-                            </p>
+                            {(() => {
+                                const isCertificato = asset.asset_class === 'Certificato' || asset.metadata?.assetType === 'Certificato';
+                                
+                                return (
+                                    <p className="text-sm text-muted-foreground font-mono">
+                                        {isCertificato ? (
+                                            <a 
+                                                href={`https://www.certificatiederivati.it/db_bs_scheda_certificato.asp?isin=${asset.isin}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="hover:text-primary underline transition-colors"
+                                                title="Apri scheda su Certificati e Derivati"
+                                            >
+                                                {asset.isin}
+                                            </a>
+                                        ) : (
+                                            asset.isin
+                                        )}
+                                    </p>
+                                );
+                            })()}
                         </div>
                         <div className="text-right shrink-0">
                             {asset.latest_price && (
@@ -536,9 +542,9 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                 </button>
                                  <button
                                     onClick={fetchExternalInfo}
-                                    disabled={loadingInfo || !asset.isin || asset.metadata?.assetType !== 'Certificato'}
+                                    disabled={loadingInfo || !asset.isin || !(asset.asset_class === 'Certificato' || asset.metadata?.assetType === 'Certificato')}
                                     className="inline-flex justify-center items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium border border-primary/40 text-primary bg-primary/10 hover:bg-primary/20 hover:border-primary/60 transition-colors duration-200 cursor-pointer uppercase tracking-wide w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title={asset.metadata?.assetType === 'Certificato' ? "Get Info Certificato" : "Funzionalità disponibile solo per Certificati"}
+                                    title={(asset.asset_class === 'Certificato' || asset.metadata?.assetType === 'Certificato') ? "Get Info Certificato" : "Funzionalità disponibile solo per Certificati"}
                                 >
                                     {loadingInfo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CloudDownload className="h-3.5 w-3.5" />}
                                     Get Info
