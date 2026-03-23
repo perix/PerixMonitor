@@ -132,6 +132,7 @@ def sync_transactions():
         
         # --- 1. Init Prices (Processing moved to end) ---
         prices = data.get('prices', [])
+        valid_prices = []
 
         # --- 2. Handle Snapshot Record (If present) ---
         snapshot = data.get('snapshot')
@@ -403,7 +404,6 @@ def sync_transactions():
         # --- 4. Process Prices (Now that Assets are ensured to exist) ---
         if prices:
             # [PERF] Batch upsert instead of loop (Step 2.1)
-            valid_prices = []
             for p in prices:
                  try:
                      price_val = float(p.get('price', 0))
