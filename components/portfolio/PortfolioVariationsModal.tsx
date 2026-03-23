@@ -89,7 +89,7 @@ export function PortfolioVariationsModal({ isOpen, onClose, assets, portfolioNam
                     deltaValue: deltaValue
                 };
             })
-            .filter(v => !hideCertificates || v.assetClass !== 'Certificato')
+            .filter(v => (!hideCertificates || v.assetClass !== 'Certificato') && v.deltaPct !== 0)
             // Sort by asset class (tipologia) alphabetically
             .sort((a, b) => a.assetClass.localeCompare(b.assetClass));
     }, [assets, hideCertificates]);
