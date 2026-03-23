@@ -269,6 +269,7 @@ export const UploadForm = () => {
                     threshold={priceModalData.threshold}
                     isHistoricalReconstruction={priceModalData.isHistoricalReconstruction}
                     uniqueAssetsCount={priceModalData.uniqueAssetsCount}
+                    hasUpdates={priceModalData.variations.some((v: any) => v.is_update)}
                     onConfirm={() => {
                         handleReconciliationConfirm([], priceModalData.variations);
                         setPriceModalData(null);

@@ -10,6 +10,9 @@ import { AssetList } from "@/components/portfolio/AssetList";
 import { AssetDetailPanel } from "@/components/portfolio/AssetDetailPanel";
 import { ResizablePortfolioLayout } from "@/components/portfolio/ResizablePortfolioLayout";
 import { formatSwissMoney } from "@/lib/utils";
+import { List } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { PortfolioVariationsModal } from "@/components/portfolio/PortfolioVariationsModal";
 
 interface Asset {
     id: string;
@@ -44,6 +47,7 @@ export default function PortfolioPage() {
     const [portfolioName, setPortfolioName] = useState<string>("");
     const [liquidity, setLiquidity] = useState<number>(0);
     const [isEditingLiquidity, setIsEditingLiquidity] = useState(false);
+    const [isVariationsModalOpen, setIsVariationsModalOpen] = useState(false);
 
     // [PERSISTENCE STATE]
     const [layoutWidth, setLayoutWidth] = useState(30);
@@ -299,7 +303,15 @@ export default function PortfolioPage() {
                         <h1 className="text-2xl font-bold tracking-tight">
                             {portfolioName ? `Portafoglio - ${portfolioName}` : "Portafoglio"}
                         </h1>
-                        <div className="flex items-center gap-2 text-lg">
+                        <button
+                            onClick={() => setIsVariationsModalOpen(true)}
+                            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium border border-primary/40 text-primary bg-primary/10 hover:bg-primary/20 hover:border-primary/60 transition-colors duration-200 cursor-pointer uppercase tracking-wide"
+                            title="Riepilogo Variazioni Portfolio"
+                        >
+                            <List className="h-3.5 w-3.5" />
+                            Ultimi movimenti
+                        </button>
+                        <div className="flex items-center gap-2 text-lg ml-6">
                             <span className="font-medium text-muted-foreground">Liquidità:</span>
                             <input
                                 type="number"
@@ -345,6 +357,15 @@ export default function PortfolioPage() {
                     }
                 />
             </div>
+
+            {isVariationsModalOpen && (
+                <PortfolioVariationsModal
+                    isOpen={isVariationsModalOpen}
+                    onClose={() => setIsVariationsModalOpen(false)}
+                    assets={assets}
+                    portfolioName={portfolioName}
+                />
+            )}
         </div>
     );
 }

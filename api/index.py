@@ -432,33 +432,26 @@ def sync_transactions():
             if debug_mode: logger.debug(f"SYNC: Saved {count_prices} price snapshots (Batch).")
 
         # 3. Process Referentials/Trends (if any)
-        trend_updates = data.get('trend_updates', [])
-        if trend_updates:
-            try:
-                # supabase = get_supabase_client()
-                logger.info(f"SYNC: Processing {len(trend_updates)} trend updates...")
+        # Invece di usare il valore provvisorio dalla UI (che mischia update per la stessa data), 
+        # ricalcoliamo il trend reale utilizzando la storia consolidata a DB.
+        from price_manager import update_asset_trend
+        
+        isins_to_update = set()
+        if valid_prices:
+            for p in valid_prices:
+                if p.get('isin'): isins_to_update.add(p['isin'])
                 
-                # Batch update might be heavy, but let's loop for now (assets table isn't huge)
-                # Or better, we just update the ones provided.
-                from datetime import datetime
-                for trend in trend_updates:
-                    isin = trend.get('isin')
-                    variation = trend.get('variation_pct')
-                    days = trend.get('days_delta')
-                    
-                    if isin:
-                         update_payload = {
-                             'last_trend_variation': variation,
-                             'last_trend_ts': datetime.now().isoformat(),
-                             'last_trend_days': days
-                         }
-                         # If days is None, it saves NULL, which is correct for cleared trend.
-
-                         # supabase.table('assets').update(update_payload).eq('isin', isin).execute()
-                         update_table('assets', update_payload, {'isin': isin})
-                         
+        trend_updates = data.get('trend_updates', [])
+        for t in trend_updates:
+            if t.get('isin'): isins_to_update.add(t['isin'])
+            
+        if isins_to_update:
+            try:
+                logger.info(f"SYNC: Recalculating absolute trends for {len(isins_to_update)} assets...")
+                for isin in isins_to_update:
+                    update_asset_trend(isin)
             except Exception as e:
-                logger.error(f"SYNC: Error updating trends: {e}")
+                logger.error(f"SYNC: Error recalculating trends: {e}")
                 errors.append(f"Trend Update Error: {str(e)}")
 
         # 4. Finalize
@@ -1051,7 +1044,8 @@ def ingest_excel():
                     "old_price_date": trend_data.get('previous_date'),
                     "new_price": trend_data.get('latest_price'),
                     "is_hidden": False,
-                    "price_count": len(candidates)
+                    "price_count": len(candidates),
+                    "is_update": trend_data.get('is_update', False)
                 }
                 
                 if abs(trend_data['variation_pct']) < threshold:

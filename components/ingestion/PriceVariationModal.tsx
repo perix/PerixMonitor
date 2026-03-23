@@ -24,6 +24,7 @@ interface PriceVariationModalProps {
     threshold?: number;
     isHistoricalReconstruction?: boolean;
     uniqueAssetsCount?: number;
+    hasUpdates?: boolean;
     onConfirm: () => void;
 }
 
@@ -35,6 +36,7 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
     threshold,
     isHistoricalReconstruction,
     uniqueAssetsCount,
+    hasUpdates,
     onConfirm
 }) => {
 
@@ -70,6 +72,12 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
                             : "Aggiornamento Prezzi"}
                     </DialogTitle>
                 </DialogHeader>
+
+                {hasUpdates && !isHistoricalReconstruction && (
+                    <div className="bg-yellow-500/10 border-l-4 border-yellow-500 p-3 mb-4 mx-6 rounded text-yellow-500 text-sm">
+                        ⚠️ <strong>Aggiornamento Prezzi</strong> - alcuni prezzi importati sono già presenti per queste date. Le variazioni (Var.) mostrano la differenza tra il valore precedentemente registrato a DB e il nuovo valore caricato.
+                    </div>
+                )}
 
                 <div className="max-h-[60vh] overflow-y-auto border border-white/40 rounded-md">
                     {isHistoricalReconstruction ? (

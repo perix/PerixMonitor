@@ -189,6 +189,14 @@ Per gestire asset con serie storiche decennali (migliaia di punti prezzo) senza 
 - **Lazy Loading Temporale**: Il backend e il frontend ora supportano il parametro `days`. Di default viene caricato solo l'ultimo anno di prezzi, riducendo drasticamente il payload JSON iniziale e il tempo di parsing.
 - **Scroll Optimization**: Reset automatico dello scroll al cambio di intervallo temporale e layout ottimizzato per fluidità 60fps.
 
+### 6.9 Portfolio Variations & Price Integrity (V2.8 — Marzo 2026)
+**File**: `PortfolioVariationsModal.tsx`, `price_manager.py`
+
+Per migliorare l'analisi delle performance e la reattività della UI:
+- **Dynamic Content Estimator**: La tabella variazioni portfolio calcola millimetricamente la larghezza delle colonne basandosi sui dati caricati (`estimateWidth`). Questo ottimizza l'uso dello schermo pur mantenendo leggibilità totale senza overflow.
+- **Trend Calculation Refactor**: Il calcolo del trend (`update_asset_trend`) è stato spostato in DB-history-lookup. Invece di basarsi su delte puntuali da ingest, ora esegue una query cronologica sugli ultimi due record dei prezzi. Questo evita ricalcoli costanti lato client e garantisce integrità totale anche post-aggiornamento di date storiche.
+- **Filtro Client-Side Reattivo**: L'introduzione del filtro selettivo dei certificati nella modale viene gestita interamente nel browser tramite `useMemo`, eliminando la latenza del network per toggle e re-ordinamento degli asset.
+
 ---
 *Tutte le ottimizzazioni mirano a mantenere l'applicazione entro i limiti del Free Tier di Supabase e Vercel.*
 

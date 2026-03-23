@@ -2,6 +2,10 @@ import * as React from "react"
 import { CalendarRange, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
+import { DateRange } from "react-day-picker"
+import { parseISO, format } from "date-fns"
+import { it } from "date-fns/locale"
 
 interface DateRangePickerPopoverProps {
   startDate: string;
@@ -23,31 +27,41 @@ export function DateRangePickerPopover({
   disabled
 }: DateRangePickerPopoverProps) {
   const [open, setOpen] = React.useState(false)
-  const [localStart, setLocalStart] = React.useState(startDate)
-  const [localEnd, setLocalEnd] = React.useState(endDate)
+
+  // Parse initial dates
+  const initialRange: DateRange = React.useMemo(() => {
+    return {
+      from: startDate ? new Date(startDate) : undefined,
+      to: endDate ? new Date(endDate) : undefined,
+    };
+  }, [startDate, endDate]);
+
+  const [date, setDate] = React.useState<DateRange | undefined>(initialRange)
 
   // Sync internal state when opened
   React.useEffect(() => {
     if (open) {
-      setLocalStart(startDate)
-      setLocalEnd(endDate)
+      setDate({
+        from: startDate ? new Date(startDate) : undefined,
+        to: endDate ? new Date(endDate) : undefined,
+      })
     }
   }, [open, startDate, endDate])
 
   const handleApply = () => {
-    onApply(localStart, localEnd)
+    if (date?.from && date?.to) {
+      // Formatta le date nel formato YYYY-MM-DDT00:00:00.000Z 
+      // Usa parse/format standard per assicurare il timezone corretto rispetto alla stringa originaria
+      const startStr = format(date.from, "yyyy-MM-dd'T'HH:mm:ss.SSSxxx");
+      const endStr = format(date.to, "yyyy-MM-dd'T'12:00:00.000xxx");
+      onApply(startStr, endStr)
+    }
     setOpen(false)
   }
 
   const handleReset = () => {
     onReset()
     setOpen(false)
-  }
-
-  // Helper to format Date to YYYY-MM-DD for native input
-  const formatForInput = (isoDate: string) => {
-    if (!isoDate) return "";
-    return isoDate.split('T')[0];
   }
 
   return (
@@ -57,57 +71,35 @@ export function DateRangePickerPopover({
           variant="outline" 
           size="icon" 
           className="h-8 w-8 text-muted-foreground hover:text-white"
-          title="Seleziona periodo personalizzato"
+          title="Seleziona periodo dal calendario"
           disabled={disabled}
         >
           <CalendarRange className="h-4 w-4" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 bg-slate-950 border-slate-800" align="end">
-        <div className="grid gap-4">
-          <div className="space-y-2">
-            <h4 className="font-medium leading-none text-slate-200">Periodo di Analisi</h4>
-            <p className="text-sm text-slate-400">
-              Imposta le date esatte per l'intervallo temporale.
-            </p>
-          </div>
-          <div className="grid gap-2">
-            <div className="grid grid-cols-3 items-center gap-4">
-              <label htmlFor="start-date" className="text-sm text-slate-300">
-                Inizio
-              </label>
-              <input
-                id="start-date"
-                type="date"
-                className="col-span-2 flex h-9 w-full rounded-md border border-slate-800 bg-slate-900 px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-50 text-slate-200"
-                value={formatForInput(localStart)}
-                min={formatForInput(minDate || '')}
-                max={formatForInput(localEnd || maxDate || '')}
-                onChange={(e) => setLocalStart(e.target.value)}
-              />
-            </div>
-            <div className="grid grid-cols-3 items-center gap-4">
-              <label htmlFor="end-date" className="text-sm text-slate-300">
-                Fine
-              </label>
-              <input
-                id="end-date"
-                type="date"
-                className="col-span-2 flex h-9 w-full rounded-md border border-slate-800 bg-slate-900 px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-50 text-slate-200"
-                value={formatForInput(localEnd)}
-                min={formatForInput(localStart || minDate || '')}
-                max={formatForInput(maxDate || '')}
-                onChange={(e) => setLocalEnd(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="flex justify-between mt-2">
-            <Button variant="ghost" size="sm" onClick={handleReset} className="text-slate-400 hover:text-white">
+      <PopoverContent className="w-auto p-0 bg-slate-950 border-slate-800" align="end">
+        <div className="p-3">
+          <Calendar
+            initialFocus
+            mode="range"
+            defaultMonth={date?.from}
+            selected={date}
+            onSelect={setDate}
+            numberOfMonths={2}
+            locale={it}
+            disabled={{
+              before: minDate ? new Date(minDate) : new Date(2000, 0, 1),
+              after: maxDate ? new Date(maxDate) : new Date(2100, 0, 1),
+            }}
+            className="text-slate-200"
+          />
+          <div className="flex justify-between items-center px-4 py-2 border-t border-slate-800 mt-2">
+            <Button variant="ghost" size="sm" onClick={handleReset} className="text-slate-400 hover:text-white h-8">
               <RotateCcw className="h-4 w-4 mr-2" />
               Reset
             </Button>
-            <Button size="sm" onClick={handleApply} className="bg-primary text-primary-foreground">
-              Applica
+            <Button size="sm" onClick={handleApply} disabled={!date?.from || !date?.to} className="h-8 bg-primary text-primary-foreground">
+              Applica Periodo
             </Button>
           </div>
         </div>

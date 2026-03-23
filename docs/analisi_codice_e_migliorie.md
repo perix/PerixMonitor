@@ -44,9 +44,9 @@ I test storici importano `calculate_delta` da `api.ingest` (o `ingest`), ma la f
 
 ---
 
-### 2) Bug logico su prezzo più recente in `price_manager`
+### 2) Bug logico su prezzo più recente in `price_manager` (RISOLTO - 23/03/2026)
 **Descrizione**
-`get_price_history()` ordina i prezzi in ordine decrescente (più recente prima), ma `get_latest_price()` restituisce `history[-1]`, cioè il valore più vecchio.
+Il motore di calcolo del trend (`update_asset_trend`) è stato integralmente rivisto. Ora esegue una query esplicita sullo storico del database per recuperare i due prezzi più recenti cronologicamente, garantendo che il delta calcolato sia sempre basato sulla realtà storica, anche in caso di aggiornamenti a date intermedie o caricamenti non sequenziali.
 
 **Impatto**
 - Possibili errori nelle metriche e nelle decisioni che dipendono dall'ultimo prezzo.

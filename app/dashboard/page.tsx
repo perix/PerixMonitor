@@ -553,6 +553,7 @@ export default function DashboardPage() {
                     isOpen={isOperationsModalOpen}
                     onClose={() => setIsOperationsModalOpen(false)}
                     portfolioId={selectedPortfolioId}
+                    portfolioName={portfolioDetails?.name || "Portafoglio"}
                     startDate={periodStats.startDate || periodStats.date} // Fallback just in case
                     endDate={periodStats.date}
                 />

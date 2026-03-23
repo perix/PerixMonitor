@@ -2,6 +2,22 @@
 
 Archivio storico delle release e delle funzionalità implementate in PerixMonitor.
 
+## Release 2.8 - "Portfolio Variation & Price Integrity" (23/03/2026)
+
+- **Monitoraggio Variazioni Portfolio**:
+    - Nuovo strumento **"Ultimi movimenti"** nella pagina Portafoglio.
+    - Tabella analitica con ISIN, Asset, Tipologia, Delta % e Delta Valore assoluto.
+    - Calcolo dinamico delle larghezze delle colonne (`estimateWidth`) per un layout sempre perfetto.
+    - Filtro intelligente **"Nascondi Certificati"** (attivo di default) per focalizzarsi sugli asset core.
+    - Ordinamento automatico per **Tipologia** di asset.
+    - Header temporale dinamico che mostra il periodo esatto della variazione (es. `15/03 → 22/03`).
+- **Integrità Dati & Ingestion**:
+    - **Rilevamento Duplicate Prices**: L'ingestione ora riconosce i prezzi già presenti per una data, segnalando l'operazione come "Aggiornamento Prezzi" e calcolando il delta rispetto al database.
+    - **Fix Trend Calculation**: Riscritto il motore di calcolo dell'ultima variazione (`update_asset_trend`). Ora garantisce di confrontare sempre gli ultimi due prezzi storici presenti a sistema, indipendentemente dall'ordine di inserimento o dagli aggiornamenti.
+- **UI/UX Refinement**:
+    - Pulsanti armonizzati con lo stile "Info Asset" (bordi primary, background traslucido, uppercase).
+    - Precisione numerica migliorata con font monospazio nelle tabelle di variazione.
+
 ## Release 2.7 - "Live Certificate Intelligence" (21/03/2026)
 
 - **Integrazione API Esterna (Proxy)**:

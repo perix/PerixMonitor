@@ -1,4 +1,4 @@
-# PerixMonitor - Architettura e Stato Corrente (V2.7)
+# PerixMonitor - Architettura e Stato Corrente (V2.8)
 
 ## 1. Panoramica
 PerixMonitor è un'applicazione web per il tracciamento del patrimonio personale (Wealth Tracker) ottimizzata per residenti fiscali italiani. 
@@ -145,6 +145,11 @@ Il modulo prezzi è stato potenziato per scalabilità massiva:
 - **Price History Inclusion**: Il JSON include TUTTI i prezzi storici degli asset.
 - **Smart Restore**: Ricrea anagrafiche asset e rimappa ID per entità dipendenti.
 
+### Monitoraggio Variazioni Portfolio (V2.8)
+Il nuovo tool in pagina Portafoglio centralizza l'analisi dei trend di periodo:
+- **Analisi Delta**: Calcolo del Delta Valore assoluto e percentuale per ogni asset e per il totale portafoglio.
+- **Filtro Filtro Dinamico**: Gestione selettiva della tipologia di asset (es. esclusione certificati).
+
 ## 4. Metodologia MWR (Money Weighted Return)
 
 Il sistema calcola la performance reale tramite **XIRR (Extended Internal Rate of Return)**.
@@ -176,6 +181,8 @@ Per evitare distorsioni su periodi brevi:
 - [x] **UI Persistence**: Salvataggio preferenze tabelle, colori custom, note.
 - [x] **AI Integration**: Supporto GPT-5/Search opzionale.
 - [x] **Scalabilità Prezzi**: Virtualizzazione della tabella e filtro temporale (V2.6).
+- [x] **Portfolio Variations (V2.8)**: Analisi delta veloce, filtro certificati e ordinamento tipologia.
+- [x] **Price Integrity (V2.8)**: Rilevamento duplicate price e ricalcolo trend basato su storico database.
 - [x] **Asynchronous Reporting (V2.5)**: Sistema a task per analisi LLM lunghe.
 
 ## 6. Ambiente e Vincoli

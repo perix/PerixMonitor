@@ -289,54 +289,70 @@ def get_price_before_date(isin, target_date_str):
 
 def calculate_projected_trend(isin, candidate_prices):
     """
-    Calcola il 'Trend Ipotetico' applicando i candidate_prices alla storia esistente.
+    Calcola il 'Trend Ipotetico' confrontando le Candidate Prices con la storia DB 
+    per rilevare aggiornamenti e calcolare la Variazione.
     """
     try:
+        if not candidate_prices:
+            return None
+
+        # 1. Recupera lo storico. get_price_history ritorna ord. descrescente per data.
         history = get_price_history(isin) or []
-        price_map = {item['date']: item['price'] for item in history}
+        # Per sicurezza, re-ordiniamo desc:
+        history.sort(key=lambda x: datetime.strptime(x['date'], "%Y-%m-%d"), reverse=True)
         
-        for cand in candidate_prices:
-            d_str = cand.get('date')
-            p_val = cand.get('price')
-            if d_str and p_val is not None:
-                price_map[d_str] = float(p_val)
+        # Selezioniamo il prezzo candidato più recente fornito nel file
+        target_cand = max(candidate_prices, key=lambda x: datetime.strptime(x.get('date', '1900-01-01'), "%Y-%m-%d"))
+        target_date = target_cand.get('date')
+        target_price = target_cand.get('price')
         
-        timeline = [{'date': k, 'price': v} for k, v in price_map.items()]
-        timeline.sort(key=lambda x: datetime.strptime(x['date'], "%Y-%m-%d"))
-        
-        if not timeline:
+        if not target_date or target_price is None:
             return None
             
-        latest = timeline[-1]
-        
-        if len(timeline) < 2:
-            return {
-                'latest_price': latest['price'],
-                'latest_date': latest['date'],
-                'variation_pct': 0.0,
-                'days_delta': 0
-            }
+        target_price = float(target_price)
+
+        # Cerchiamo l'old_price: il prezzo con la prima data <= target_date presente in DB.
+        old_price = None
+        old_date = None
+        is_update = False
+
+        for entry in history:
+            db_date = entry['date']
+            db_price = entry['price']
             
-        previous = timeline[-2]
-        d1 = datetime.strptime(previous['date'], "%Y-%m-%d")
-        d2 = datetime.strptime(latest['date'], "%Y-%m-%d")
-        days_delta = abs((d2 - d1).days)
-        
-        old_p = previous['price']
-        new_p = latest['price']
-        
-        if old_p == 0:
-             pct = 0.0
+            if db_date == target_date:
+                is_update = True
+                old_price = db_price
+                old_date = db_date
+                break
+            elif datetime.strptime(db_date, "%Y-%m-%d") < datetime.strptime(target_date, "%Y-%m-%d"):
+                old_price = db_price
+                old_date = db_date
+                break
+
+        if old_price is None:
+            # Asset nuovo o data più vecchia mai inserita
+            variation_pct = 0.0
+            days_delta = 0
+            old_price = 0.0
         else:
-             pct = ((new_p - old_p) / old_p) * 100
-             
+            if old_price == 0:
+                variation_pct = 0.0
+            else:
+                variation_pct = ((target_price - old_price) / old_price) * 100
+                
+            d1 = datetime.strptime(old_date, "%Y-%m-%d")
+            d2 = datetime.strptime(target_date, "%Y-%m-%d")
+            days_delta = abs((d2 - d1).days)
+
         return {
-            'latest_price': new_p,
-            'latest_date': latest['date'],
-            'previous_price': old_p,
-            'previous_date': previous['date'],
-            'variation_pct': pct,
-            'days_delta': days_delta
+            'latest_price': target_price,
+            'latest_date': target_date,
+            'previous_price': old_price,
+            'previous_date': old_date,
+            'variation_pct': variation_pct,
+            'days_delta': days_delta,
+            'is_update': is_update
         }
 
     except Exception as e:

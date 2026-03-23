@@ -13,20 +13,23 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, FileText } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Loader2, FileText, Download } from "lucide-react";
 import { usePortfolioMovements } from "@/hooks/usePortfolioMovements";
 import { formatSwissMoney, formatSwissNumber, parseISODateLocal } from "@/lib/utils";
 import React from "react";
+import * as XLSX from "xlsx";
 
 interface PeriodOperationsModalProps {
     isOpen: boolean;
     onClose: () => void;
     portfolioId: string | null;
+    portfolioName: string;
     startDate: string;
     endDate: string;
 }
 
-export function PeriodOperationsModal({ isOpen, onClose, portfolioId, startDate, endDate }: PeriodOperationsModalProps) {
+export function PeriodOperationsModal({ isOpen, onClose, portfolioId, portfolioName, startDate, endDate }: PeriodOperationsModalProps) {
     const [showDividends, setShowDividends] = React.useState(false);
 
     // Convert to YYYY-MM-DD for API
@@ -129,24 +132,64 @@ export function PeriodOperationsModal({ isOpen, onClose, portfolioId, startDate,
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
             <DialogContent className="sm:max-w-4xl lg:max-w-5xl max-h-[85vh] flex flex-col bg-[#0A0A0A] border-white/40 text-gray-200 shadow-2xl p-0">
-                <DialogHeader className="shrink-0 px-6 pt-6 pb-3 flex flex-row items-center justify-between">
+                <DialogHeader className="shrink-0 px-6 pt-6 pb-3 flex flex-row items-baseline justify-between">
                     <div>
                         <DialogTitle className="text-lg font-bold">Movimenti nel periodo selezionato</DialogTitle>
                         <p className="text-sm text-muted-foreground mt-1">{periodStr}</p>
                     </div>
-                    <div className="flex items-center space-x-2 mr-6">
-                        <Checkbox
-                            id="show-dividends"
-                            checked={showDividends}
-                            onCheckedChange={(checked) => setShowDividends(checked as boolean)}
-                            className="border-slate-500 data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
-                        />
-                        <label
-                            htmlFor="show-dividends"
-                            className="text-xs font-medium leading-none cursor-pointer select-none text-slate-300"
+                    <div className="flex items-center space-x-4 mr-6">
+                        <div className="flex items-center space-x-2">
+                            <Checkbox
+                                id="show-dividends"
+                                checked={showDividends}
+                                onCheckedChange={(checked) => setShowDividends(checked as boolean)}
+                                className="border-slate-500 data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
+                            />
+                            <label
+                                htmlFor="show-dividends"
+                                className="text-xs font-medium leading-none cursor-pointer select-none text-slate-300"
+                            >
+                                Mostra Cedole/Dividendi
+                            </label>
+                        </div>
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="h-8 border-slate-700 bg-slate-900/50 hover:bg-slate-800 hover:text-white text-xs"
+                            onClick={() => {
+                                if (!movements || movements.length === 0) return;
+                                
+                                const dataToExport = movements.map(m => ({
+                                    "Data": formatDisplayDate(m.date),
+                                    "ISIN": m.isin || '',
+                                    "Asset": m.description || 'Sconosciuto',
+                                    "Tipologia": m.asset_class || '',
+                                    "Tipo Op.": m.type || '',
+                                    "Quantità": m.quantity !== null && m.quantity !== undefined ? m.quantity : '',
+                                    "Valore (€)": m.value !== null && m.value !== undefined ? m.value : ''
+                                }));
+                                
+                                const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+                                const workbook = XLSX.utils.book_new();
+                                XLSX.utils.book_append_sheet(workbook, worksheet, "Movimenti");
+                                
+                                const formatFileDate = (isoStr: string) => {
+                                    if (!isoStr) return "";
+                                    const parts = isoStr.split('T')[0].split('-');
+                                    return parts.length === 3 ? `${parts[2]}${parts[1]}${parts[0]}` : isoStr.replace(/-/g, '');
+                                };
+                                
+                                const startDateStr = formatFileDate(startDate);
+                                const endDateStr = formatFileDate(endDate);
+                                const safeName = portfolioName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                                
+                                XLSX.writeFile(workbook, `${safeName}-${startDateStr}_${endDateStr}.xlsx`);
+                            }}
+                            disabled={!movements || movements.length === 0}
                         >
-                            Mostra Cedole/Dividendi
-                        </label>
+                            <Download className="mr-2 h-4 w-4" />
+                            Esporta
+                        </Button>
                     </div>
                 </DialogHeader>
 

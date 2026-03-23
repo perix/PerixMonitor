@@ -109,10 +109,13 @@ Il sistema assume questo formato se il file **NON** contiene le colonne `Operazi
     *   Header: `descrizione`, `titolo`, `descrizione asset`, `nome`
     *   Nota: Se presente, può essere usata per aggiornare o creare l'anagrafica dell'asset.
 
-### Note
-*   È possibile inserire più righe con date diverse per lo stesso ISIN (per ricostruire lo storico).
-*   Se un ISIN non è presente nel portafoglio, verrà ignorato (con warning).
-*   Se sono presenti prezzi diversi per lo stesso ISIN nella stessa data, verrà generato un warning e usato l'ultimo valore.
+### Rilevamento Duplicate Prices e Aggiornamenti (V2.8)
+Il sistema è in grado di rilevare se nel database sono già presenti prezzi per la stessa data indicata nel file di importazione.
+
+1.  **Identificazione Duplicati**: Durante l'analisi, se viene trovata una corrispondenza `ISIN + Data`, il sistema non considera la riga come un nuovo inserimento ma come un **"Aggiornamento Prezzo"**.
+2.  **Riconciliazione Visiva**: Nella modale viene mostrato il messaggio specifico *"Aggiornamento Prezzi - alcuni prezzi importati sono già presenti per queste date"*.
+3.  **Calcolo Variazione**: La variazione mostrata nella colonna Delta nella finestra di riconciliazione sarà la differenza tra il prezzo attualmente salvato nel DB e il nuovo valore presente nel file Excel.
+4.  **Integrità Storica**: Se confermato, il sistema aggiorna il record esistente. Questo triggera automaticamente il calcolo del trend (`last_trend_variation`) che confronterà il prezzo aggiornato con quello della data precedente registrata, garantendo la coerenza del color-coding in tutta l'applicazione.
 
 ---
 
