@@ -8,7 +8,8 @@ import { CHART_STRINGS } from "@/constants/chartStrings";
 
 
 import { Button } from "@/components/ui/button";
-import { Calculator, RefreshCcw, AlertTriangle } from "lucide-react";
+import { Calculator, RefreshCcw, AlertTriangle, ListChecks } from "lucide-react";
+import { DateRangePickerPopover } from "@/components/dashboard/DateRangePickerPopover";
 
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#a855f7', '#ec4899', '#6366f1', '#14b8a6'];
 
@@ -38,13 +39,14 @@ interface DashboardChartsProps {
     mwrMode?: 'xirr' | 'simple_return' | 'mixed';
     xirrMode?: string;
     onXirrModeChange?: (mode: string) => void;
+    onOpenOperations?: () => void;
 }
 
 import { useState, useMemo, useEffect, useRef, useTransition } from "react";
 import { RangeSlider } from "@/components/ui/range-slider";
 import { Checkbox } from "@/components/ui/checkbox";
 
-export function DashboardCharts({ allocationData, history, initialSettings, onSettingsChange, portfolioName, hidePortfolio, className, onVisibleStatsChange, mwrMode, xirrMode, onXirrModeChange }: DashboardChartsProps) {
+export function DashboardCharts({ allocationData, history, initialSettings, onSettingsChange, portfolioName, hidePortfolio, className, onVisibleStatsChange, mwrMode, xirrMode, onXirrModeChange, onOpenOperations }: DashboardChartsProps) {
     const [dateRange, setDateRange] = useState<number[]>([0, 0]);
     // Separate state for ranges
     const [mwrRange, setMwrRange] = useState<number[]>([0, 100]);
@@ -364,6 +366,46 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
         return rawChartData.slice(safeStart, safeEnd + 1);
     }, [rawChartData, dateRange]);
 
+    // Apply exact dates from Date Picker
+    const applyDateRange = (startDateStr: string, endDateStr: string) => {
+        if (!rawChartData || rawChartData.length === 0) return;
+        
+        let startIdx = 0;
+        let endIdx = rawChartData.length - 1;
+
+        // Find closest start
+        const startMatch = rawChartData.findIndex(d => d.date >= startDateStr);
+        if (startMatch !== -1) startIdx = startMatch;
+
+        // Find closest end
+        for (let i = rawChartData.length - 1; i >= 0; i--) {
+            if (rawChartData[i].date <= endDateStr + "T23:59:59") {
+                endIdx = i;
+                break;
+            }
+        }
+
+        if (startIdx > endIdx) startIdx = endIdx;
+        
+        setDateRange([startIdx, endIdx]);
+        // Immediately commit the new range
+        if (onSettingsChange && initializedRef.current) {
+             const settingsPayload = {
+                 timeWindow: startIdx,
+                 timeWindowStart: rawChartData[startIdx]?.date,
+                 timeWindowEnd: rawChartData[endIdx]?.date,
+                 mwr: { yMin: mwrRange[0], yMax: mwrRange[1] },
+                 value: { yMin: valueRange[0], yMax: valueRange[1] },
+                 yAxisScale: mwrRange[1],
+                 showMajorGrid,
+                 showMinorGrid,
+                 viewMode
+             };
+             onSettingsChange(settingsPayload);
+        }
+    };
+
+
     // Compute tick values for Y-axis (major and minor)
     // For MWR mode: Uses generic logic
     // For Value mode: Logic applies to the RIGHT axis (Portfolio)
@@ -598,6 +640,34 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                         <span className="text-red-500 text-sm ml-2 font-normal whitespace-nowrap" title="Calcolo XIRR non convergente, usato Simple Return come fallback">(simple return)</span>
                                     )}
                                 </CardTitle>
+                                {rawChartData.length > 0 && !hidePortfolio && (
+                                    <>
+                                        <DateRangePickerPopover
+                                            startDate={rawChartData[dateRange[0]]?.date || ''}
+                                            endDate={rawChartData[dateRange[1]]?.date || ''}
+                                            minDate={rawChartData[0]?.date}
+                                            maxDate={rawChartData[rawChartData.length - 1]?.date}
+                                            onApply={applyDateRange}
+                                            onReset={() => {
+                                                setDateRange([0, rawChartData.length - 1]);
+                                                commitSettings({ dateRange: [0, rawChartData.length - 1] });
+                                            }}
+                                            disabled={isPending}
+                                        />
+                                        {onOpenOperations && (
+                                            <Button
+                                                variant="outline"
+                                                size="icon"
+                                                className="h-8 w-8 text-muted-foreground hover:text-white"
+                                                title="Lista Operazioni nel Periodo"
+                                                onClick={onOpenOperations}
+                                                disabled={isPending}
+                                            >
+                                                <ListChecks className="h-4 w-4" />
+                                            </Button>
+                                        )}
+                                    </>
+                                )}
                             </div>
                             <p className="text-sm text-muted-foreground">
                                 {(() => {

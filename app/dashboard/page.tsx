@@ -10,6 +10,7 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDashboardSummary, useDashboardHistory, usePortfolioSettings, useUpdatePortfolioSettings, usePortfolioDetails } from "@/hooks/useDashboard";
+import { PeriodOperationsModal } from "@/components/dashboard/PeriodOperationsModal";
 import { useQueryClient } from "@tanstack/react-query";
 
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#a855f7', '#ec4899', '#6366f1', '#14b8a6'];
@@ -35,6 +36,7 @@ export default function DashboardPage() {
 
     // Period Stats from Chart Slider
     const [periodStats, setPeriodStats] = useState<{ pnl: number; mwr: number; market_value: number; date: string; startDate?: string; isFullRange: boolean } | null>(null);
+    const [isOperationsModalOpen, setIsOperationsModalOpen] = useState(false);
 
     // --- Queries ---
 
@@ -540,10 +542,21 @@ export default function DashboardPage() {
                                     });
                                 }
                             }}
+                            onOpenOperations={() => setIsOperationsModalOpen(true)}
                         />
                     </div>
                 </div>
             </div>
+
+            {selectedPortfolioId && periodStats && (
+                <PeriodOperationsModal 
+                    isOpen={isOperationsModalOpen}
+                    onClose={() => setIsOperationsModalOpen(false)}
+                    portfolioId={selectedPortfolioId}
+                    startDate={periodStats.startDate || periodStats.date} // Fallback just in case
+                    endDate={periodStats.date}
+                />
+            )}
         </div >
     );
 }
