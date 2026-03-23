@@ -342,29 +342,36 @@ def register_dashboard_routes(app):
                     
                 return isin  # Fallback to ISIN
 
-            # Generazione Check-points (Granularità Dinamica)
-            days_diff = (end_date - start_date).days
-            
+            # Generazione Check-points (Granularità Dinamica ed Adattiva)
             check_points = []
+            
+            # Soglie per granularità variabile (rispetto a end_date)
+            cutoff_daily = end_date - timedelta(days=90)
+            cutoff_weekly = end_date - timedelta(days=365)
+            
             current_cp = start_date
             
-            if days_diff < 90:
-                step = timedelta(days=1)
-            elif days_diff < 365:
-                 step = timedelta(weeks=1)
-            else:
-                 step = timedelta(days=30) 
-
-            # Include start_date as first checkpoint (purchase date should be shown)
+            # Primo punto: data di inizio (acquisto)
             check_points.append(start_date)
-            current_cp += step
             
             while current_cp < end_date:
-                check_points.append(current_cp)
+                # Determina lo step in base alla posizione del checkpoint corrente rispetto alla fine
+                if current_cp >= cutoff_daily:
+                    step = timedelta(days=1)
+                elif current_cp >= cutoff_weekly:
+                    step = timedelta(weeks=1)
+                else:
+                    step = timedelta(days=30)
+                
                 current_cp += step
+                
+                # Evitiamo di aggiungere punti oltre end_date qui (verrà aggiunto dopo)
+                if current_cp < end_date:
+                    check_points.append(current_cp)
 
-            # Always include today
-            check_points.append(end_date)
+            # Includi sempre oggi/fine periodo come ultimo checkpoint
+            if not check_points or (end_date - check_points[-1]).days >= 1:
+                check_points.append(end_date)
 
             # --- OTTIMIZZAZIONE BATCH PER PREZZI ---
             # Recuperiamo la storia interpolata per TUTTI gli asset in una volta

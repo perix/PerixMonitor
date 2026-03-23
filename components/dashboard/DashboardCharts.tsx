@@ -10,6 +10,7 @@ import { CHART_STRINGS } from "@/constants/chartStrings";
 import { Button } from "@/components/ui/button";
 import { Calculator, RefreshCcw, AlertTriangle, ListChecks } from "lucide-react";
 import { DateRangePickerPopover } from "@/components/dashboard/DateRangePickerPopover";
+import { Input } from "@/components/ui/input";
 
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#a855f7', '#ec4899', '#6366f1', '#14b8a6'];
 
@@ -55,6 +56,10 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
     // View Mode
     const [viewMode, setViewMode] = useState<'mwr' | 'value'>('mwr');
     const [isPending, startTransition] = useTransition();
+
+    // Local state for raw string inputs to allow fluid typing 
+    const [startDateStr, setStartDateStr] = useState("");
+    const [endDateStr, setEndDateStr] = useState("");
 
     // Handler for viewing mode change
     const handleViewModeChange = (checked: boolean) => {
@@ -312,6 +317,16 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
             initializedRef.current = true;
         }
     }, [rawChartData.length, initialSettings]);
+
+    // Keep string inputs sync with dateRange
+    useEffect(() => {
+        if (rawChartData.length > 0) {
+            const startStr = rawChartData[dateRange[0]]?.date.split('T')[0] || "";
+            const endStr = rawChartData[dateRange[1]]?.date.split('T')[0] || "";
+            setStartDateStr(startStr);
+            setEndDateStr(endStr);
+        }
+    }, [dateRange, rawChartData]);
 
     // Initialize Y range when data loads or view mode changes
     useEffect(() => {
@@ -641,7 +656,29 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                     )}
                                 </CardTitle>
                                 {rawChartData.length > 0 && !hidePortfolio && (
-                                    <>
+                                    <div className="flex items-center gap-2 ml-4">
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Dal</span>
+                                            <Input
+                                                type="date"
+                                                value={startDateStr}
+                                                onChange={(e) => setStartDateStr(e.target.value)}
+                                                onBlur={() => applyDateRange(startDateStr, endDateStr)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter') applyDateRange(startDateStr, endDateStr); }}
+                                                className="h-7 w-32 bg-slate-900/50 border-white/20 text-xs px-2 focus:ring-0 focus:border-primary/50"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Al</span>
+                                            <Input
+                                                type="date"
+                                                value={endDateStr}
+                                                onChange={(e) => setEndDateStr(e.target.value)}
+                                                onBlur={() => applyDateRange(startDateStr, endDateStr)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter') applyDateRange(startDateStr, endDateStr); }}
+                                                className="h-7 w-32 bg-slate-900/50 border-white/20 text-xs px-2 focus:ring-0 focus:border-primary/50"
+                                            />
+                                        </div>
                                         <DateRangePickerPopover
                                             startDate={rawChartData[dateRange[0]]?.date || ''}
                                             endDate={rawChartData[dateRange[1]]?.date || ''}
@@ -666,7 +703,7 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                                 <ListChecks className="h-4 w-4" />
                                             </Button>
                                         )}
-                                    </>
+                                    </div>
                                 )}
                             </div>
                             <p className="text-sm text-muted-foreground">
