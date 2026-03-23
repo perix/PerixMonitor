@@ -251,9 +251,14 @@ export default function DashboardPage() {
                                     <div className="flex items-center gap-2">
                                         <div className="text-sm font-semibold text-muted-foreground">
                                             €{formatSwissMoney(displaySummary.total_value)}
+                                            {displaySummary.pl_percent !== undefined && (
+                                                <span className="ml-1 text-[10px] opacity-70">
+                                                    ({displaySummary.pl_percent >= 0 ? '+' : ''}{displaySummary.pl_percent}%)
+                                                </span>
+                                            )}
                                         </div>
                                         <p className="text-[10px] text-muted-foreground/70 uppercase">
-                                            (Asset selezionati)
+                                            ({selectedAssets.size === 1 ? 'Asset selezionato' : 'Asset selezionati'})
                                         </p>
                                     </div>
                                 </div>
@@ -330,9 +335,14 @@ export default function DashboardPage() {
                                     <div className="flex items-center gap-2">
                                         <div className={`text-sm font-semibold ${displaySummary.pl_value >= 0 ? 'text-green-500/80' : 'text-red-500/80'}`}>
                                             €{formatSwissMoney(displaySummary.pl_value)}
+                                            {displaySummary.pl_percent !== undefined && (
+                                                <span className="ml-1 text-[10px] opacity-70">
+                                                    ({displaySummary.pl_percent >= 0 ? '+' : ''}{displaySummary.pl_percent}%)
+                                                </span>
+                                            )}
                                         </div>
                                         <p className="text-[10px] text-muted-foreground/70 uppercase">
-                                            (Asset selezionati)
+                                            ({selectedAssets.size === 1 ? 'Asset selezionato' : 'Asset selezionati'})
                                         </p>
                                     </div>
                                 </div>

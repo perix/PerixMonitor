@@ -47,6 +47,7 @@ def calculate_portfolio_summary(portfolio_id, assets_filter=None, mwr_t1=30, mwr
         cash_flows = [] # Per XIRR: [(date, amount)]
         
         total_invested = 0
+        gross_invested = 0
         
         for t in transactions:
             isin = t['assets']['isin']
@@ -80,6 +81,7 @@ def calculate_portfolio_summary(portfolio_id, assets_filter=None, mwr_t1=30, mwr
 
                 cash_flows.append({"date": cf_date, "amount": -(qty * price)})
                 total_invested += (qty * price)
+                gross_invested += (qty * price)
             else:
                 holdings[isin]["qty"] -= qty
                 try:
@@ -185,11 +187,13 @@ def calculate_portfolio_summary(portfolio_id, assets_filter=None, mwr_t1=30, mwr
 
         # 6. Metriche Sommario
         pl_value = (current_total_value - total_invested) + total_dividends
-        pl_percent = (pl_value / total_invested * 100) if total_invested > 0 else 0
+        # Use gross_invested for robust percentage (ROI based on total capital committed)
+        pl_percent = (pl_value / gross_invested * 100) if gross_invested > 0 else 0
 
         return {
             "total_value": round(current_total_value, 2),
             "total_invested": round(total_invested, 2),
+            "gross_invested": round(gross_invested, 2),
             "pl_value": round(pl_value, 2),
             "pl_percent": round(pl_percent, 2),
             "xirr": mwr_value,

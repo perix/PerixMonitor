@@ -62,6 +62,7 @@ export interface MemoryData {
     open_date: string;
     close_date: string | null;
     pnl: number;
+    pnl_percent?: number;
     mwr: number;
     mwr_type: string;
     value: number;
@@ -286,11 +287,17 @@ export function MemoryTable({
             ),
             cell: ({ row }) => {
                 const amount = parseFloat(row.getValue("pnl"));
+                const pnlPercent = row.original.pnl_percent;
                 const formatted = formatSwissMoney(amount, 2);
 
                 return (
                     <div className={`text-right font-medium ${amount >= 0 ? "text-green-500" : "text-red-400"} `}>
                         {formatted}
+                        {pnlPercent !== undefined && (
+                            <span className="text-[10px] ml-1 opacity-80">
+                                ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
+                            </span>
+                        )}
                     </div>
                 );
             },

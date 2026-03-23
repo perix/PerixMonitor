@@ -2,6 +2,19 @@
 
 Archivio storico delle release e delle funzionalità implementate in PerixMonitor.
 
+## Release 2.9 - "Performance Metrics & UI Consistency" (23/03/2026)
+
+- **Calcolo P&L % (ROI Lordo)**:
+    - Revisione completa della logica di calcolo del Profitto/Perdita percentuale su tutto il sistema.
+    - Ora utilizza il **Gross Invested** (capitale lordo investito) come base per il calcolo, evitando distorsioni causate da vendite parziali.
+    - Metrica disponibile in Dashboard, Portfolio Detail e Note & Storico.
+- **Unificazione Formato Date**:
+    - Tutte le date visualizzate nel dettaglio asset e nei modali (Prezzi, Movimenti, Variazioni) sono ora nel formato `GG/MM/AAAA`.
+    - Nuova utility `formatDate` in `lib/utils.ts` per garantire coerenza futura.
+- **Miglioramenti UI**:
+    - Visualizzazione del P&L % tra parentesi accanto al valore assoluto nella tabella "Note & Storico".
+    - Card riepilogative della Dashboard aggiornate con il rendimento percentuale dinamico.
+
 ## Release 2.8 - "Portfolio Variation & Price Integrity" (23/03/2026)
 
 - **Monitoraggio Variazioni Portfolio**:

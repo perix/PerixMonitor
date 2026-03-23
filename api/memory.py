@@ -112,7 +112,8 @@ def get_memory_data():
                     'last_trend_variation': asset_info.get('last_trend_variation'),
                     'first_buy_date': None,
                     'last_sell_date': None,
-                    'total_cost': 0.0,
+                    'total_cost': 0.0, # Net
+                    'gross_invested': 0.0, # Total Purchases
                     'total_sales': 0.0,
                     'quantity': 0.0,
                     'dividends': 0.0, # Net (includes expenses)
@@ -140,6 +141,7 @@ def get_memory_data():
                     details['first_buy_date'] = date_str
                 
                 details['total_cost'] += (qty * price)
+                details['gross_invested'] += (qty * price)
                 details['quantity'] += qty
                 # BUY = cash outflow (negative for XIRR)
                 details['cashflows'].append({'date': tx_date, 'amount': -(qty * price)})
@@ -199,6 +201,10 @@ def get_memory_data():
             # Dividends here must be NET (i.e. include expenses)
             pnl = (current_value + stats['total_sales'] + stats['dividends']) - stats['total_cost']
             
+            # P&L Percentage (on Gross Invested)
+            gross = stats['gross_invested']
+            pnl_percent = (pnl / gross * 100) if gross > 0 else 0
+            
             # MWR/XIRR Calculation using tiered logic
             mwr_value = 0.0
             mwr_type = "NONE"
@@ -247,6 +253,7 @@ def get_memory_data():
                 "open_date": open_date,
                 "close_date": close_date,
                 "pnl": round(pnl, 2),
+                "pnl_percent": round(pnl_percent, 2),
                 "mwr": mwr_value,
                 "mwr_type": mwr_type,
                 "value": round(current_value, 2),

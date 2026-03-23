@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { Loader2 } from "lucide-react";
 import { useAssetMovements, Movement } from "@/hooks/useAssetMovements";
-import { formatSwissMoney, formatSwissNumber } from "@/lib/utils";
+import { formatSwissMoney, formatSwissNumber, formatDate } from "@/lib/utils";
 
 interface AssetMovementsModalProps {
     portfolioId: string;
@@ -45,21 +45,6 @@ function getOperationStyle(operation: string): string {
     }
 }
 
-/**
- * Formats a date string (YYYY-MM-DD) to Italian locale format (DD/MM/YYYY).
- */
-function formatDate(dateStr: string | null | undefined): string {
-    if (!dateStr) return '-';
-    try {
-        const parts = dateStr.split('-');
-        if (parts.length === 3) {
-            return `${parts[2]}/${parts[1]}/${parts[0]}`;
-        }
-        return dateStr;
-    } catch {
-        return dateStr;
-    }
-}
 
 /**
  * Returns the cash flow value for display.

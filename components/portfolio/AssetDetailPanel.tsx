@@ -6,7 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { TrendingUp, TrendingDown, Euro, Database, Activity, ArrowUpRight, ArrowDownRight, Loader2, List, CloudDownload } from "lucide-react";
 import { AssetMovementsModal } from "@/components/portfolio/AssetMovementsModal";
 import { AssetPricesModal } from "@/components/portfolio/AssetPricesModal";
-import { formatSwissMoney, formatSwissNumber } from "@/lib/utils";
+import { formatSwissMoney, formatSwissNumber, formatDate } from "@/lib/utils";
 import { DashboardCharts } from "@/components/dashboard/DashboardCharts";
 import { usePortfolio } from "@/context/PortfolioContext";
 import axios from "axios";
@@ -113,10 +113,20 @@ function MetadataField({ label, value }: { label: string; value: any }) {
     }
 
     // Handle simple values
+    // Check if the label suggests a date
+    const labelLower = label.toLowerCase();
+    const isDateLabel = labelLower.includes('date') || labelLower.includes('scadenza') || labelLower.includes('emissione') || labelLower.includes('stacco');
+
+    let renderedValue = String(value);
+    // If it's a date label and looks like a YYYY-MM-DD string, format it
+    if (isDateLabel && typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+        renderedValue = formatDate(value);
+    }
+
     return (
         <div className="py-2 border-b border-white/5">
             <span className="text-xs text-muted-foreground block">{label}</span>
-            <span className="text-sm text-foreground">{String(value)}</span>
+            <span className="text-sm text-foreground">{renderedValue}</span>
         </div>
     );
 }
@@ -390,7 +400,7 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                     </p>
                                     {asset.price_date && (
                                         <p className="text-xs text-muted-foreground">
-                                            al {asset.price_date}
+                                            al {formatDate(asset.price_date)}
                                         </p>
                                     )}
                                 </>
@@ -562,10 +572,10 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                     <button onClick={() => setExternalInfo(null)} className="text-xs text-primary hover:text-white underline cursor-pointer">Chiudi</button>
                                 </div>
                                 <div className="bg-black/20 rounded-lg p-3 border border-white/5 space-y-2">
-                                    <div className="text-sm text-foreground"><b>Scadenza:</b> {externalInfo.expiry_date || 'N.D.'}</div>
+                                    <div className="text-sm text-foreground"><b>Scadenza:</b> {formatDate(externalInfo.expiry_date)}</div>
                                     <div className="text-sm text-foreground"><b>Stato:</b> {externalInfo.overall_status || 'N.D.'}</div>
                                     <div className="text-sm text-foreground"><b>Cedola:</b> {typeof externalInfo.coupon_pct === 'number' ? `${externalInfo.coupon_pct.toFixed(2)}%` : (externalInfo.coupon_pct || 'N.D.')} ({externalInfo.coupon_freq || '-'})</div>
-                                    <div className="text-sm text-foreground"><b>Prossimo Stacco:</b> {externalInfo.next_coupon_date || 'N.D.'}</div>
+                                    <div className="text-sm text-foreground"><b>Prossimo Stacco:</b> {formatDate(externalInfo.next_coupon_date)}</div>
                                     <div className="text-sm text-foreground"><b>Barriera:</b> {externalInfo.barrier_level || 'N.D.'} ({externalInfo.barrier_type || '-'})</div>
                                     <div className="text-sm text-foreground"><b>Trigger Autocall:</b> {typeof externalInfo.trigger_level === 'number' ? externalInfo.trigger_level.toFixed(2) : (externalInfo.trigger_level || 'N.D.')}</div>
                                     <div className="text-sm text-foreground"><b>Memoria:</b> {externalInfo.has_memory ? 'Sì' : 'No'} | <b>Autocall:</b> {externalInfo.is_autocallable ? 'Sì' : 'No'}</div>

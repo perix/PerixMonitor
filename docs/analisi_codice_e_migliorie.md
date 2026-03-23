@@ -79,7 +79,22 @@ In `validate_transactions_chronology`, una vendita che porterebbe quantità nega
 - Approccio utile lato UX (mostra tutte le anomalie),
 - ma va uniformato con frontend, sync e test per evitare discrepanze di comportamento.
 
-**Priorità**: Media
+**Priorpriority**: Media
+
+---
+
+### 5) Incoerenza calcolo P&L % (RISOLTO - 23/03/2026)
+**Descrizione**
+Il calcolo del P&L % utilizzava il capitale netto investito (Net Invested) invece del lordo (Gross Invested). Questo portava a rendimenti percentuali artificialmente gonfiati dopo vendite parziali.
+
+**Soluzione**
+La logica è stata uniformata in tutte le API per usare la somma degli acquisti storici (`gross_invested`) come denominatore.
+
+**Impatto**
+- Metriche ROI corrette e stabili.
+- Allineamento tra Dashboard e Portfolio.
+
+**Priorità**: Alta
 
 ---
 

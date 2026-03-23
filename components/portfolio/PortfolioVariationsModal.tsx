@@ -13,7 +13,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { formatSwissMoney, formatSwissNumber } from "@/lib/utils";
+import { formatSwissMoney, formatSwissNumber, formatDate } from "@/lib/utils";
 import React, { useMemo, useState } from "react";
 
 interface Asset {
@@ -44,17 +44,8 @@ export function PortfolioVariationsModal({ isOpen, onClose, assets, portfolioNam
         const distinctDates = Array.from(new Set(assets.map(a => a.price_date).filter(Boolean))) as string[];
         distinctDates.sort().reverse(); // [latest, second latest, ...]
 
-        const formatDateStr = (dateStr: string) => {
-            if (!dateStr) return '';
-            const parts = dateStr.includes('T') ? dateStr.split('T')[0].split('-') : dateStr.split('-');
-            if (parts.length === 3) {
-                return `${parts[2]}/${parts[1]}/${parts[0]}`;
-            }
-            return dateStr;
-        };
-
-        const latest = distinctDates[0] ? formatDateStr(distinctDates[0]) : null;
-        let prev = distinctDates[1] ? formatDateStr(distinctDates[1]) : null;
+        const latest = distinctDates[0] ? formatDate(distinctDates[0]) : null;
+        let prev = distinctDates[1] ? formatDate(distinctDates[1]) : null;
 
         // If we only have one date, estimate the previous global date from last_trend_days
         if (!prev && distinctDates[0]) {
@@ -65,7 +56,7 @@ export function PortfolioVariationsModal({ isOpen, onClose, assets, portfolioNam
                 if (avgDays > 0) {
                     const prevDateObj = new Date(baseDate);
                     prevDateObj.setDate(baseDate.getDate() - avgDays);
-                    prev = prevDateObj.toLocaleDateString('it-IT');
+                    prev = formatDate(prevDateObj);
                 }
             }
         }

@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/table";
 import { Loader2, Trash2, Save, X, AlertTriangle } from "lucide-react";
 import { useAssetPrices, AssetPrice } from "@/hooks/useAssetPrices";
-import { formatSwissMoney } from "@/lib/utils";
+import { formatSwissMoney, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { usePortfolio } from "@/context/PortfolioContext";
 
@@ -279,7 +279,7 @@ export function AssetPricesModal({
                                                 {/* Date Cell */}
                                                 <div className="px-3 py-2 w-[150px] border-r border-slate-700 h-10 flex items-center">
                                                     <span className="text-sm font-mono text-slate-300 truncate w-full">
-                                                        {p.date}
+                                                        {formatDate(p.date)}
                                                     </span>
                                                 </div>
 

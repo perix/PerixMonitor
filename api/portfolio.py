@@ -237,8 +237,8 @@ def register_portfolio_routes(app):
                     # P&L including dividends: (Current Value - Net Invested) + Dividends
                     pnl_value = (current_value - invested) + total_div
                     
-                    # Usa gross_invested come base per la % del P&L come richiesto dall'utente
-                    pnl_base = gross_invested if gross_invested > 0 else invested
+                    # Usa gross_invested come base per la % del P&L
+                    pnl_base = gross_invested
                     pnl_percent = (pnl_value / pnl_base * 100) if pnl_base > 0 else 0
                     
                     asset_info['pnl_value'] = round(pnl_value, 2)

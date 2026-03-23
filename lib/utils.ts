@@ -67,6 +67,21 @@ export function parseISODateLocal(dateStr: string | number | Date | undefined | 
 }
 
 /**
+ * Format a date string or object into DD/MM/YYYY format.
+ * 
+ * @param dateStr - Date string, number, or Date object
+ * @returns Formatted string (DD/MM/YYYY) or '-' if invalid
+ */
+export function formatDate(dateStr: string | number | Date | undefined | null): string {
+  const date = parseISODateLocal(dateStr);
+  if (!date) return '-';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+/**
  * Ensures a color has sufficient lightness to be visible on a dark background.
  * If the color is too dark, it returns a lighter version of the same hue.
  * 
