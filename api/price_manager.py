@@ -89,7 +89,7 @@ def get_price_history(isin, days=None, portfolio_id=None):
 
         if trans_data:
             for t in trans_data:
-                # Add transaction prices as 'Transaction' source
+                # Add transaction prices as 'Transaction (BUY/SELL)' source
                 d_str = t['date']
                 if 'T' in d_str: d_str = d_str.split('T')[0]
                 
@@ -98,6 +98,37 @@ def get_price_history(isin, days=None, portfolio_id=None):
                     "date": d_str,
                     "source": f"Transaction ({t['type']})"
                 })
+
+        # 2b. Se portfolio_id fornito, recupera anche transazioni da ALTRI portafogli
+        #     marcate come "Transaction" generico (sola lettura, non cancellabili)
+        if portfolio_id:
+            other_trans_params = {
+                'select': 'price_eur,date,type,assets!inner(isin)',
+                'assets.isin': f'eq.{isin}',
+                'price_eur': 'neq.0',
+                'portfolio_id': f'neq.{portfolio_id}',
+                'order': 'date.asc'
+            }
+            if cutoff_date:
+                other_trans_params['date'] = f'gte.{cutoff_date}'
+
+            res_other_trans = execute_request(
+                'transactions',
+                'GET',
+                params=other_trans_params
+            )
+            other_trans_data = res_other_trans.json() if res_other_trans and res_other_trans.status_code == 200 else []
+
+            if other_trans_data:
+                for t in other_trans_data:
+                    d_str = t['date']
+                    if 'T' in d_str: d_str = d_str.split('T')[0]
+                    
+                    prices_list.append({
+                        "price": float(t['price_eur']),
+                        "date": d_str,
+                        "source": "Transaction"
+                    })
         
         if not prices_list:
             return []
@@ -109,15 +140,23 @@ def get_price_history(isin, days=None, portfolio_id=None):
         df = pd.DataFrame(prices_list)
         df['date'] = pd.to_datetime(df['date'], format='mixed', dayfirst=False)
         
-        # Deduplicazione logica: se abbiamo la stessa data e lo stesso prezzo, 
+        # Deduplicazione logica: se abbiamo la stessa data e lo stesso prezzo,
         # preferiamo la fonte più specifica "Transaction (BUY)" rispetto a "Transaction"
-        # o preserviamo "Manual Upload" se differente.
+        # e "Transaction" rispetto a "Manual Upload".
         
-        # Sort by date, then source length descending (so 'Transaction (BUY)' > 'Transaction')
-        df['source_len'] = df['source'].str.len()
-        df = df.sort_values(by=['date', 'source_len'], ascending=[True, False])
+        # Priorità esplicita: Transaction (BUY/SELL) > Transaction generico > altre fonti
+        def source_priority(s):
+            s_lower = s.lower()
+            if s_lower.startswith('transaction ('):
+                return 3  # Massima priorità: transazione del portafoglio corrente
+            if s_lower == 'transaction':
+                return 2  # Transazione da altro portafoglio
+            return 1      # Manual Upload, Yahoo Finance, etc.
         
-        # Drop duplicates where date, price are identical (keep the first which is longest source name)
+        df['source_prio'] = df['source'].apply(source_priority)
+        df = df.sort_values(by=['date', 'source_prio'], ascending=[True, False])
+        
+        # Drop duplicates where date, price are identical (keep the first which has highest priority)
         df = df.drop_duplicates(subset=['date', 'price'], keep='first')
         
         # Final sort by date descending (per il frontend)
