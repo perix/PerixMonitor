@@ -39,7 +39,7 @@ export function formatSwissNumber(value: number | undefined | null, decimals: nu
  * @returns Date object representing the date in local timezone, or null if invalid
  */
 export function parseISODateLocal(dateStr: string | number | Date | undefined | null): Date | null {
-  if (!dateStr) return null;
+  if (!dateStr || dateStr === 'N.D.' || dateStr === 'null') return null;
 
   // If it's already a Date, return it
   if (dateStr instanceof Date) return dateStr;
@@ -47,24 +47,45 @@ export function parseISODateLocal(dateStr: string | number | Date | undefined | 
   // If it's a number (timestamp), convert directly
   if (typeof dateStr === 'number') return new Date(dateStr);
 
-  // Parse ISO string YYYY-MM-DD
-  const str = String(dateStr);
+  // Parse string
+  const str = String(dateStr).trim();
 
-  // Extract just the date part (in case it has time component)
+  // Handle DD/MM/YYYY (Standard applicativo)
+  if (str.includes('/')) {
+    const parts = str.split('/');
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const year = parseInt(parts[2], 10);
+      if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+        return new Date(year, month, day);
+      }
+    }
+  }
+
+  // Handle ISO YYYY-MM-DD
   const datePart = str.split('T')[0];
   const parts = datePart.split('-');
 
-  if (parts.length !== 3) return null;
+  if (parts.length === 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1; // JS months are 0-indexed
+    const day = parseInt(parts[2], 10);
 
-  const year = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10) - 1; // JS months are 0-indexed
-  const day = parseInt(parts[2], 10);
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+        // Simple heuristic: if parts[0] is year (>1000)
+        if (year > 1000) {
+            return new Date(year, month, day);
+        } else {
+            // Probably DD-MM-YYYY
+            return new Date(day, month, year);
+        }
+    }
+  }
 
-  if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
-
-  // Create date in LOCAL timezone (not UTC)
-  return new Date(year, month, day);
+  return null;
 }
+
 
 /**
  * Format a date string or object into DD/MM/YYYY format.
