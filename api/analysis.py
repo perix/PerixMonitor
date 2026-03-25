@@ -60,7 +60,7 @@ def register_analysis_routes(app):
             # Helper to get price
             def fetch_price(isin):
                 if isin in price_cache: return price_cache[isin]
-                p_data = get_latest_price(isin)
+                p_data = get_latest_price(isin, portfolio_id=portfolio_id)
                 price = float(p_data['price']) if p_data else 0
                 price_cache[isin] = price
                 return price

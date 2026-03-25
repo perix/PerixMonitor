@@ -191,7 +191,7 @@ def register_portfolio_routes(app):
             
             # [PERF] Batch fetch latest prices for ALL active assets (2 HTTP calls instead of 2N)
             active_isins = [isin for isin, d in holdings.items() if d['qty'] > 0.0001]
-            latest_prices_map = get_latest_prices_batch(active_isins)
+            latest_prices_map = get_latest_prices_batch(active_isins, portfolio_id=portfolio_id)
             
             for isin, data in holdings.items():
                 if data['qty'] > 0.0001:  # Small threshold for floating point

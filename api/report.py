@@ -60,7 +60,7 @@ def generate_report():
         
         # O recuperiamo i prezzi batch
         t2_pre_batch = datetime.now()
-        global_price_map = get_interpolated_price_history_batch(all_isins, min_date=first_t_date, max_date=end_date)
+        global_price_map = get_interpolated_price_history_batch(all_isins, min_date=first_t_date, max_date=end_date, portfolio_id=portfolio_id)
         logger.info(f"[REPORT] Batch Price Fetch completato in {(datetime.now() - t2_pre_batch).total_seconds():.2f}s")
 
         # Variabili di stato globale

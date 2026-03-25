@@ -121,7 +121,7 @@ def calculate_portfolio_summary(portfolio_id, assets_filter=None, mwr_t1=30, mwr
         # 3. Recupera Prezzi Correnti (OTTIMIZZATO: BATCH)
         active_holdings = {k: v for k, v in holdings.items() if abs(v['qty']) > 0.0001}
         active_isins = list(active_holdings.keys())
-        latest_prices_map = get_latest_prices_batch(active_isins)
+        latest_prices_map = get_latest_prices_batch(active_isins, portfolio_id=portfolio_id)
         
         current_total_value = 0
         allocation_data = []
@@ -377,7 +377,7 @@ def register_dashboard_routes(app):
             # Recuperiamo la storia interpolata per TUTTI gli asset in una volta
             t2_pre_batch = datetime.now()
             
-            global_price_map = get_interpolated_price_history_batch(all_isins, min_date=start_date, max_date=end_date)
+            global_price_map = get_interpolated_price_history_batch(all_isins, min_date=start_date, max_date=end_date, portfolio_id=portfolio_id)
             
             logger.info(f"[DASHBOARD_HISTORY] Batch Price Fetch completed in {(datetime.now() - t2_pre_batch).total_seconds():.2f}s")
             

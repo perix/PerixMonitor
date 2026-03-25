@@ -49,7 +49,7 @@ def get_asset_prices_route():
 
         # Fetch history
         days = request.args.get('days', type=int)
-        history = get_price_history(isin, days=days)
+        history = get_price_history(isin, days=days, portfolio_id=portfolio_id)
         
         # Sort history by date descending
         history.sort(key=lambda x: x.get('date', ''), reverse=True)

@@ -35,13 +35,14 @@ def save_price_snapshot(isin, price, date=None, source="Manual Upload"):
         logger.error(f"SALVATAGGIO PREZZO FALLITO: {isin} -> {e}")
         return False
 
-def get_price_history(isin, days=None):
+def get_price_history(isin, days=None, portfolio_id=None):
     """
     Recupera la storia prezzi per un ISIN, unendo:
     1. 'asset_prices' (Dati Manuali/Mercato)
     2. 'transactions' (Prezzi impliciti da Acquisti/Vendite)
     
     Parametro 'days': se fornito, limita il recupero agli ultimi N giorni.
+    Parametro 'portfolio_id': se fornito, limita le transazioni al portafoglio specificato.
     
     Restituisce lista di dict: [{'date': 'YYYY-MM-DD', 'price': float, 'source': str}, ...]
     ordinata per data crescente.
@@ -74,6 +75,8 @@ def get_price_history(isin, days=None):
             'price_eur': 'neq.0',
             'order': 'date.asc'
         }
+        if portfolio_id:
+            trans_params['portfolio_id'] = f'eq.{portfolio_id}'
         if cutoff_date:
             trans_params['date'] = f'gte.{cutoff_date}'
 
@@ -178,13 +181,13 @@ def update_asset_trend(isin):
     except Exception as e:
         logger.error(f"Errore ricalcolo trend per {isin}: {e}")
 
-def get_latest_price(isin):
+def get_latest_price(isin, portfolio_id=None):
     """
     Recupera il prezzo più recente per un ISIN.
     Usa la storia unificata (Prezzi + Transazioni).
     """
     try:
-        history = get_price_history(isin)
+        history = get_price_history(isin, portfolio_id=portfolio_id)
         if history:
             return history[0]  # history è ordinata per data DESC → [0] = più recente
         return None
@@ -192,7 +195,7 @@ def get_latest_price(isin):
         logger.error(f"Errore recupero ultimo prezzo per {isin}: {e}")
         return None
 
-def get_latest_prices_batch(isins):
+def get_latest_prices_batch(isins, portfolio_id=None):
     """
     OTTIMIZZAZIONE: Recupera l'ultimo prezzo per una lista di ISIN in un'unica (doppia) chiamata.
     Restituisce un dizionario {isin: {'price': float, 'date': str, 'source': str}}
@@ -219,14 +222,18 @@ def get_latest_prices_batch(isins):
         
         # Fetch Transaction Prices
         # Note: filtering inner join with dot notation
-        res_trans = execute_request(
-             'transactions',
-             'GET',
-             params={
+        trans_params = {
                  'select': 'price_eur,date,type,assets!inner(isin)',
                  'assets.isin': in_filter,
                  'price_eur': 'neq.0'
              }
+        if portfolio_id:
+            trans_params['portfolio_id'] = f'eq.{portfolio_id}'
+            
+        res_trans = execute_request(
+             'transactions',
+             'GET',
+             params=trans_params
         )
 
         all_data = []
@@ -266,12 +273,12 @@ def get_latest_prices_batch(isins):
         logger.error(f"Errore recupero prezzi batch: {e}")
         return {}
 
-def get_price_before_date(isin, target_date_str):
+def get_price_before_date(isin, target_date_str, portfolio_id=None):
     """
     Recupera il prezzo più recente per un ISIN strettamente PRIMA della target_date.
     """
     try:
-        history = get_price_history(isin)
+        history = get_price_history(isin, portfolio_id=portfolio_id)
         if not history:
             return None
             
@@ -287,7 +294,7 @@ def get_price_before_date(isin, target_date_str):
         logger.error(f"Errore recupero prezzo prima di {target_date_str} per {isin}: {e}")
         return None
 
-def calculate_projected_trend(isin, candidate_prices):
+def calculate_projected_trend(isin, candidate_prices, portfolio_id=None):
     """
     Calcola il 'Trend Ipotetico' confrontando le Candidate Prices con la storia DB 
     per rilevare aggiornamenti e calcolare la Variazione.
@@ -297,7 +304,7 @@ def calculate_projected_trend(isin, candidate_prices):
             return None
 
         # 1. Recupera lo storico. get_price_history ritorna ord. descrescente per data.
-        history = get_price_history(isin) or []
+        history = get_price_history(isin, portfolio_id=portfolio_id) or []
         # Per sicurezza, re-ordiniamo desc:
         history.sort(key=lambda x: datetime.strptime(x['date'], "%Y-%m-%d"), reverse=True)
         
@@ -359,11 +366,11 @@ def calculate_projected_trend(isin, candidate_prices):
         logger.error(f"Errore calcolo trend per {isin}: {e}")
         return None
 
-def get_interpolated_price_history(isin, min_date=None, max_date=None):
+def get_interpolated_price_history(isin, min_date=None, max_date=None, portfolio_id=None):
     """
     Recupera storia prezzi e interpola i giorni mancanti usando LOCF.
     """
-    raw_history = get_price_history(isin)
+    raw_history = get_price_history(isin, portfolio_id=portfolio_id)
     
     if not raw_history:
         return {}
@@ -398,7 +405,7 @@ def get_interpolated_price_history(isin, min_date=None, max_date=None):
         logger.error(f"Errore interpolazione per {isin}: {e}")
         return {}
 
-def get_interpolated_price_history_batch(isins, min_date=None, max_date=None):
+def get_interpolated_price_history_batch(isins, min_date=None, max_date=None, portfolio_id=None):
     """
     OTTIMIZZAZIONE: Versione batch di get_interpolated_price_history.
     """
@@ -418,6 +425,9 @@ def get_interpolated_price_history_batch(isins, min_date=None, max_date=None):
         prices_params = {'select': 'isin,price,date', 'isin': in_filter}
         trans_params = {'select': 'price_eur,date,assets!inner(isin)', 'assets.isin': in_filter, 'price_eur': 'neq.0'}
         
+        if portfolio_id:
+            trans_params['portfolio_id'] = f'eq.{portfolio_id}'
+            
         if min_date:
             date_str = min_date.strftime('%Y-%m-%d') if hasattr(min_date, 'strftime') else str(min_date)
             prices_params['date'] = f'gte.{date_str}'
