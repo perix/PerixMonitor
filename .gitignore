@@ -53,17 +53,16 @@ perix_monitor.log
 env_*.txt
 
 # Secrets
-0. Requirements/API KEYS x Vercel.txt
+.0 Requirements/API KEYS x Vercel.txt
 
 # Excel Data
-/0. Dati Iniziali/*
-!/0. Dati Iniziali/Test/
-0. Requirements/**/*.xlsx
-0. Requirements/**/*.xlsm
-0. Requirements/**/*.xls
+/.0 Dati Iniziali/
+.0 Requirements/**/*.xlsx
+.0 Requirements/**/*.xlsm
+.0 Requirements/**/*.xls
 
 # Backup DB
-0. Backup DB/*.json 
+.0 Backup DB/*.json 
 
-0. Requirements/Prompt Certficati.txt
+.0 Requirements/Prompt Certficati.txt
 .agents/skills/test_API_asset.py
