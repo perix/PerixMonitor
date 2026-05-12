@@ -69,3 +69,4 @@ env_*.txt
 
 # Supabase
 supabase/.temp/
+.claude/

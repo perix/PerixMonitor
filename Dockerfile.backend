@@ -1,0 +1,18 @@
+# Backend Python
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy app
+COPY api/ ./api/
+COPY .env.local ./.env.local
+
+# Expose port
+EXPOSE 5328
+
+# Run the app
+CMD ["python", "api/index.py"]

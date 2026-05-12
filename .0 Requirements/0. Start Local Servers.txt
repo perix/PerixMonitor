@@ -18,3 +18,22 @@ npx vitest
 - Esecuzione Singola: Ottimo per CI/CD o verifiche rapide.
 npx vitest run
 
+
+=======================
+NUOVO AMBIENTE PC
+
+Terminal 1: Database & Infra
+
+npx supabase start
+
+
+Terminal 2: Backend Python (porta 5328)
+
+.\.venv\Scripts\activate  # Windows
+python api/index.py
+Aspetta "Backend API Initialized"
+
+Terminal 3: Frontend Next.js (porta 3500)
+
+npm run dev
+Poi accedi a http://localhost:3500

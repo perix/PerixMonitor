@@ -1,0 +1,64 @@
+services:
+  # PostgreSQL (for Supabase)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: perix_monitor
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API (Python/Flask)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "5328:5328"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/perix_monitor
+      SUPABASE_URL: http://postgres:5432
+      SUPABASE_KEY: test-key
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./api:/app/api
+      - ./logs:/app/logs
+    command: python api/index.py
+
+  # Frontend (Next.js)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3500:3500"
+    environment:
+      PORT: 3500
+      NEXT_PUBLIC_SUPABASE_URL: http://localhost:5432
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: test-key
+    depends_on:
+      - backend
+    volumes:
+      - ./app:/app/app
+      - ./components:/app/components
+      - ./hooks:/app/hooks
+      - ./lib:/app/lib
+      - ./public:/app/public
+      - ./utils:/app/utils
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: perix_network
