@@ -16,7 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Loader2, FileText, Download } from "lucide-react";
 import { usePortfolioMovements } from "@/hooks/usePortfolioMovements";
-import { formatSwissMoney, formatSwissNumber, parseISODateLocal } from "@/lib/utils";
+import { formatSwissMoney, formatSwissNumber, formatDate } from "@/lib/utils";
 import React from "react";
 import * as XLSX from "xlsx";
 
@@ -62,12 +62,7 @@ export function PeriodOperationsModal({ isOpen, onClose, portfolioId, portfolioN
         }
     };
 
-    const formatDisplayDate = (dateStr: string) => {
-        const d = parseISODateLocal(dateStr);
-        return d ? d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }) : dateStr;
-    };
-
-    const periodStr = `${formatDisplayDate(startDate)} - ${formatDisplayDate(endDate)}`;
+    const periodStr = `${formatDate(startDate)} - ${formatDate(endDate)}`;
 
     // Dynamic Column Width Calculation
     const columnWidths = React.useMemo(() => {
@@ -160,7 +155,7 @@ export function PeriodOperationsModal({ isOpen, onClose, portfolioId, portfolioN
                                 if (!movements || movements.length === 0) return;
                                 
                                 const dataToExport = movements.map(m => ({
-                                    "Data": formatDisplayDate(m.date),
+                                    "Data": formatDate(m.date),
                                     "ISIN": m.isin || '',
                                     "Asset": m.description || 'Sconosciuto',
                                     "Tipologia": m.asset_class || '',
@@ -232,7 +227,7 @@ export function PeriodOperationsModal({ isOpen, onClose, portfolioId, portfolioN
                                                 className="border-b border-slate-700 text-slate-200 hover:bg-sky-200 hover:text-slate-900 group"
                                             >
                                                 <TableCell className="py-1 px-2 border-r border-slate-700 group-hover:border-slate-400 font-mono text-[13px]" style={{ width: columnWidths.date }}>
-                                                    {formatDisplayDate(m.date)}
+                                                    {formatDate(m.date)}
                                                 </TableCell>
                                                 <TableCell className="py-1 px-2 border-r border-slate-700 group-hover:border-slate-400 font-medium text-[11px] text-slate-200 group-hover:text-slate-900" style={{ width: columnWidths.isin }}>
                                                     {m.isin}

@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { ReportData } from "@/hooks/useReport";
+import { formatDate } from "@/lib/utils";
 
 export interface ReportCosts {
     advisory: number;
@@ -21,7 +22,6 @@ export const generatePdfReport = (
     // Helper functions
     const formatCurrency = (val: number) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(val || 0);
     const formatPct = (val: number) => new Intl.NumberFormat('it-IT', { style: 'percent', minimumFractionDigits: 2 }).format((val || 0) / 100);
-    const formatDate = (d: string) => { const parts = d.split('-'); return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : d; };
 
     // Titolo
     doc.setFontSize(22);

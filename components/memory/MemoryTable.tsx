@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
-import { formatSwissMoney } from "@/lib/utils";
+import { formatSwissMoney, formatDate } from "@/lib/utils";
 import axios from 'axios';
 import {
     ColumnDef,
@@ -382,7 +382,7 @@ export function MemoryTable({
                     Data Apertura <ArrowUpDown className="ml-2 h-4 w-4" />
                 </Button>
             ),
-            cell: ({ row }) => <div>{row.getValue<string>("open_date")?.split("T")[0]}</div>,
+            cell: ({ row }) => <div>{formatDate(row.getValue<string>("open_date"))}</div>,
             size: 110,
         },
         {
@@ -394,7 +394,7 @@ export function MemoryTable({
             ),
             cell: ({ row }) => {
                 const val = row.getValue<string | null>("close_date");
-                return val ? <div>{val.split("T")[0]}</div> : null;
+                return val ? <div>{formatDate(val)}</div> : null;
             },
             size: 110,
         },

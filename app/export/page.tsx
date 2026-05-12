@@ -8,9 +8,10 @@ import { usePortfolio } from "@/context/PortfolioContext";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { useReport, ReportData } from "@/hooks/useReport";
 import { generatePdfReport } from "@/lib/pdfGenerator";
+import { DatePicker } from "@/components/ui/date-picker";
+import { formatDate } from "@/lib/utils";
 
 export default function ExportPage() {
     const { selectedPortfolioId, portfolios } = usePortfolio();
@@ -205,27 +206,25 @@ export default function ExportPage() {
                             <div className="grid grid-cols-2 gap-4 mt-2">
                                 <div>
                                     <Label className="text-xs text-slate-500">Data Inizio</Label>
-                                    <Input
-                                        type="date"
+                                    <DatePicker
                                         value={startDate}
-                                        onChange={e => setStartDate(e.target.value)}
-                                        className="bg-slate-950/50 border-slate-800 mt-1"
+                                        onChange={(iso) => setStartDate(iso ?? '')}
+                                        inputClassName="bg-slate-950/50 border-slate-800 mt-1"
                                     />
                                 </div>
                                 <div>
                                     <Label className="text-xs text-slate-500">Data Fine</Label>
-                                    <Input
-                                        type="date"
+                                    <DatePicker
                                         value={endDate}
-                                        onChange={e => setEndDate(e.target.value)}
-                                        className="bg-slate-950/50 border-slate-800 mt-1"
+                                        onChange={(iso) => setEndDate(iso ?? '')}
+                                        inputClassName="bg-slate-950/50 border-slate-800 mt-1"
                                     />
                                 </div>
                             </div>
                         )}
                         {rangeType !== 'CUSTOM' && (
                             <div className="text-xs text-slate-500 italic mt-1 pl-1">
-                                {startDate ? startDate.split('-').reverse().join('/') : ''} a {endDate ? endDate.split('-').reverse().join('/') : ''}
+                                {formatDate(startDate)} a {formatDate(endDate)}
                             </div>
                         )}
                     </div>

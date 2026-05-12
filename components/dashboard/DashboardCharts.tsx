@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResponsiveContainer, Tooltip, Legend, LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine } from 'recharts';
-import { formatSwissMoney, formatSwissNumber, parseISODateLocal, getAccessibleColor } from "@/lib/utils";
+import { formatSwissMoney, formatSwissNumber, parseISODateLocal, getAccessibleColor, formatDate } from "@/lib/utils";
 
 import { CHART_STRINGS } from "@/constants/chartStrings";
 
@@ -10,7 +10,7 @@ import { CHART_STRINGS } from "@/constants/chartStrings";
 import { Button } from "@/components/ui/button";
 import { Calculator, RefreshCcw, AlertTriangle, ListChecks } from "lucide-react";
 import { DateRangePickerPopover } from "@/components/dashboard/DateRangePickerPopover";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#a855f7', '#ec4899', '#6366f1', '#14b8a6'];
 
@@ -659,24 +659,26 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                     <div className="flex items-center gap-2 ml-4">
                                         <div className="flex items-center gap-1">
                                             <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Dal</span>
-                                            <Input
-                                                type="date"
+                                            <DatePicker
                                                 value={startDateStr}
-                                                onChange={(e) => setStartDateStr(e.target.value)}
-                                                onBlur={() => applyDateRange(startDateStr, endDateStr)}
-                                                onKeyDown={(e) => { if (e.key === 'Enter') applyDateRange(startDateStr, endDateStr); }}
-                                                className="h-7 w-32 bg-slate-900/50 border-white/20 text-xs px-2 focus:ring-0 focus:border-primary/50"
+                                                onChange={(iso) => {
+                                                    const next = iso ?? '';
+                                                    setStartDateStr(next);
+                                                    applyDateRange(next, endDateStr);
+                                                }}
+                                                inputClassName="h-7 w-36 bg-slate-900/50 border-white/20 text-xs px-2 focus:ring-0 focus:border-primary/50"
                                             />
                                         </div>
                                         <div className="flex items-center gap-1">
                                             <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Al</span>
-                                            <Input
-                                                type="date"
+                                            <DatePicker
                                                 value={endDateStr}
-                                                onChange={(e) => setEndDateStr(e.target.value)}
-                                                onBlur={() => applyDateRange(startDateStr, endDateStr)}
-                                                onKeyDown={(e) => { if (e.key === 'Enter') applyDateRange(startDateStr, endDateStr); }}
-                                                className="h-7 w-32 bg-slate-900/50 border-white/20 text-xs px-2 focus:ring-0 focus:border-primary/50"
+                                                onChange={(iso) => {
+                                                    const next = iso ?? '';
+                                                    setEndDateStr(next);
+                                                    applyDateRange(startDateStr, next);
+                                                }}
+                                                inputClassName="h-7 w-36 bg-slate-900/50 border-white/20 text-xs px-2 focus:ring-0 focus:border-primary/50"
                                             />
                                         </div>
                                         <DateRangePickerPopover
@@ -980,10 +982,7 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                                         // Let's assume standard ascending sort on the key returned.
                                         return typeof val === 'number' ? -val : 0;
                                     }}
-                                    labelFormatter={(label) => {
-                                        const d = parseISODateLocal(label);
-                                        return d ? d.toLocaleDateString('it-IT', { dateStyle: 'medium' }) : '';
-                                    }}
+                                    labelFormatter={(label) => formatDate(label)}
                                 />
 
                                 {/* Portfolio Line - On Right Axis in Value mode, Left Axis in MWR mode */}
@@ -1030,9 +1029,9 @@ export function DashboardCharts({ allocationData, history, initialSettings, onSe
                 {/* Time Window Slider */}
                 <div className="px-4 py-4 mt-2">
                     <div className="flex justify-between text-xs text-muted-foreground mb-2">
-                        <span>{rawChartData.length > 0 ? (parseISODateLocal(rawChartData[dateRange[0]]?.date)?.toLocaleDateString() || '') : ''}</span>
+                        <span>{rawChartData.length > 0 ? formatDate(rawChartData[dateRange[0]]?.date) : ''}</span>
                         <span>Filtro Temporale</span>
-                        <span>{rawChartData.length > 0 ? (parseISODateLocal(rawChartData[dateRange[1]]?.date || rawChartData[rawChartData.length - 1].date)?.toLocaleDateString() || '') : ''}</span>
+                        <span>{rawChartData.length > 0 ? formatDate(rawChartData[dateRange[1]]?.date || rawChartData[rawChartData.length - 1].date) : ''}</span>
                     </div>
                     <RangeSlider
                         min={0}

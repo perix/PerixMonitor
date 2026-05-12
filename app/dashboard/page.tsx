@@ -5,7 +5,7 @@ import { PanelHeader } from "@/components/layout/PanelHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { ArrowUpRight, Euro, Wallet, Activity, Loader2 } from "lucide-react";
-import { formatSwissMoney, formatSwissNumber, getAccessibleColor } from "@/lib/utils";
+import { formatSwissMoney, formatSwissNumber, getAccessibleColor, formatDate } from "@/lib/utils";
 import { useEffect, useState, useMemo, useRef } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -151,13 +151,9 @@ export default function DashboardPage() {
 
     const getPeriodDateString = () => {
         if (!periodStats) return "";
-        const formatPortion = (isoDate: string) => {
-            const parts = (isoDate || '').split('T')[0].split('-');
-            return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : '';
-        };
-        const sDate = formatPortion(periodStats.startDate || '');
-        const eDate = formatPortion(periodStats.date);
-        return sDate ? `(${sDate} - ${eDate})` : `al ${eDate}`;
+        const sDate = periodStats.startDate ? formatDate(periodStats.startDate) : '';
+        const eDate = formatDate(periodStats.date);
+        return sDate && sDate !== '-' ? `(${sDate} - ${eDate})` : `al ${eDate}`;
     };
 
     const isLoading = isLoadingSummary || isLoadingHistory || isLoadingSettings;
@@ -270,10 +266,7 @@ export default function DashboardPage() {
                                             €{formatSwissMoney(periodStats.market_value)}
                                         </div>
                                         <p className="text-[10px] text-blue-400/70 uppercase">
-                                            (al {(() => {
-                                                const parts = periodStats.date.split('T')[0].split('-');
-                                                return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : periodStats.date;
-                                            })()})
+                                            (al {formatDate(periodStats.date)})
                                         </p>
                                     </div>
                                 </div>
