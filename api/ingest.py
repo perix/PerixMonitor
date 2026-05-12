@@ -335,41 +335,34 @@ def validate_transactions_chronology(transactions, holdings_map=None):
         txs_sorted = sorted(txs, key=lambda x: x['date'])
         
         # Init running quantity da DB se presente, altrimenti 0
-        running_qty = holdings_map.get(isin, 0.0)
+        # Arrotondiamo a 2 decimali per evitare residui floating-point
+        running_qty = round(holdings_map.get(isin, 0.0), 2)
         logger.info(f"INGEST DEBUG: Validation {isin} - Start Qty: {running_qty}")
-        is_new = True 
-        
+        is_new = True
+
         for tx in txs_sorted:
+            tx_qty = round(float(tx['quantity']), 2)
             if tx['operation'] == 'Acquisto':
-                running_qty += tx['quantity']
+                running_qty = round(running_qty + tx_qty, 2)
             else:  # Vendita
-                # Calcola rimanenza teorica
-                remaining = running_qty - tx['quantity']
-                
-                # Tolleranza: se < -0.01 -> ERRORE
-                # Tolleranza: se < -0.01 -> ERRORE
+                # Calcola rimanenza teorica arrotondando a 2 decimali
+                remaining = round(running_qty - tx_qty, 2)
+
+                # Se negativa oltre 1 centesimo -> ERRORE
                 if remaining < -0.01:
-                    # Invece di bloccare tutto, segniamo questa transazione come ERRORE
-                    # e continuiamo, così l'utente lo vede nella tabella.
                     logger.warning(f"INGEST: Negative Qty Error for {isin}. Remaining would be {remaining}")
-                    
+
                     tx_copy = tx.copy()
-                    tx_copy['operation'] = 'ERROR_NEGATIVE_QTY' 
-                    # quantity is preserved
-                    # details/description can be enhanced in index.py
-                    
-                    # NON aggiorniamo running_qty. Assumiamo che la vendita non avvenga.
-                    # Ma dobbiamo decidere se le vendite successive falliranno.
-                    # Probabilmente sì, ma è corretto che l'utente veda tutto ciò che non va.
-                    
+                    tx_copy['operation'] = 'ERROR_NEGATIVE_QTY'
+
                     validated.append(tx_copy)
                     # Skip update of running_qty and appending normal tx
                     continue
-                
-                # Se tra -0.01 e 0.01 -> considera 0
-                if abs(remaining) < 0.01:
+
+                # Tra -0.01 e 0.01 -> forziamo a 0 (saldo chiuso)
+                if abs(remaining) <= 0.01:
                     remaining = 0.0
-                
+
                 running_qty = remaining
             
             # Aggiungi info se è nuovo asset

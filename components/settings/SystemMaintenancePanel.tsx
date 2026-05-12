@@ -23,6 +23,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { usePortfolio } from '@/context/PortfolioContext';
+import { formatDate } from '@/lib/utils';
 import {
     Table,
     TableBody,
@@ -178,9 +179,9 @@ function RestoreBackupArea({ userId, onRestoreComplete }: { userId: string | nul
                                 <div className="p-3 bg-slate-800 rounded-lg">
                                     <p className="text-slate-500">Periodo Attività</p>
                                     <p className="font-medium text-white text-xs">
-                                        {analysisResult.report.first_activity ? new Date(analysisResult.report.first_activity).toLocaleDateString() : '-'}
+                                        {formatDate(analysisResult.report.first_activity)}
                                         {' -> '}
-                                        {analysisResult.report.last_activity ? new Date(analysisResult.report.last_activity).toLocaleDateString() : '-'}
+                                        {formatDate(analysisResult.report.last_activity)}
                                     </p>
                                 </div>
                                 <div className="p-3 bg-slate-800 rounded-lg">
@@ -517,7 +518,7 @@ export default function SystemMaintenancePanel() {
                                             >
                                                 <TableCell className="font-medium text-slate-200 border-r border-slate-700/50">{user.email}</TableCell>
                                                 <TableCell className="text-slate-400 border-r border-slate-700/50">
-                                                    {new Date(user.created_at).toLocaleDateString()}
+                                                    {formatDate(user.created_at)}
                                                 </TableCell>
                                                 <TableCell className="text-slate-400 border-r border-slate-700/50">
                                                     {user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString() : 'Mai'}
@@ -694,9 +695,9 @@ export default function SystemMaintenancePanel() {
                                 <div className="p-3 bg-slate-800 rounded-lg">
                                     <p className="text-slate-500">Periodo Attività</p>
                                     <p className="font-medium text-white text-xs">
-                                        {backupPreviewData.report.first_activity ? new Date(backupPreviewData.report.first_activity).toLocaleDateString() : '-'}
+                                        {formatDate(backupPreviewData.report.first_activity)}
                                         {' -> '}
-                                        {backupPreviewData.report.last_activity ? new Date(backupPreviewData.report.last_activity).toLocaleDateString() : '-'}
+                                        {formatDate(backupPreviewData.report.last_activity)}
                                     </p>
                                 </div>
                                 <div className="p-3 bg-slate-800 rounded-lg">

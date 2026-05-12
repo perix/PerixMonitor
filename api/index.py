@@ -818,9 +818,9 @@ def ingest_excel():
                          typ = t.get('type') # BUY / SELL
                          
                          if typ == 'BUY':
-                             holdings_map[isin] = holdings_map.get(isin, 0.0) + qty
+                             holdings_map[isin] = round(holdings_map.get(isin, 0.0) + qty, 2)
                          elif typ == 'SELL':
-                             holdings_map[isin] = holdings_map.get(isin, 0.0) - qty
+                             holdings_map[isin] = round(holdings_map.get(isin, 0.0) - qty, 2)
                      
                      logger.info(f"INGEST DEBUG: Calculated holdings for {len(holdings_map)} assets from {len(tx_data)} transactions.")
                      if holdings_map:
@@ -1043,6 +1043,7 @@ def ingest_excel():
                     "old_price": trend_data.get('previous_price'),
                     "old_price_date": trend_data.get('previous_date'),
                     "new_price": trend_data.get('latest_price'),
+                    "new_price_date": trend_data.get('latest_date'),
                     "is_hidden": False,
                     "price_count": len(candidates),
                     "is_update": trend_data.get('is_update', False)
@@ -1089,15 +1090,15 @@ def ingest_excel():
             for t in parse_result['data']:
                 isin = t['isin']
                 try:
-                    qty_change = float(t['quantity'])
+                    qty_change = round(float(t['quantity']), 2)
                 except:
                     qty_change = 0.0
-                
+
                 op = t['operation'] # Acquisto / Vendita
-                
+
                 # [NEW] Handle specific error flagging from ingest
                 if op == 'ERROR_NEGATIVE_QTY':
-                     start_qty = temp_holdings.get(isin, 0.0)
+                     start_qty = round(temp_holdings.get(isin, 0.0), 2)
                      delta.append({
                         "isin": isin,
                         "type": 'ERROR_NEGATIVE_QTY',
@@ -1107,20 +1108,25 @@ def ingest_excel():
                         "excel_price": t.get('price'),
                         "excel_description": t.get('description'),
                         "asset_type_proposal": t.get('asset_type'),
-                        "details": f"ERRORE: Saldo insufficiente. Disp: {start_qty:.4f}",
+                        "details": f"ERRORE: Saldo insufficiente. Disp: {start_qty:.2f}",
                         "excel_date": t.get('date')
                     })
                     # Skip balance update
                      continue
 
-                start_qty = temp_holdings.get(isin, 0.0)
-                
+                start_qty = round(temp_holdings.get(isin, 0.0), 2)
+
                 if op == 'Acquisto':
-                    end_qty = start_qty + qty_change
+                    end_qty = round(start_qty + qty_change, 2)
                 else: # Vendita
-                    # Avoid negative for display (validation logic handled this already)
-                    end_qty = max(0.0, start_qty - qty_change)
-                
+                    end_qty = round(start_qty - qty_change, 2)
+                    # Forziamo a 0 se sotto la soglia di un centesimo (saldo chiuso)
+                    if abs(end_qty) <= 0.01:
+                        end_qty = 0.0
+                    # Difesa: non mostrare saldi negativi (la validazione ha già segnalato gli errori)
+                    if end_qty < 0:
+                        end_qty = 0.0
+
                 # Update temp for next op (in case of multiple ops for same isin)
                 temp_holdings[isin] = end_qty
 

@@ -3,6 +3,7 @@ import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { formatDate } from '@/lib/utils';
 
 interface PriceVariation {
     name: string;
@@ -10,6 +11,7 @@ interface PriceVariation {
     old_price?: number;
     old_price_date?: string;
     new_price?: number;
+    new_price_date?: string;
     variation_pct?: number;
     days_delta?: number;
     price_count?: number;
@@ -64,7 +66,7 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="sm:max-w-2xl bg-[#0a0a0a] border-white/20 text-foreground shadow-2xl">
+            <DialogContent className="sm:max-w-4xl bg-[#0a0a0a] border-white/20 text-foreground shadow-2xl">
                 <DialogHeader>
                     <DialogTitle>
                         {isHistoricalReconstruction
@@ -87,7 +89,7 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
                                 <TableRow className="border-b-2 border-white/40 bg-white/10 hover:bg-white/10">
                                     <TableHead className="border-r border-white/20">Asset</TableHead>
                                     <TableHead className="border-r border-white/20">ISIN</TableHead>
-                                    <TableHead className="border-r border-white/20">Data</TableHead>
+                                    <TableHead className="border-r border-white/20">Data Nuova</TableHead>
                                     <TableHead className="text-right">Prezzi nel File</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -96,7 +98,7 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
                                     <TableRow key={idx} className="border-b-2 border-white/20 hover:bg-white/10">
                                         <TableCell className="font-medium border-r border-white/20">{item.name}</TableCell>
                                         <TableCell className="text-muted-foreground text-xs border-r border-white/20">{item.isin}</TableCell>
-                                        <TableCell className="text-muted-foreground text-xs border-r border-white/20">-</TableCell>
+                                        <TableCell className="text-muted-foreground text-xs border-r border-white/20">{item.new_price_date ? formatDate(item.new_price_date) : '-'}</TableCell>
                                         <TableCell className="text-right text-blue-400">
                                             {item.price_count || 1} date
                                         </TableCell>
@@ -111,7 +113,8 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
                                 <TableRow className="border-b-2 border-white/40 bg-white/10 hover:bg-white/10">
                                     <TableHead className="border-r border-white/20">Asset</TableHead>
                                     <TableHead className="border-r border-white/20">ISIN</TableHead>
-                                    <TableHead className="border-r border-white/20">Data</TableHead>
+                                    <TableHead className="border-r border-white/20">Data Prec.</TableHead>
+                                    <TableHead className="border-r border-white/20">Data Nuova</TableHead>
                                     <TableHead className="text-right border-r border-white/20">Old Price</TableHead>
                                     <TableHead className="text-right border-r border-white/20">New Price</TableHead>
                                     <TableHead className="text-right">Var.</TableHead>
@@ -120,7 +123,7 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
                             <TableBody>
                                 {visibleVariations.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                                             Nessuna variazione significativa ({'>'}{absThreshold}%) rilevata.
                                         </TableCell>
                                     </TableRow>
@@ -129,7 +132,8 @@ export const PriceVariationModal: React.FC<PriceVariationModalProps> = ({
                                         <TableRow key={idx} className="border-b-2 border-white/20 hover:bg-white/10">
                                             <TableCell className="font-medium border-r border-white/20">{item.name}</TableCell>
                                             <TableCell className="text-muted-foreground text-xs border-r border-white/20">{item.isin}</TableCell>
-                                            <TableCell className="text-muted-foreground text-xs border-r border-white/20">{item.old_price_date || '-'}</TableCell>
+                                            <TableCell className="text-muted-foreground text-xs border-r border-white/20">{item.old_price_date ? formatDate(item.old_price_date) : '-'}</TableCell>
+                                            <TableCell className="text-muted-foreground text-xs border-r border-white/20">{item.new_price_date ? formatDate(item.new_price_date) : '-'}</TableCell>
                                             <TableCell className="text-right border-r border-white/20">{(item.old_price || 0).toFixed(2)} €</TableCell>
                                             <TableCell className="text-right border-r border-white/20">{(item.new_price || 0).toFixed(2)} €</TableCell>
                                             <TableCell className={`text-right font-bold ${getColor(item.variation_pct || 0)}`}>

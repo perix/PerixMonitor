@@ -67,19 +67,13 @@ export function parseISODateLocal(dateStr: string | number | Date | undefined | 
   const datePart = str.split('T')[0];
   const parts = datePart.split('-');
 
-  if (parts.length === 3) {
+  if (parts.length === 3 && parts[0].length === 4) {
     const year = parseInt(parts[0], 10);
-    const month = parseInt(parts[1], 10) - 1; // JS months are 0-indexed
+    const month = parseInt(parts[1], 10) - 1;
     const day = parseInt(parts[2], 10);
 
     if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
-        // Simple heuristic: if parts[0] is year (>1000)
-        if (year > 1000) {
-            return new Date(year, month, day);
-        } else {
-            // Probably DD-MM-YYYY
-            return new Date(day, month, year);
-        }
+      return new Date(year, month, day);
     }
   }
 
@@ -89,7 +83,7 @@ export function parseISODateLocal(dateStr: string | number | Date | undefined | 
 
 /**
  * Format a date string or object into DD/MM/YYYY format.
- * 
+ *
  * @param dateStr - Date string, number, or Date object
  * @returns Formatted string (DD/MM/YYYY) or '-' if invalid
  */
@@ -100,6 +94,19 @@ export function formatDate(dateStr: string | number | Date | undefined | null): 
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const year = date.getFullYear();
   return `${day}/${month}/${year}`;
+}
+
+/**
+ * Convert a DD/MM/YYYY (or already-ISO YYYY-MM-DD) string to ISO YYYY-MM-DD.
+ * Returns null if input is empty/invalid.
+ */
+export function formatDateToISO(dateStr: string | Date | null | undefined): string | null {
+  const date = parseISODateLocal(dateStr);
+  if (!date) return null;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**

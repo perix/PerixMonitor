@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Badge } from '@/components/ui/badge';
 import { AlertTriangle, CheckCircle2, Info, ArrowRight, Wallet, TrendingDown } from 'lucide-react';
 
@@ -356,7 +357,11 @@ export const ReconciliationModal: React.FC<ReconciliationModalProps> = ({ isOpen
                             <TableCell className="text-right">
                               {isMissing ? (
                                 <div className="flex gap-2 justify-end">
-                                  <Input type="date" className="h-8 w-auto min-w-[120px] text-xs bg-black/40 border-white/20 text-gray-200" onChange={(e) => handleResolutionChange(item.isin, 'date', e.target.value)} />
+                                  <DatePicker
+                                    value={null}
+                                    onChange={(iso) => handleResolutionChange(item.isin, 'date', iso ?? '')}
+                                    inputClassName="h-8 w-auto min-w-[140px] text-xs bg-black/40 border-white/20 text-gray-200"
+                                  />
                                   <Input type="number" placeholder="€" className="h-8 w-20 text-xs bg-black/40 border-white/20 text-gray-200" onChange={(e) => handleResolutionChange(item.isin, 'price', parseFloat(e.target.value))} />
                                 </div>
                               ) : null}
