@@ -762,7 +762,7 @@ def execute_restore():
         return jsonify(error=str(e)), 500
 
 # --- EXCEL EXPORT ROUTES ---
-from excel_export import export_prezzi, export_cedole, export_transazioni
+from excel_export import export_prezzi, export_cedole, export_transazioni, export_memory
 import re
 
 def _get_portfolio_filename(prefix, portfolio_id):
@@ -830,6 +830,38 @@ def export_excel_transazioni():
         )
     except Exception as e:
         logger.error(f"EXPORT TRANSAZIONI ERROR: {e}")
+        return jsonify(error=str(e)), 500
+
+@app.route('/api/export/memory', methods=['GET'])
+def export_excel_memory():
+    try:
+        portfolio_id = request.args.get('portfolio_id')
+        if not portfolio_id:
+            return jsonify(error="Missing portfolio_id"), 400
+            
+        from db_helper import query_table
+        portfolio_name = 'Portfolio'
+        if portfolio_id:
+            try:
+                res = query_table('portfolios', 'name', {'id': portfolio_id})
+                if res and isinstance(res, list) and len(res) > 0:
+                    portfolio_name = res[0].get('name', 'Portfolio')
+            except Exception as e:
+                logger.error(f"Error fetching portfolio name: {e}")
+                
+        sanitized_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', portfolio_name)
+        # Required format: aaaammgg_Portfolio_[nome portfolio].xlsx
+        filename = f"{datetime.now().strftime('%Y%m%d')}_Portfolio_{sanitized_name}.xlsx"
+        
+        buf = export_memory(portfolio_id)
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    except Exception as e:
+        logger.error(f"EXPORT MEMORY ERROR: {e}")
         return jsonify(error=str(e)), 500
 
 @app.route('/api/ingest', methods=['POST', 'OPTIONS'])

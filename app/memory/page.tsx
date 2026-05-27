@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { MemoryTable } from "@/components/memory/MemoryTable";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/utils/supabase/client";
 import { SortingState, ColumnFiltersState, VisibilityState } from "@tanstack/react-table";
@@ -80,6 +80,7 @@ export default function MemoryPage() {
 
     // Editing State
     const [editedNotes, setEditedNotes] = useState<Record<string, string>>({});
+    const [exporting, setExporting] = useState(false);
 
     const handleNoteChange = useCallback((id: string, value: string) => {
         setEditedNotes(prev => ({ ...prev, [id]: value }));
@@ -99,6 +100,31 @@ export default function MemoryPage() {
                 alert("Errore durante il salvataggio");
             }
         });
+    };
+
+    const handleExportExcel = async () => {
+        if (!selectedPortfolioId) return;
+        setExporting(true);
+        try {
+            const res = await fetch(`/api/export/memory?portfolio_id=${selectedPortfolioId}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const cd = res.headers.get('Content-Disposition') || '';
+            const match = cd.match(/filename="?([^"]+)"?/);
+            a.download = match ? match[1] : `${new Date().toISOString().slice(0, 10).replace(/-/g, '')}_Portfolio_${portfolioName}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (e: any) {
+            console.error("Export failed", e);
+            alert("Errore durante l'esportazione: " + e.message);
+        } finally {
+            setExporting(false);
+        }
     };
 
     const hasChanges = Object.keys(editedNotes).length > 0;
@@ -124,13 +150,26 @@ export default function MemoryPage() {
                     </p>
                 </div>
 
-                {/* Global Save Button */}
+                {/* Global Save & Export Buttons */}
                 <div className="flex items-center gap-2">
                     {hasChanges && (
                         <span className="text-sm text-amber-600 animate-pulse">
                             Modifiche non salvate
                         </span>
                     )}
+                    <Button
+                        onClick={handleExportExcel}
+                        disabled={exporting}
+                        variant="outline"
+                        className="border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300 gap-2"
+                    >
+                        {exporting ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                            <Download className="h-4 w-4" />
+                        )}
+                        Esporta Excel
+                    </Button>
                     <Button
                         onClick={handleGlobalSave}
                         disabled={!hasChanges || isSaving}
