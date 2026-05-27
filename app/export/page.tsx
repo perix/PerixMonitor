@@ -8,6 +8,7 @@ import { usePortfolio } from "@/context/PortfolioContext";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { useReport, ReportData } from "@/hooks/useReport";
 import { generatePdfReport } from "@/lib/pdfGenerator";
 import { DatePicker } from "@/components/ui/date-picker";
