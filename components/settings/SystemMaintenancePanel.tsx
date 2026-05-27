@@ -252,6 +252,12 @@ export default function SystemMaintenancePanel() {
     const [preparingBackup, setPreparingBackup] = useState(false);
     const [backupCustomFilename, setBackupCustomFilename] = useState("");
 
+    // EXCEL EXPORT STATE
+    const [selectedPortfolioExport, setSelectedPortfolioExport] = useState<string>(selectedPortfolioId || "");
+    const [exportingPrezzi, setExportingPrezzi] = useState(false);
+    const [exportingCedole, setExportingCedole] = useState(false);
+    const [exportingTransazioni, setExportingTransazioni] = useState(false);
+
     // User Action States
     const [deletingUser, setDeletingUser] = useState<string | null>(null);
     const [resettingPwdUser, setResettingPwdUser] = useState<User | null>(null);
@@ -272,6 +278,9 @@ export default function SystemMaintenancePanel() {
     useEffect(() => {
         if (selectedPortfolioId && !selectedPortfolioBackup) {
             setSelectedPortfolioBackup(selectedPortfolioId);
+        }
+        if (selectedPortfolioId && !selectedPortfolioExport) {
+            setSelectedPortfolioExport(selectedPortfolioId);
         }
     }, [selectedPortfolioId]);
 
@@ -366,6 +375,32 @@ export default function SystemMaintenancePanel() {
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
         setBackupPreviewOpen(false);
+    };
+
+    const handleExportExcel = async (type: 'prezzi' | 'cedole' | 'transazioni') => {
+        if (!selectedPortfolioExport) return;
+        const setLoading = type === 'prezzi' ? setExportingPrezzi : type === 'cedole' ? setExportingCedole : setExportingTransazioni;
+        setLoading(true);
+        try {
+            const res = await fetch(`/api/export/${type}?portfolio_id=${selectedPortfolioExport}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const cd = res.headers.get('Content-Disposition') || '';
+            const match = cd.match(/filename="?([^"]+)"?/);
+            a.download = match ? match[1] : `${type}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (e: any) {
+            console.error(`Export ${type} failed`, e);
+            alert(`Errore durante l'esportazione: ${e.message}`);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleResetDatabase = async () => {
@@ -647,6 +682,80 @@ export default function SystemMaintenancePanel() {
                             }} />
                         </div>
 
+                    </CardContent>
+                </Card>
+
+                {/* ESPORTA DATI EXCEL */}
+                <Card className="bg-card/50 backdrop-blur-md border-white/40">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-foreground">
+                            <span className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400">
+                                <FileText className="w-4 h-4" />
+                            </span>
+                            Esporta Dati Excel
+                        </CardTitle>
+                        <CardDescription>Scarica i dati del portafoglio nei formati compatibili con l&apos;ingestion</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="flex items-center gap-2">
+                            <select
+                                className="h-9 w-full md:w-48 rounded-md border border-slate-700 bg-slate-900 px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500 text-slate-200"
+                                onChange={(e) => setSelectedPortfolioExport(e.target.value)}
+                                value={selectedPortfolioExport}
+                            >
+                                <option value="" disabled>Seleziona Portafoglio</option>
+                                {portfolios.map(p => (
+                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="flex flex-col gap-2 p-4 rounded-lg border border-white/20 bg-white/5">
+                                <p className="text-sm font-medium text-slate-200">Prezzi</p>
+                                <p className="text-xs text-slate-400">Storico prezzi degli asset del portafoglio</p>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="mt-auto border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300 gap-2"
+                                    disabled={!selectedPortfolioExport || exportingPrezzi}
+                                    onClick={() => handleExportExcel('prezzi')}
+                                >
+                                    {exportingPrezzi ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                                    Scarica Prezzi
+                                </Button>
+                            </div>
+
+                            <div className="flex flex-col gap-2 p-4 rounded-lg border border-white/20 bg-white/5">
+                                <p className="text-sm font-medium text-slate-200">Cedole e Fees</p>
+                                <p className="text-xs text-slate-400">Dividendi ed uscite registrate nel portafoglio</p>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="mt-auto border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300 gap-2"
+                                    disabled={!selectedPortfolioExport || exportingCedole}
+                                    onClick={() => handleExportExcel('cedole')}
+                                >
+                                    {exportingCedole ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                                    Scarica Cedole e Fees
+                                </Button>
+                            </div>
+
+                            <div className="flex flex-col gap-2 p-4 rounded-lg border border-white/20 bg-white/5">
+                                <p className="text-sm font-medium text-slate-200">Acquisti e Vendite</p>
+                                <p className="text-xs text-slate-400">Tutte le transazioni di acquisto e vendita</p>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="mt-auto border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300 gap-2"
+                                    disabled={!selectedPortfolioExport || exportingTransazioni}
+                                    onClick={() => handleExportExcel('transazioni')}
+                                >
+                                    {exportingTransazioni ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                                    Scarica Acquisti e Vendite
+                                </Button>
+                            </div>
+                        </div>
                     </CardContent>
                 </Card>
             </div>
