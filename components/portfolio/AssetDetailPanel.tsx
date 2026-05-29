@@ -232,6 +232,7 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
     const [showPrices, setShowPrices] = useState(false);
     const [externalInfo, setExternalInfo] = useState<any>(null);
     const [loadingInfo, setLoadingInfo] = useState(false);
+    const [refreshingInfo, setRefreshingInfo] = useState(false);
     const lastAssetIdRef = useRef<string | null>(null);
 
     // Synchronous reset on asset change to avoid race conditions/leakage
@@ -338,6 +339,47 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
             console.error("Failed to fetch external info", err);
         } finally {
             setLoadingInfo(false);
+        }
+    };
+
+    // Forza la ri-analisi dal web (LLM) e aggiorna il DB
+    const refreshExternalInfo = async () => {
+        if (!asset?.isin) return;
+        setRefreshingInfo(true);
+        try {
+            const res = await axios.post(`/api/certificates/${asset.isin}/refresh`);
+            setExternalInfo(res.data);
+        } catch (err) {
+            console.error("Failed to refresh certificate", err);
+        } finally {
+            setRefreshingInfo(false);
+        }
+    };
+
+    // Aggiorna localmente un campo del certificato visualizzato
+    const updateExternalField = (key: string, value: any) =>
+        setExternalInfo((prev: any) => (prev ? { ...prev, [key]: value } : prev));
+
+    // Persiste i campi del certificato (whitelist lato backend) via PATCH
+    const patchCertFields = async (fields: Record<string, any>) => {
+        if (!asset?.isin) return;
+        try {
+            await axios.patch(`/api/certificates/${asset.isin}`, fields);
+        } catch (err) {
+            console.error("Failed to patch certificate fields", err);
+        }
+    };
+
+    // Salva l'override manuale del ticker di un sottostante
+    const saveTickerOverride = async (oldTicker: string, newTicker: string) => {
+        if (!asset?.isin || !newTicker) return;
+        try {
+            await axios.post(`/api/certificates/${asset.isin}/ticker`, {
+                old_ticker: oldTicker,
+                new_ticker: newTicker,
+            });
+        } catch (err) {
+            console.error("Failed to save ticker override", err);
         }
     };
 
@@ -567,18 +609,83 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center bg-primary/10 p-2 rounded-md border border-primary/20">
                                     <h4 className="text-sm font-semibold text-primary uppercase tracking-wider flex items-center gap-2">
-                                        <Database className="h-4 w-4" /> Dati Live API
+                                        <Database className="h-4 w-4" /> Dati Certificato
+                                        {externalInfo.from_cache ? (
+                                            <span className="text-[10px] font-normal bg-primary/20 text-primary px-1.5 py-0.5 rounded-full normal-case">cache</span>
+                                        ) : (
+                                            <span className="text-[10px] font-normal bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded-full normal-case">live</span>
+                                        )}
                                     </h4>
-                                    <button onClick={() => setExternalInfo(null)} className="text-xs text-primary hover:text-white underline cursor-pointer">Chiudi</button>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={refreshExternalInfo}
+                                            disabled={refreshingInfo}
+                                            title="Forza rianalisi dal web (LLM)"
+                                            className="inline-flex items-center gap-1 text-xs text-primary hover:text-white disabled:opacity-50 cursor-pointer"
+                                        >
+                                            {refreshingInfo ? <Loader2 className="h-3 w-3 animate-spin" /> : <CloudDownload className="h-3 w-3" />}
+                                            Aggiorna
+                                        </button>
+                                        <button onClick={() => setExternalInfo(null)} className="text-xs text-primary hover:text-white underline cursor-pointer">Chiudi</button>
+                                    </div>
                                 </div>
                                 <div className="bg-black/20 rounded-lg p-3 border border-white/5 space-y-2">
-                                    <div className="text-sm text-foreground"><b>Scadenza:</b> {formatDate(externalInfo.expiry_date)}</div>
-                                    <div className="text-sm text-foreground"><b>Stato:</b> {externalInfo.overall_status || 'N.D.'}</div>
-                                    <div className="text-sm text-foreground"><b>Cedola:</b> {typeof externalInfo.coupon_pct === 'number' ? `${externalInfo.coupon_pct.toFixed(2)}%` : (externalInfo.coupon_pct || 'N.D.')} ({externalInfo.coupon_freq || '-'})</div>
-                                    <div className="text-sm text-foreground"><b>Prossimo Stacco:</b> {formatDate(externalInfo.next_coupon_date)}</div>
-                                    <div className="text-sm text-foreground"><b>Barriera:</b> {externalInfo.barrier_level || 'N.D.'} ({externalInfo.barrier_type || '-'})</div>
-                                    <div className="text-sm text-foreground"><b>Trigger Autocall:</b> {typeof externalInfo.trigger_level === 'number' ? externalInfo.trigger_level.toFixed(2) : (externalInfo.trigger_level || 'N.D.')}</div>
-                                    <div className="text-sm text-foreground"><b>Memoria:</b> {externalInfo.has_memory ? 'Sì' : 'No'} | <b>Autocall:</b> {externalInfo.is_autocallable ? 'Sì' : 'No'}</div>
+                                    {(() => {
+                                        const inputCls = "bg-transparent border border-transparent hover:border-white/20 focus:border-primary rounded px-1 text-foreground font-semibold outline-none transition-colors";
+                                        const barrierPctNum = (() => {
+                                            const m = String(externalInfo.barrier_level ?? '').match(/[\d.,]+/);
+                                            return m ? m[0].replace(',', '.') : '';
+                                        })();
+                                        return (
+                                            <>
+                                                <div className="text-sm text-foreground flex items-center gap-1">
+                                                    <b>Scadenza:</b>
+                                                    <input type="text" className={`${inputCls} w-28`}
+                                                        value={externalInfo.expiry_date ?? ''}
+                                                        onChange={(e) => updateExternalField('expiry_date', e.target.value)}
+                                                        onBlur={(e) => patchCertFields({ expiry_date: e.target.value })} />
+                                                </div>
+                                                <div className="text-sm text-foreground"><b>Stato:</b> {externalInfo.overall_status || 'N.D.'}</div>
+                                                <div className="text-sm text-foreground flex items-center gap-1 flex-wrap">
+                                                    <b>Cedola:</b>
+                                                    <input type="number" step="0.01" className={`${inputCls} w-16`}
+                                                        value={externalInfo.coupon_pct ?? ''}
+                                                        onChange={(e) => updateExternalField('coupon_pct', e.target.value)}
+                                                        onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) patchCertFields({ coupon_pct: v }); }} />%
+                                                    <span className="text-muted-foreground mx-1">freq.</span>
+                                                    <input type="text" className={`${inputCls} w-24`}
+                                                        value={externalInfo.coupon_freq ?? ''}
+                                                        onChange={(e) => updateExternalField('coupon_freq', e.target.value)}
+                                                        onBlur={(e) => patchCertFields({ coupon_freq: e.target.value })} />
+                                                </div>
+                                                <div className="text-sm text-foreground flex items-center gap-1">
+                                                    <b>Prossimo Stacco:</b>
+                                                    <input type="text" className={`${inputCls} w-28`}
+                                                        value={externalInfo.next_coupon_date ?? ''}
+                                                        onChange={(e) => updateExternalField('next_coupon_date', e.target.value)}
+                                                        onBlur={(e) => patchCertFields({ next_coupon_date: e.target.value })} />
+                                                </div>
+                                                <div className="text-sm text-foreground flex items-center gap-1">
+                                                    <b>Barriera:</b>
+                                                    <input type="number" step="0.01" className={`${inputCls} w-16`}
+                                                        defaultValue={barrierPctNum}
+                                                        onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) { updateExternalField('barrier_level', `${v}%`); patchCertFields({ barrier_pct: v }); } }} />%
+                                                    <input type="text" className={`${inputCls} w-20`} placeholder="Down/Up"
+                                                        value={externalInfo.barrier_type ?? ''}
+                                                        onChange={(e) => updateExternalField('barrier_type', e.target.value)}
+                                                        onBlur={(e) => patchCertFields({ barrier_type: e.target.value })} />
+                                                </div>
+                                                <div className="text-sm text-foreground flex items-center gap-1">
+                                                    <b>Trigger Autocall:</b>
+                                                    <input type="number" step="0.01" className={`${inputCls} w-16`}
+                                                        value={externalInfo.trigger_level ?? ''}
+                                                        onChange={(e) => updateExternalField('trigger_level', e.target.value)}
+                                                        onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) patchCertFields({ trigger_level: v }); }} />
+                                                </div>
+                                                <div className="text-sm text-foreground"><b>Memoria:</b> {externalInfo.has_memory ? 'Sì' : 'No'} | <b>Autocall:</b> {externalInfo.is_autocallable ? 'Sì' : 'No'}</div>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
 
                                 {externalInfo.worst_of && (
@@ -616,6 +723,20 @@ export function AssetDetailPanel({ asset }: AssetDetailPanelProps) {
                                                                     {u.dist !== undefined ? `${typeof u.dist === 'number' ? u.dist.toFixed(2) : u.dist}%` : 'N.D.'}
                                                                 </span>
                                                             </span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                                            <span>Ticker:</span>
+                                                            <input
+                                                                type="text"
+                                                                defaultValue={u.ticker || u.original_ticker || ''}
+                                                                title="Override manuale del ticker. Premi 'Aggiorna' per ricalcolare i prezzi."
+                                                                className="bg-transparent border border-transparent hover:border-white/20 focus:border-primary rounded px-1 font-mono uppercase text-foreground outline-none w-28 transition-colors"
+                                                                onBlur={(e) => {
+                                                                    const v = e.target.value.trim().toUpperCase();
+                                                                    const original = u.original_ticker || u.ticker;
+                                                                    if (v && v !== original) saveTickerOverride(original, v);
+                                                                }}
+                                                            />
                                                         </div>
                                                         <div className="text-xs text-muted-foreground grid grid-cols-3 gap-x-2 mt-1">
                                                             <span>Strike: {typeof u.strike === 'number' ? u.strike.toFixed(2) : u.strike}</span>

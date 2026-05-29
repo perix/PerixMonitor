@@ -43,6 +43,7 @@ from asset_movements import movements_bp
 from asset_prices import prices_bp
 from report import report_bp
 from llm_report import llm_report_bp
+from cert_routes import certificates_bp
 
 from config_api import config_bp
 app = Flask(__name__)
@@ -59,6 +60,7 @@ app.register_blueprint(movements_bp)
 app.register_blueprint(prices_bp)
 app.register_blueprint(report_bp)
 app.register_blueprint(llm_report_bp)
+app.register_blueprint(certificates_bp)
 
 
 import sys

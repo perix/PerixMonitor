@@ -1,8 +1,6 @@
 from flask import jsonify
 from asset_provider import AssetProvider
 from logger import logger
-import os
-import requests
 def register_assets_routes(app):
     provider = AssetProvider()
 
@@ -27,20 +25,28 @@ def register_assets_routes(app):
 
     @app.route('/api/assets/<isin>/external', methods=['GET'])
     def get_external_asset_info(isin):
+        """Analisi del certificato integrata in PerixMonitor (ex proxy verso il servizio
+        esterno). Cache-first: se l'ISIN è già in DB serve la cache aggiornando i prezzi
+        live; altrimenti estrae dal web (LLM + web_search), calcola il Worst-Of e
+        ARRICCHISCE il DB salvando il nuovo certificato."""
         try:
-            api_key = os.getenv('API_KEY_AUTHORIZED')
-            if not api_key:
-                return jsonify(error="API key non configurata"), 500
-            
-            headers = {"X-API-KEY": api_key.strip()}
-            url = f"https://analisicertificati.vercel.app/api/asset/{isin}"
-            response = requests.get(url, headers=headers)
-            
-            if response.status_code != 200:
-                logger.error(f"Error external API for {isin}: {response.text}")
-                return jsonify(error=f"Errore API esterna: {response.status_code}"), response.status_code
-                
-            return jsonify(response.json())
+            from cert_analyzer import analyze_certificate
+            import cert_db
+
+            result = analyze_certificate(isin)
+
+            if result.get('error'):
+                return jsonify(result), 502
+
+            # Salva su DB solo i risultati freschi (non quelli già serviti da cache)
+            if not result.get('from_cache'):
+                try:
+                    cert_db.save_analysis(result)
+                    result['from_cache'] = False
+                except Exception as e_save:
+                    logger.error(f"Errore salvataggio certificato {isin}: {e_save}")
+
+            return jsonify(result)
         except Exception as e:
-            logger.error(f"Error fetching external API for {isin}: {e}")
+            logger.error(f"Error analyzing certificate {isin}: {e}")
             return jsonify(error=str(e)), 500

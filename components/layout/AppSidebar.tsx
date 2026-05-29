@@ -20,7 +20,8 @@ import {
     LogOut,
     LayoutDashboard,
     Loader2,
-    Download
+    Download,
+    FileText
 } from "lucide-react"
 
 import {
@@ -83,6 +84,11 @@ const data = {
                     title: "Analisi",
                     url: "/analytics",
                     icon: BarChart3,
+                },
+                {
+                    title: "Certificati",
+                    url: "/certificati",
+                    icon: FileText,
                 },
                 {
                     title: "Note & Storico",

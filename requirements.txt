@@ -5,6 +5,7 @@ numpy
 requests
 supabase<2.10.0
 openpyxl
-openai
+openai>=1.50
 python-dotenv
 flask-cors
+yfinance

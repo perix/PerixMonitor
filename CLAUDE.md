@@ -82,6 +82,7 @@ User Browser (http://localhost:3500)
 - `dashboard` — Main portfolio overview (net worth chart, summary cards, holdings)
 - `portfolio` — Asset list with detail panel, prices, movements, variations analysis
 - `analytics` — Allocation breakdown and performance metrics
+- `certificati` — List of all analyzed certificates in DB (global master data) with live Worst-Of distance, refresh and delete
 - `upload` — Excel ingestion with reconciliation preview
 - `memory` — Transaction and dividend history with notes
 - `settings` — Configuration, asset color mapping, debug tools
@@ -124,7 +125,8 @@ User Browser (http://localhost:3500)
 - `portfolio.py` — Portfolio CRUD, asset allocation by class
 - `memory.py` — Aggregated transaction history, P&L, dividend flows
 - `analysis.py` — Fine-grained allocation and performance breakdowns
-- `assets.py` — Asset metadata, external certificate data (V2.7)
+- `assets.py` — Asset metadata; `GET /api/assets/<isin>/external` runs the integrated certificate analysis (cache-first, enriches DB)
+- `cert_routes.py` — Certificate domain routes (list/refresh/patch/ticker/delete/price)
 - `asset_movements.py` — Transaction timeline per asset
 - `asset_prices.py` — Price CRUD, time-range filtering, history export
 
@@ -132,6 +134,7 @@ User Browser (http://localhost:3500)
 - `db_helper.py` — Unified database CRUD interface (query, upsert, update, delete)
 - `supabase_client.py` — Supabase client initialization with SERVICE_ROLE_KEY
 - `color_manager.py` — Persistent asset color assignment
+- `cert_analyzer.py`, `cert_extractor.py`, `cert_db.py` — Integrated certificate analysis (LLM web_search + yfinance prices + DB cache), ported from the former external `analisicertificati` service
 - `llm_asset_info.py`, `llm_report.py`, `llm_utils.py` — AI-assisted analysis and reporting
 - `logger.py` — Audit and debug logging
 - `settings.py` — Environment variable validation
@@ -145,7 +148,8 @@ User Browser (http://localhost:3500)
 - `GET /api/analysis/allocation` — Asset class breakdown
 - `GET /api/report/generate` — PDF report data
 - `GET /api/backup/download` — Full JSON backup
-- `GET /api/assets/<isin>/external` — Live certificate data proxy
+- `GET /api/assets/<isin>/external` — Certificate analysis (integrated; cache-first, enriches DB on first analysis)
+- `GET /api/certificates` — List all certificates (with live Worst-Of); `POST /api/certificates/<isin>/refresh`, `PATCH /api/certificates/<isin>`, `POST /api/certificates/<isin>/ticker`, `DELETE /api/certificates/<isin>`
 
 ### Database Schema (Key Tables)
 
@@ -164,6 +168,10 @@ User Browser (http://localhost:3500)
 - `app_config` — Key-value store for persistent UI settings
 - `portfolio_asset_settings` — Per-asset per-portfolio settings (color, visibility)
 - `asset_notes` — User annotations on assets
+
+**Certificates** (global master data, no portfolio_id)
+- `certificates` — Certificate analysis cache (barrier, coupon, autocall, dates)
+- `underlyings` — Underlyings per certificate (ticker, strike, barrier, manual `corrected_ticker` override)
 
 **Security**
 - RLS policies on all tables enforce user isolation
