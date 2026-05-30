@@ -15,22 +15,27 @@ from cert_analyzer import analyze_certificate, get_live_price
 certificates_bp = Blueprint('certificates', __name__)
 
 
-def _worst_of_dist(underlyings):
-    """Calcola la distanza Worst-Of (best-effort) recuperando i prezzi live.
-    Ritorna float o None se nessun prezzo è disponibile."""
+def _enrich_underlyings(underlyings):
+    """Arricchisce ogni sottostante con prezzo live (`current`) e distanza % dalla
+    barriera (`dist`, segno +/-), recuperando i prezzi una sola volta per ticker.
+    Ritorna (lista_arricchita, worst_dist) dove worst_dist è la distanza minima
+    (None se nessun prezzo disponibile). Stessa formula di get_enriched_cached_analysis."""
+    enriched = []
     worst = None
     for u in underlyings:
         ticker = u.get('corrected_ticker') or u.get('original_ticker')
         barrier_abs = u.get('barrier_abs') or u.get('barrier')
         current = get_live_price(ticker)
+        dist = None
         if current and current > 0 and barrier_abs:
             try:
-                dist = (current - float(barrier_abs)) / current * 100.0
+                dist = round((current - float(barrier_abs)) / current * 100.0, 2)
                 if worst is None or dist < worst:
-                    worst = round(dist, 2)
+                    worst = dist
             except Exception:
-                continue
-    return worst
+                dist = None
+        enriched.append({**u, "current": current, "dist": dist})
+    return enriched, worst
 
 
 @certificates_bp.route('/api/certificates', methods=['GET'])
@@ -46,7 +51,10 @@ def list_certificates():
         for entry in certs:
             cert = entry['certificate']
             underlyings = entry['underlyings']
-            worst_dist = _worst_of_dist(underlyings) if include_live else None
+            if include_live:
+                underlyings, worst_dist = _enrich_underlyings(underlyings)
+            else:
+                worst_dist = None
             result.append({
                 **cert,
                 "underlyings": underlyings,

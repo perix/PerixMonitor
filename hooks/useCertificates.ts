@@ -11,6 +11,8 @@ export interface CertificateUnderlying {
     strike?: number | null;
     barrier_abs?: number | null;
     barrier?: number | null;
+    current?: number | null;
+    dist?: number | null;
 }
 
 export interface CertificateRow {
