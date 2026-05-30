@@ -4,7 +4,107 @@ from logger import logger
 from price_manager import get_latest_price, get_latest_prices_batch
 from finance import xirr
 from datetime import datetime
+from asset_classification import get_component_from_asset_type
 import traceback
+
+
+def compute_active_holdings(portfolio_id):
+    """Ricostruisce le SOLE holding attive (qty>0) con flussi di cassa, valore corrente,
+    P&L e metadati. Unica fonte di verità condivisa da /api/portfolio/<id>/aggregate e
+    /api/analysis/allocation (oltre a essere coerente con /api/portfolio/assets).
+    Convenzione flussi: buy negativo, sell/dividendi positivi.
+    Ritorna (out, settings) con out[isin] = {pnl_value, current_value, cashflows, end_date,
+    component, name, net_invested, total_dividends, last_trend_variation, qty}."""
+    res_trans = execute_request('transactions', 'GET', params={
+        'select': 'quantity,type,price_eur,date,assets(id,isin,name,asset_class,last_trend_variation)',
+        'portfolio_id': f'eq.{portfolio_id}',
+        'order': 'date.asc'
+    })
+    trans_data = res_trans.json() if (res_trans and res_trans.status_code == 200) else []
+    if not trans_data:
+        return {}, {}
+
+    def _parse_date(s):
+        try:
+            return datetime.fromisoformat(str(s).replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            return datetime.now()
+
+    holdings = {}
+    for t in trans_data:
+        a = t['assets']
+        isin = a['isin']
+        qty = float(t['quantity'])
+        price = float(t['price_eur'])
+        is_buy = t['type'] == 'BUY'
+        h = holdings.setdefault(isin, {
+            "qty": 0.0, "total_cost": 0.0, "total_dividends": 0.0, "cashflows": [],
+            "name": a.get('name') or isin,
+            "component": get_component_from_asset_type(a.get('asset_class')),
+            "last_trend_variation": a.get('last_trend_variation'),
+        })
+        cf_date = _parse_date(t['date'])
+        if is_buy:
+            h['qty'] += qty
+            h['total_cost'] += qty * price
+            h['cashflows'].append({"date": cf_date, "amount": -(qty * price)})
+        else:
+            h['qty'] -= qty
+            h['total_cost'] -= qty * price
+            h['cashflows'].append({"date": cf_date, "amount": (qty * price)})
+
+    # Dividendi (flussi positivi + accumulo per P&L)
+    res_div = execute_request('dividends', 'GET', params={'portfolio_id': f'eq.{portfolio_id}'})
+    div_data = res_div.json() if (res_div and res_div.status_code == 200) else []
+    aid_to_isin = {t['assets']['id']: t['assets']['isin'] for t in trans_data}
+    for d in div_data:
+        isin = aid_to_isin.get(d['asset_id'])
+        if isin and isin in holdings:
+            amount = float(d['amount_eur'])
+            holdings[isin]['cashflows'].append({"date": _parse_date(d['date']), "amount": amount})
+            holdings[isin]['total_dividends'] += amount
+
+    active = [i for i, h in holdings.items() if h['qty'] > 0.0001]
+    prices = get_latest_prices_batch(active, portfolio_id=portfolio_id)
+
+    out = {}
+    for isin in active:
+        h = holdings[isin]
+        pd = prices.get(isin)
+        latest = float(pd['price']) if pd else 0.0
+        current_value = h['qty'] * latest
+        pnl_value = (current_value - h['total_cost']) + h['total_dividends']
+        end_date = datetime.now()
+        if pd and pd.get('date'):
+            try:
+                end_date = datetime.strptime(pd['date'], '%Y-%m-%d')
+            except Exception:
+                pass
+        if h['cashflows']:
+            end_date = max(end_date, max(f['date'] for f in h['cashflows']))
+        out[isin] = {
+            "pnl_value": pnl_value,
+            "current_value": current_value,
+            "cashflows": h['cashflows'],
+            "end_date": end_date,
+            "component": h['component'],
+            "name": h['name'],
+            "net_invested": h['total_cost'],
+            "total_dividends": h['total_dividends'],
+            "last_trend_variation": h['last_trend_variation'],
+            "qty": h['qty'],
+        }
+
+    settings = {}
+    try:
+        rs = execute_request('portfolios', 'GET', params={'select': 'settings', 'id': f'eq.{portfolio_id}'})
+        rows = rs.json() if (rs and rs.status_code == 200) else []
+        settings = (rows[0].get('settings') or {}) if rows else {}
+    except Exception:
+        settings = {}
+
+    return out, settings
+
 
 def register_portfolio_routes(app):
     
@@ -308,5 +408,57 @@ def register_portfolio_routes(app):
 
         except Exception as e:
             logger.error(f"PORTFOLIO ASSETS ERROR: {str(e)}")
+            logger.error(traceback.format_exc())
+            return jsonify(error=str(e)), 500
+
+    @app.route('/api/portfolio/<portfolio_id>/aggregate', methods=['POST', 'OPTIONS'])
+    def aggregate_portfolio_metrics(portfolio_id):
+        """P&L e MWR% aggregati su un sottoinsieme di asset (gli ISIN passati nel body).
+        P&L = somma dei P&L per-asset. MWR% = XIRR tier-based sui flussi di cassa MESSI
+        INSIEME degli asset selezionati (+ valore corrente totale come flusso finale).
+        Body: {"isins": [...]} (vuoto/assente = tutti gli asset attivi)."""
+        if request.method == 'OPTIONS':
+            return jsonify(status="ok"), 200
+        try:
+            body = request.json or {}
+            req_isins = body.get('isins')
+
+            holdings, settings = compute_active_holdings(portfolio_id)
+            if not holdings:
+                return jsonify(pnl=0, mwr=None, mwr_type="NONE", current_value=0, count=0)
+
+            selected = [i for i in req_isins if i in holdings] if req_isins else list(holdings.keys())
+
+            total_pnl = 0.0
+            total_cv = 0.0
+            pooled = []
+            end_date = None
+            for i in selected:
+                h = holdings[i]
+                total_pnl += h['pnl_value']
+                total_cv += h['current_value']
+                pooled.extend(h['cashflows'])
+                end_date = h['end_date'] if end_date is None else max(end_date, h['end_date'])
+
+            mwr = None
+            mwr_type = "NONE"
+            if total_cv > 0 and pooled:
+                try:
+                    t1 = int(settings.get('mwr_t1', 30))
+                    t2 = int(settings.get('mwr_t2', 365))
+                except Exception:
+                    t1, t2 = 30, 365
+                from finance import get_tiered_mwr
+                mwr, mwr_type = get_tiered_mwr(pooled, total_cv, t1=t1, t2=t2, end_date=end_date)
+
+            return jsonify(
+                pnl=round(total_pnl, 2),
+                mwr=mwr,
+                mwr_type=mwr_type,
+                current_value=round(total_cv, 2),
+                count=len(selected),
+            )
+        except Exception as e:
+            logger.error(f"PORTFOLIO AGGREGATE ERROR: {str(e)}")
             logger.error(traceback.format_exc())
             return jsonify(error=str(e)), 500

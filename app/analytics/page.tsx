@@ -10,7 +10,7 @@ import { Loader2, TrendingUp, TrendingDown, DollarSign, PieChart as PieChartIcon
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatSwissMoney } from "@/lib/utils";
+import { formatSwissMoney, formatSwissNumber } from "@/lib/utils";
 import { usePortfolioSettings, useUpdatePortfolioSettings } from "@/hooks/useDashboard";
 
 // Palette for specific components requested by user
@@ -62,6 +62,39 @@ export default function AnalyticsPage() {
     const [selectedSlice, setSelectedSlice] = useState<ComponentData | null>(null);
     const [threshold, setThreshold] = useState(0.1);
     const [selectedTrend, setSelectedTrend] = useState<string>("ALL");
+
+    // Aggregato P&L + MWR% sugli asset del componente selezionato (dopo il filtro Trend)
+    const [compAgg, setCompAgg] = useState<{ pnl: number; mwr: number | null } | null>(null);
+    const [compAggLoading, setCompAggLoading] = useState(false);
+    const componentFilteredIsins = useMemo(() => {
+        if (!selectedSlice?.assets) return [];
+        return selectedSlice.assets
+            .filter(asset => {
+                if (selectedTrend === "ALL") return true;
+                const variation = asset.last_trend_variation || 0;
+                if (selectedTrend === "POSITIVE") return variation >= threshold;
+                if (selectedTrend === "NEGATIVE") return variation <= -threshold;
+                if (selectedTrend === "NEUTRAL") return Math.abs(variation) < threshold;
+                return true;
+            })
+            .map(a => a.isin);
+    }, [selectedSlice, selectedTrend, threshold]);
+
+    useEffect(() => {
+        if (!selectedPortfolioId || componentFilteredIsins.length === 0) {
+            setCompAgg(null);
+            return;
+        }
+        let cancelled = false;
+        setCompAggLoading(true);
+        const timer = setTimeout(() => {
+            axios.post(`/api/portfolio/${selectedPortfolioId}/aggregate`, { isins: componentFilteredIsins })
+                .then(res => { if (!cancelled) setCompAgg({ pnl: res.data.pnl, mwr: res.data.mwr }); })
+                .catch(() => { if (!cancelled) setCompAgg(null); })
+                .finally(() => { if (!cancelled) setCompAggLoading(false); });
+        }, 300);
+        return () => { cancelled = true; clearTimeout(timer); };
+    }, [selectedPortfolioId, componentFilteredIsins]);
 
     const { data: settings } = usePortfolioSettings(selectedPortfolioId);
     const updateSettingsMutation = useUpdatePortfolioSettings();
@@ -286,9 +319,31 @@ export default function AnalyticsPage() {
                         <div className="absolute top-6 bottom-6 right-4 w-[53%] z-20 flex flex-col">
                             <Card className="bg-slate-950/80 backdrop-blur-md border-white/40 shadow-2xl h-full flex flex-col">
                                 <CardHeader className="py-3 px-4 border-b border-white/40 bg-white/5 flex flex-row items-center justify-between">
-                                    <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                                    <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2 shrink-0">
                                         Lista asset Componente - <span style={{ color: getComponentColor(selectedSlice.name, 0) }}>{selectedSlice.name}</span>
                                     </CardTitle>
+
+                                    {/* Aggregato P&L + MWR% sugli asset visualizzati */}
+                                    <div className="flex items-center gap-5 min-w-0">
+                                        {compAggLoading && !compAgg ? (
+                                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                        ) : compAgg ? (
+                                            <>
+                                                <div className="flex flex-col items-start leading-tight">
+                                                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground">P&amp;L</span>
+                                                    <span className={`text-sm font-bold tabular-nums ${compAgg.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
+                                                        €{formatSwissMoney(compAgg.pnl)}
+                                                    </span>
+                                                </div>
+                                                <div className="flex flex-col items-start leading-tight">
+                                                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground">MWR</span>
+                                                    <span className={`text-sm font-bold tabular-nums ${compAgg.mwr == null ? "text-muted-foreground" : compAgg.mwr >= 0 ? "text-green-500" : "text-red-500"}`}>
+                                                        {compAgg.mwr != null ? `${formatSwissNumber(compAgg.mwr, 2)}%` : "—"}
+                                                    </span>
+                                                </div>
+                                            </>
+                                        ) : null}
+                                    </div>
 
                                     {/* Filter by Trend */}
                                     <div className="w-[120px]">
